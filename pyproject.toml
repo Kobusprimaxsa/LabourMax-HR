@@ -1,0 +1,19 @@
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+exclude = [".venv", "*/migrations/*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "DJ", "S"]
+ignore = ["S101"]  # assert is fine in tests
+
+[tool.ruff.lint.per-file-ignores]
+"*/settings/*.py" = ["F403", "F405"]
+"*/tests/*.py" = ["S105", "S106"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "core", "billing", "statutory", "employers", "employees", "attendance",
+    "leave", "payroll", "calculators", "statutory_out", "discipline",
+    "documents", "selfservice", "console", "reporting",
+]

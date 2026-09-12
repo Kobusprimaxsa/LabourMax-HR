@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Django
+*.log
+db.sqlite3
+/media/
+/staticfiles/
+
+# Environment — never commit real secrets
+.env
+.env.*
+!.env.example
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Local statutory source documents (large PDFs, keep out of git)
+/statutory-sources/

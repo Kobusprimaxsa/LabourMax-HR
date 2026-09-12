@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: labourmax
+          POSTGRES_USER: labourmax
+          POSTGRES_PASSWORD: labourmax
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+
+    env:
+      DJANGO_SETTINGS_MODULE: labourmax.settings.dev
+      DJANGO_SECRET_KEY: ci-only-key
+      POSTGRES_DB: labourmax
+      POSTGRES_USER: labourmax
+      POSTGRES_PASSWORD: labourmax
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Migrations are complete
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Tenant isolation - must never fail
+        run: pytest -m isolation -v
+
+      - name: Full test suite
+        run: pytest
+
+      - name: Calculator coverage must be total
+        run: pytest --cov=calculators --cov-report=term-missing --cov-fail-under=100
