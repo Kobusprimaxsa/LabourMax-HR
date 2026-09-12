@@ -1,0 +1,15 @@
+# Payslip, contract and certificate PDFs. Needed from phase P8, not before.
+#
+# WeasyPrint needs the GTK native libraries, which are not a pip install on
+# Windows. Install them first:
+#
+#   1. https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer/releases
+#      Run the installer, accept the defaults.
+#   2. Open a NEW PowerShell window.
+#   3. pip install -r requirements-pdf.txt
+#   4. python -c "import weasyprint; print(weasyprint.__version__)"
+#
+# If step 4 fails with a libgobject or cairo error, GTK is installed but not on
+# PATH. Add C:\Program Files\GTK3-Runtime Win64\bin and open a new window.
+
+WeasyPrint>=63

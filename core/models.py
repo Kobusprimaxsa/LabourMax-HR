@@ -13,7 +13,7 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 
-from core.managers import AllTenantsManager, TenantScopedManager
+from core.managers import AllTenantsManager, TenantOptionalManager, TenantScopedManager
 
 # ---------------------------------------------------------------- base classes
 
@@ -65,6 +65,35 @@ class TenantScopedModel(AuditMixin):
     tenant = models.ForeignKey("core.Tenant", on_delete=models.PROTECT, related_name="+")
 
     objects = TenantScopedManager()
+    all_tenants = AllTenantsManager()
+
+    class Meta:
+        abstract = True
+
+
+class TenantOptionalModel(models.Model):
+    """Security and operations records that span the platform and a tenant.
+
+    An OTP issued before the user has picked a tenant, a login attempt that
+    failed before we knew who it was, a platform maintenance job — these have no
+    tenant to attribute them to, so ``tenant_id`` is nullable here and NOT NULL
+    on ``TenantScopedModel``.
+
+    The nullable column is not a loophole: these tables still carry a row-level
+    security policy (``enable_rls_optional``), are still discovered by the
+    generated isolation suite, and a tenant session still never sees the
+    NULL-tenant rows. See ``core/managers.py`` for the three access rules.
+
+    Deliberately NOT inheriting AuditMixin: these tables are written by the
+    system, not by a user editing a record, so created_by/updated_by would be
+    two permanently empty columns on the highest-volume tables in the schema.
+    """
+
+    tenant = models.ForeignKey(
+        "core.Tenant", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    objects = TenantOptionalManager()
     all_tenants = AllTenantsManager()
 
     class Meta:
@@ -220,7 +249,7 @@ class AppUser(AbstractBaseUser, PermissionsMixin, TimestampedModel):
     first_name = models.CharField(max_length=80, blank=True)
     last_name = models.CharField(max_length=80, blank=True)
     user_kind = models.CharField(
-        max_length=20, choices=UserKind.choices, default=UserKind.EMPLOYER, db_index=True
+        max_length=30, choices=UserKind.choices, default=UserKind.EMPLOYER, db_index=True
     )
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
@@ -389,7 +418,7 @@ class TenantOwnershipTransfer(TenantScopedModel):
         return f"transfer {self.from_user_id} -> {self.to_user_id} ({self.status})"
 
 
-class OtpChallenge(TimestampedModel):
+class OtpChallenge(TenantOptionalModel, TimestampedModel):
     """One-time passcodes by SMS.
 
     Deliberately one table for login, document access, step-up auth and mobile
@@ -402,9 +431,6 @@ class OtpChallenge(TimestampedModel):
         STEP_UP = "step_up", "Step-up authentication"
         MOBILE_VERIFICATION = "mobile_verification", "Mobile verification"
 
-    tenant = models.ForeignKey(
-        Tenant, null=True, blank=True, on_delete=models.CASCADE, related_name="+"
-    )
     purpose = models.CharField(max_length=30, choices=Purpose.choices, db_index=True)
     user = models.ForeignKey(
         AppUser, null=True, blank=True, on_delete=models.CASCADE, related_name="+"
@@ -425,8 +451,6 @@ class OtpChallenge(TimestampedModel):
     device_trusted_until = models.DateTimeField(null=True, blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
 
-    objects = models.Manager()
-
     class Meta:
         db_table = "otp_challenge"
         indexes = [models.Index(fields=["mobile_number", "-issued_at"])]
@@ -438,7 +462,7 @@ class OtpChallenge(TimestampedModel):
 # ---------------------------------------------------------------- audit & files
 
 
-class LoginAudit(models.Model):
+class LoginAudit(TenantOptionalModel):
     """Append-only record of every authentication attempt."""
 
     class Outcome(models.TextChoices):
@@ -453,16 +477,11 @@ class LoginAudit(models.Model):
     user = models.ForeignKey(
         AppUser, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
-    tenant = models.ForeignKey(
-        Tenant, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
-    )
     email_attempted = models.EmailField(blank=True, db_index=True)
     outcome = models.CharField(max_length=30, choices=Outcome.choices, db_index=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.CharField(max_length=400, blank=True)
     session_key_hash = models.CharField(max_length=64, blank=True)
-
-    objects = models.Manager()
 
     class Meta:
         db_table = "login_audit"
@@ -472,7 +491,7 @@ class LoginAudit(models.Model):
         return f"{self.outcome} {self.email_attempted} {self.occurred_at:%Y-%m-%d %H:%M}"
 
 
-class AuditLog(models.Model):
+class AuditLog(TenantOptionalModel):
     """Field-level change history. Append-only, partitioned monthly at volume.
 
     The POPIA and SARS answer to 'who changed this figure, when, and what was
@@ -491,9 +510,6 @@ class AuditLog(models.Model):
         API = "api", "API"
 
     occurred_at = models.DateTimeField(default=timezone.now, db_index=True)
-    tenant = models.ForeignKey(
-        Tenant, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
-    )
     actor_user = models.ForeignKey(
         AppUser, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
@@ -517,8 +533,6 @@ class AuditLog(models.Model):
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     request_id = models.UUIDField(null=True, blank=True, db_index=True)
 
-    objects = models.Manager()
-
     class Meta:
         db_table = "audit_log"
         indexes = [
@@ -531,7 +545,7 @@ class AuditLog(models.Model):
         return f"{self.operation} {self.table_name}#{self.record_pk}"
 
 
-class FileObject(AuditMixin):
+class FileObject(TenantScopedModel):
     """Single abstraction over every stored file.
 
     Nothing writes bytes anywhere else, which keeps retention, virus scanning
@@ -544,9 +558,6 @@ class FileObject(AuditMixin):
         INFECTED = "infected", "Infected"
         FAILED = "failed", "Failed"
 
-    tenant = models.ForeignKey(
-        Tenant, null=True, blank=True, on_delete=models.PROTECT, related_name="+"
-    )
     public_uid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     storage_backend = models.CharField(max_length=20, default="s3")
     storage_key = models.CharField(max_length=500, unique=True)
@@ -566,8 +577,6 @@ class FileObject(AuditMixin):
     retention_until = models.DateField(null=True, blank=True, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
 
-    objects = models.Manager()
-
     class Meta:
         db_table = "file_object"
         indexes = [models.Index(fields=["tenant", "scan_status"])]
@@ -576,7 +585,7 @@ class FileObject(AuditMixin):
         return self.original_filename
 
 
-class BackgroundJob(models.Model):
+class BackgroundJob(TenantOptionalModel):
     """Visibility over queued and scheduled work, without reading broker internals."""
 
     class Status(models.TextChoices):
@@ -587,9 +596,6 @@ class BackgroundJob(models.Model):
         RETRYING = "retrying", "Retrying"
         CANCELLED = "cancelled", "Cancelled"
 
-    tenant = models.ForeignKey(
-        Tenant, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
-    )
     job_name = models.CharField(max_length=80, db_index=True)
     task_id = models.CharField(max_length=120, unique=True, null=True, blank=True)
     queued_at = models.DateTimeField(default=timezone.now, db_index=True)
@@ -605,8 +611,6 @@ class BackgroundJob(models.Model):
     triggered_by_user = models.ForeignKey(
         AppUser, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
-
-    objects = models.Manager()
 
     class Meta:
         db_table = "background_job"

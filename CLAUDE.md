@@ -34,6 +34,56 @@ No table holding employer or employee data may be merged without **all three**:
 One employer seeing another employer's employees is the failure that ends this product.
 It is the only defect that cannot be apologised for. A single ORM filter is not enough.
 
+**Two bases, and the choice is deliberate** (decisions D-52, D-53):
+
+| | `TenantScopedModel` | `TenantOptionalModel` |
+|---|---|---|
+| `tenant_id` | NOT NULL | nullable |
+| For | employer and employee data | security and operations records that predate the tenant being known |
+| Tenant session sees | its own rows | its own rows, **never** the NULL-tenant ones |
+| Session with no tenant pinned sees | nothing | the NULL-tenant rows |
+| Platform console sees | nothing — it reads through a tenant context, not around it | everything, inside `platform_context()` only |
+| Migration calls | `enable_rls(table)` | `enable_rls_optional(table)` |
+
+A model that grows a `tenant` field while inheriting **neither** base is caught by
+`test_no_model_carries_a_tenant_column_without_a_base`. Do not work around that test
+by deleting it; pick a base.
+
+`platform_context()` is the **only** way to read across tenants. It lifts the manager
+filter and the RLS policy together, logs every entry, and is named so it is obvious in
+review and trivial to grep. Every use of it in employer-facing code is a bug. A request
+never gets it.
+
+**Layer 1 and layer 2 must agree.** `TenantOptionalManager` mirrors
+`enable_rls_optional()` clause for clause. Change one and you must change the other in
+the same commit, or the disagreement surfaces as a baffling empty result rather than as
+a test failure.
+
+**Migrations call `core/db/rls.py`, and migrations are replayed from zero on every
+test run.** So changing a signature there breaks every past migration that calls it —
+`0001_initial` included. Grep for the function name and update every call site in the
+same commit. Keeping the helpers shared is a deliberate trade: the policy SQL stays in
+one place and cannot drift between tables, at the cost of this one rule to remember.
+Editing an applied migration is otherwise not allowed — a policy *change* gets a new
+migration that re-applies (see `0002_harden_rls_casts`); only a call that would no
+longer import gets edited in place.
+
+**Two PostgreSQL behaviours that will cost you an afternoon if you forget them:**
+
+- `''::bigint` **raises**, it does not evaluate false, and SQL gives no
+  left-to-right evaluation guarantee — so a guard clause does not reliably protect a
+  cast sitting next to it. Policies use `nullif(current_setting(...), '')::bigint`
+  so an unpinned session returns no rows instead of erroring.
+- Django appends `RETURNING id` to every INSERT, and PostgreSQL applies a policy's
+  **USING** clause to rows returned that way. A row the USING clause rejects
+  therefore cannot be inserted at all, reported as the misleading
+  "new row violates row-level security policy". A write-only-never-readable row is
+  not achievable through the ORM.
+
+**Never point the application at a PostgreSQL superuser.** A superuser bypasses row-level
+security, so every RLS assertion would pass with the protection absent. `manage.py dbcheck`
+and the isolation suite both refuse outright if the connected role is one.
+
 ### 2. Anything that changes over time is a row, not a field
 
 Pay rates, positions, bank accounts, tax profiles, work schedules, minimum wages, PAYE
@@ -179,7 +229,7 @@ the directory listing.
 
 ## Stack
 
-Python 3.13+ · Django 5.2 LTS · **PostgreSQL 16/17** · DRF · Celery + Redis ·
+Python 3.14 (dev machine) · Django 5.2 LTS · **PostgreSQL 18** (13+ supported) · DRF · Celery + Redis ·
 Django templates with HTMX and Alpine.js · WeasyPrint for PDFs · S3-compatible storage.
 
 PostgreSQL is settled (decision D-24) and not revisitable — row-level security, exclusion

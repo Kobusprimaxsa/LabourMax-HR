@@ -18,10 +18,14 @@ Nothing else can start until tenant isolation is proven.
 
 - [ ] Virtualenv, dependencies, local PostgreSQL, `.env` from `.env.example`
 - [ ] Django project boots, `manage.py check` clean
-- [ ] `TenantScopedModel`, `AuditMixin`, `TimestampedModel` base classes
-- [ ] `TenantScopedManager` + `all_tenants` escape hatch + `tenant_context()`
+- [ ] `TenantScopedModel`, `TenantOptionalModel`, `AuditMixin`, `TimestampedModel` base classes
+- [ ] `TenantScopedManager`, `TenantOptionalManager`, `all_tenants` escape hatch,
+      `tenant_context()` and `platform_context()`
 - [ ] `TenantContextMiddleware` pinning the tenant to request **and** database session
-- [ ] `core/db/rls.py` helpers; every tenant-scoped migration calls `enable_rls()`
+- [ ] `core/db/rls.py` helpers; every tenant table's migration calls `enable_rls()` or
+      `enable_rls_optional()`
+- [ ] `manage.py dbcheck` — connection, extensions, and a hard refusal if the app role
+      is a PostgreSQL superuser
 - [ ] Models: `platform_setting`, `tenant`, `app_user`, `tenant_membership`,
       `user_invitation`, `tenant_ownership_transfer`, `otp_challenge`, `login_audit`,
       `audit_log`, `file_object`, `background_job`
