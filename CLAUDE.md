@@ -68,6 +68,14 @@ Editing an applied migration is otherwise not allowed — a policy *change* gets
 migration that re-applies (see `0002_harden_rls_casts`); only a call that would no
 longer import gets edited in place.
 
+**Any helper that counts or aggregates tenant-scoped rows must run inside a tenant
+context.** Row-level security makes a missing context look exactly like an empty table:
+the query returns zero rows rather than raising, so the caller reads "none" where the
+truth is "not allowed". `all_tenants` does not help — it bypasses the manager, not the
+policy. A seat-limit check bitten by this returned 0 seats in use and waved through
+every request. When a count comes back suspiciously zero, check the context before
+checking the data.
+
 **Two PostgreSQL behaviours that will cost you an afternoon if you forget them:**
 
 - `''::bigint` **raises**, it does not evaluate false, and SQL gives no

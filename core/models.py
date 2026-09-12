@@ -357,6 +357,18 @@ class TenantMembership(AuditedModel, TenantScopedModel):
     def __str__(self):
         return f"{self.user_id} @ tenant {self.tenant_id} ({self.role})"
 
+    def clean(self):
+        """Friendly seat-limit check for forms and the admin.
+
+        Not the enforcement — the trigger is. ``save()`` does not call this, so
+        service code must call ``core.seats.assert_seat_available`` itself.
+        """
+        super().clean()
+        if self.tenant_id and self.revoked_at is None:
+            from core.seats import assert_seat_available
+
+            assert_seat_available(self.tenant_id, self.role, excluding_membership_id=self.pk)
+
 
 class UserInvitation(AuditedModel, TenantScopedModel):
     """Outstanding invitation for the second admin or an employee login."""
