@@ -320,24 +320,31 @@ def test_tenant_cannot_see_platform_rows_on_optional_tables(db, tenant_a):
     """
     from core.models import AuditLog
 
+    probe = {"business_event": "isolation-probe-platform"}
+
     with tenant_context(None):
         AuditLog.objects.create(
-            table_name="tenant", record_pk="0", operation=AuditLog.Operation.INSERT
+            table_name="tenant",
+            record_pk="0",
+            operation=AuditLog.Operation.INSERT,
+            **probe,
         )
         # Same context that wrote it can read it back.
-        assert AuditLog.objects.count() == 1
+        assert AuditLog.objects.filter(**probe).count() == 1
 
     with tenant_context(tenant_a.id):
-        assert AuditLog.objects.count() == 0
-        assert AuditLog.all_tenants.count() == 0
+        assert AuditLog.objects.filter(**probe).count() == 0
+        assert AuditLog.all_tenants.filter(**probe).count() == 0
 
     with platform_context():
-        assert AuditLog.all_tenants.count() == 1
+        assert AuditLog.all_tenants.filter(**probe).count() == 1
 
 
 @pytest.mark.isolation
 def test_optional_table_tenant_rows_are_still_isolated(db, tenant_a, tenant_b):
     from core.models import AuditLog
+
+    probe = {"business_event": "isolation-probe-tenant"}
 
     with tenant_context(tenant_b.id):
         AuditLog.objects.create(
@@ -345,13 +352,14 @@ def test_optional_table_tenant_rows_are_still_isolated(db, tenant_a, tenant_b):
             table_name="tenant_membership",
             record_pk="1",
             operation=AuditLog.Operation.UPDATE,
+            **probe,
         )
 
     with tenant_context(tenant_a.id):
-        assert AuditLog.objects.count() == 0
+        assert AuditLog.objects.filter(**probe).count() == 0
 
     with tenant_context(tenant_b.id):
-        assert AuditLog.objects.count() == 1
+        assert AuditLog.objects.filter(**probe).count() == 1
 
 
 # --------------------------------------------------------------- business rules

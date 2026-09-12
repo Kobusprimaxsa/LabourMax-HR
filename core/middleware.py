@@ -1,7 +1,10 @@
-"""Resolves the tenant for a request and pins it in two places at once."""
+"""Per-request context: which tenant, and who is acting."""
 
 from __future__ import annotations
 
+import uuid
+
+from core.audit import audit_actor
 from core.managers import _current_tenant_id, apply_session_variables, set_current_tenant_id
 
 
@@ -49,3 +52,50 @@ class TenantContextMiddleware:
         if user is None or not user.is_authenticated:
             return None
         return request.session.get("active_tenant_id")
+
+
+class AuditContextMiddleware:
+    """Records who is acting, from where, under which request.
+
+    Separate from TenantContextMiddleware on purpose: that one is a security
+    control and this one is a record-keeping control. Merging them would mean a
+    change to either risks the other.
+
+    Must run after AuthenticationMiddleware. Without this middleware every change
+    is attributed to "system" — accurate, but useless in a dispute.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        user = getattr(request, "user", None)
+        authenticated = user is not None and user.is_authenticated
+
+        with audit_actor(
+            user_id=user.pk if authenticated else None,
+            kind="user" if authenticated else "system",
+            impersonated_by_user_id=request.session.get("impersonated_by_user_id")
+            if authenticated
+            else None,
+            ip_address=self._client_ip(request),
+            request_id=uuid.uuid4(),
+        ):
+            return self.get_response(request)
+
+    @staticmethod
+    def _client_ip(request):
+        """The client address, trusting X-Forwarded-For only behind our own proxy.
+
+        ``USE_X_FORWARDED_FOR`` must stay False unless the deployment actually
+        sits behind a proxy that overwrites the header, because a client can
+        otherwise put anything it likes in it and choose what the audit trail
+        records about itself.
+        """
+        from django.conf import settings
+
+        if getattr(settings, "USE_X_FORWARDED_FOR", False):
+            forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
+            if forwarded:
+                return forwarded.split(",")[0].strip()
+        return request.META.get("REMOTE_ADDR")

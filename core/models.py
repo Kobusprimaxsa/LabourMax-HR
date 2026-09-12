@@ -13,7 +13,12 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 
-from core.managers import AllTenantsManager, TenantOptionalManager, TenantScopedManager
+from core.audit import AuditedModel
+from core.managers import (
+    AllTenantsManager,
+    TenantOptionalManager,
+    TenantScopedManager,
+)
 
 # ---------------------------------------------------------------- base classes
 
@@ -103,7 +108,7 @@ class TenantOptionalModel(models.Model):
 # ---------------------------------------------------------------- platform
 
 
-class PlatformSetting(AuditMixin):
+class PlatformSetting(AuditedModel, AuditMixin):
     """Global, non-tenant configuration."""
 
     class DataType(models.TextChoices):
@@ -127,7 +132,7 @@ class PlatformSetting(AuditMixin):
         return self.key
 
 
-class Tenant(AuditMixin):
+class Tenant(AuditedModel, AuditMixin):
     """The account boundary. One tenant = one employer subscription."""
 
     class Status(models.TextChoices):
@@ -227,12 +232,17 @@ class AppUserManager(BaseUserManager):
         return self.create_user(email, password, **extra)
 
 
-class AppUser(AbstractBaseUser, PermissionsMixin, TimestampedModel):
+class AppUser(AuditedModel, AbstractBaseUser, PermissionsMixin, TimestampedModel):
     """Authentication principal. Not the same thing as an employee.
 
     An employee is a person on the payroll and usually has no login at all.
     tenant_membership is what joins the two.
     """
+
+    # last_login is written on every sign-in; login_audit already records that
+    # properly, so recording it here would bury real changes under noise.
+    audit_exclude_fields = ("last_login", "failed_login_count", "last_tenant")
+    audit_sensitive_fields = ("password", "mfa_secret")
 
     class UserKind(models.TextChoices):
         PLATFORM_SUPERUSER = "platform_superuser", "Platform superuser"
@@ -289,7 +299,7 @@ class AppUser(AbstractBaseUser, PermissionsMixin, TimestampedModel):
         return self.email
 
 
-class TenantMembership(TenantScopedModel):
+class TenantMembership(AuditedModel, TenantScopedModel):
     """Links a user to a tenant with a role.
 
     The 'max two admin users' rule is enforced here by trigger and by
@@ -348,7 +358,7 @@ class TenantMembership(TenantScopedModel):
         return f"{self.user_id} @ tenant {self.tenant_id} ({self.role})"
 
 
-class UserInvitation(TenantScopedModel):
+class UserInvitation(AuditedModel, TenantScopedModel):
     """Outstanding invitation for the second admin or an employee login."""
 
     email = models.EmailField(db_index=True)
@@ -372,7 +382,7 @@ class UserInvitation(TenantScopedModel):
         return f"{self.email} -> tenant {self.tenant_id}"
 
 
-class TenantOwnershipTransfer(TenantScopedModel):
+class TenantOwnershipTransfer(AuditedModel, TenantScopedModel):
     """Two-sided handover of tenant ownership.
 
     Both parties re-authenticate. A one-click transfer would be a one-click
@@ -545,12 +555,16 @@ class AuditLog(TenantOptionalModel):
         return f"{self.operation} {self.table_name}#{self.record_pk}"
 
 
-class FileObject(TenantScopedModel):
+class FileObject(AuditedModel, TenantScopedModel):
     """Single abstraction over every stored file.
 
     Nothing writes bytes anywhere else, which keeps retention, virus scanning
     and deletion in one place.
     """
+
+    # storage_key is derived, and checksum changing means the bytes changed,
+    # which scan_status and size_bytes already tell the reader.
+    audit_exclude_fields = ("storage_key", "checksum_sha256")
 
     class ScanStatus(models.TextChoices):
         PENDING = "pending", "Pending"

@@ -63,7 +63,15 @@ MIDDLEWARE = [
     # Resolves the tenant and pins it for the request AND the database session.
     # Must come after AuthenticationMiddleware.
     "core.middleware.TenantContextMiddleware",
+    # Records who is acting, for the audit trail. Must come after
+    # AuthenticationMiddleware; without it every change is attributed to "system".
+    "core.middleware.AuditContextMiddleware",
 ]
+
+# Trust X-Forwarded-For for the client IP written into the audit trail. Keep this
+# False unless the deployment sits behind a proxy that OVERWRITES the header - a
+# client can otherwise choose what the audit trail records about itself.
+USE_X_FORWARDED_FOR = False
 
 ROOT_URLCONF = "labourmax.urls"
 WSGI_APPLICATION = "labourmax.wsgi.application"
