@@ -42,6 +42,12 @@ jobs:
       - name: Lint
         run: ruff check .
 
+      # ruff formats Python inside Markdown code blocks too, so CLAUDE.md and
+      # docs/ are covered by this. Local runs use `ruff format .`; CI must only
+      # check, never rewrite.
+      - name: Format
+        run: ruff format --check .
+
       - name: Django system checks
         run: python manage.py check --fail-level WARNING
 
@@ -54,5 +60,16 @@ jobs:
       - name: Full test suite
         run: pytest
 
+      # 100% branch coverage on calculators/ is non-negotiable (CLAUDE.md), but
+      # coverage treats an empty measurement as an error, so the gate would fail
+      # for the wrong reason until P7 puts code there. The guard removes itself
+      # the moment the first calculator lands.
       - name: Calculator coverage must be total
-        run: pytest --cov=calculators --cov-report=term-missing --cov-fail-under=100
+        run: |
+          if compgen -G "calculators/**/*.py" > /dev/null && \
+             [ -n "$(find calculators -name '*.py' ! -name '__init__.py' -print -quit)" ]; then
+            pytest --cov=calculators --cov-report=term-missing --cov-fail-under=100
+          else
+            echo "calculators/ holds no code yet - the coverage gate arrives with P7."
+          fi
+        shell: bash

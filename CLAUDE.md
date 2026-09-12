@@ -139,6 +139,7 @@ Rounding to 2 decimals, `ROUND_HALF_UP`, happens at the payslip line and nowhere
 
 ```python
 from decimal import Decimal, ROUND_HALF_UP
+
 amount = (units * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 ```
 
