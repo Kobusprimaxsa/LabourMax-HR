@@ -269,7 +269,7 @@ def _snapshot(instance) -> dict:
 # ------------------------------------------------------------------- receivers
 
 
-def _write(instance, operation: str, changed_fields: dict):
+def _write(instance, operation: str, changed_fields: dict, event: str | None = None):
     from core.models import AuditLog
 
     tenant_id = getattr(instance, "tenant_id", None)
@@ -290,10 +290,21 @@ def _write(instance, operation: str, changed_fields: dict):
         record_pk=instance.pk,
         operation=operation,
         changed_fields=changed_fields,
-        business_event=_business_event.get(),
+        business_event=event or _business_event.get(),
         ip_address=_ip_address.get(),
         request_id=_request_id.get(),
     )
+
+
+def _write_read_event(instance, *, business_event: str, detail: dict | None = None):
+    """Record that a row was READ. For documents, not for ordinary queries.
+
+    A subject access request under POPIA asks who looked at a document, not only
+    who changed it, and a payslip disclosure is a read. Auditing every SELECT in
+    the system would be useless noise; auditing every document download is the
+    record that answers the question actually asked.
+    """
+    _write(instance, "read", detail or {"business_event": business_event}, event=business_event)
 
 
 def on_post_init(sender, instance, **kwargs):

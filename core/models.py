@@ -524,6 +524,10 @@ class AuditLog(TenantOptionalModel):
         INSERT = "insert", "Insert"
         UPDATE = "update", "Update"
         DELETE = "delete", "Delete"
+        # A document download is a disclosure. POPIA subject access requests ask
+        # who LOOKED at a payslip, not only who changed it, so reads of documents
+        # are recorded here. Ordinary queries are not - that would be noise.
+        READ = "read", "Read"
 
     class ActorKind(models.TextChoices):
         USER = "user", "User"

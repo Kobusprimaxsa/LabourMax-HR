@@ -16,28 +16,38 @@ Table counts and column detail come from the Database Specification workbook, sh
 
 Nothing else can start until tenant isolation is proven.
 
-- [ ] Virtualenv, dependencies, local PostgreSQL, `.env` from `.env.example`
-- [ ] Django project boots, `manage.py check` clean
-- [ ] `TenantScopedModel`, `TenantOptionalModel`, `AuditMixin`, `TimestampedModel` base classes
-- [ ] `TenantScopedManager`, `TenantOptionalManager`, `all_tenants` escape hatch,
+- [x] Virtualenv, dependencies, local PostgreSQL, `.env` from `.env.example`
+- [x] Django project boots, `manage.py check` clean
+- [x] `TenantScopedModel`, `TenantOptionalModel`, `AuditMixin`, `TimestampedModel` base classes
+- [x] `TenantScopedManager`, `TenantOptionalManager`, `all_tenants` escape hatch,
       `tenant_context()` and `platform_context()`
-- [ ] `TenantContextMiddleware` pinning the tenant to request **and** database session
-- [ ] `core/db/rls.py` helpers; every tenant table's migration calls `enable_rls()` or
+- [x] `TenantContextMiddleware` pinning the tenant to request **and** database session
+- [x] `core/db/rls.py` helpers; every tenant table's migration calls `enable_rls()` or
       `enable_rls_optional()`
-- [ ] `manage.py dbcheck` — connection, extensions, and a hard refusal if the app role
+- [x] `manage.py dbcheck` — connection, extensions, and a hard refusal if the app role
       is a PostgreSQL superuser
-- [ ] Models: `platform_setting`, `tenant`, `app_user`, `tenant_membership`,
+- [x] Models: `platform_setting`, `tenant`, `app_user`, `tenant_membership`,
       `user_invitation`, `tenant_ownership_transfer`, `otp_challenge`, `login_audit`,
       `audit_log`, `file_object`, `background_job`
-- [ ] Custom user model wired as `AUTH_USER_MODEL`, Argon2id hashing
-- [ ] Max-two-admin-users rule: column default, database trigger, application check
-- [ ] Audit log signal wiring — field-level diffs, masked sensitive fields
-- [ ] File storage abstraction with virus-scan status gate
-- [ ] Generated tenant isolation suite passing
+- [x] Custom user model wired as `AUTH_USER_MODEL`, Argon2id hashing
+- [x] Max-two-admin-users rule: column default, database trigger, application check
+- [x] Audit log signal wiring — field-level diffs, masked sensitive fields
+- [x] File storage abstraction with virus-scan status gate
+- [x] Generated tenant isolation suite passing
 - [ ] CI green: lint, migration check, isolation suite, full tests
 
 **Done when:** an automated cross-tenant leakage suite runs on every commit and passes,
 and RLS is enabled *and forced* on every tenant-scoped table.
+
+**Status: 124 tests passing locally. Outstanding: CI green end to end.**
+
+Four defects of one shape were found and fixed during this phase, all of them
+protection that read convincingly in the source and did nothing at runtime: five
+models carrying a tenant column with no scoped manager or policy; `tenant_context()`
+never setting the database session variable, so RLS was dormant in every test and
+task; `append_only()` being a `REVOKE` against `PUBLIC`, which does not bind the
+table owner; and service functions querying tenant-scoped rows with no tenant pinned,
+where RLS returns zero rows rather than an error. See `CLAUDE.md`.
 
 ---
 

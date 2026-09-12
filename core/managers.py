@@ -128,6 +128,32 @@ def tenant_context(tenant_id: int | None) -> _ContextBlock:
     return _ContextBlock(tenant_id, platform_access=False)
 
 
+def tenant_context_of(instance) -> _ContextBlock:
+    """Pin the tenant that owns this row, for a block of work on it.
+
+    Use this in every service function that reads or writes a tenant-scoped row
+    it was handed. Without it the query runs with no tenant pinned, the FORCED
+    row-level security policy matches nothing, and what happens next depends
+    entirely on how the caller asked:
+
+    - a ``count()`` returns 0, which reads as "none" rather than "not allowed"
+    - a ``save(update_fields=...)`` raises "Save with update_fields did not
+      affect any rows", because Django checks the affected count
+    - a plain ``save()`` silently writes nothing at all
+
+    Only the middle one tells you what is wrong. That is the argument for pinning
+    deliberately rather than relying on the caller to already be in context.
+    """
+    tenant_id = getattr(instance, "tenant_id", None)
+    if tenant_id is None:
+        raise TenantContextError(
+            f"{type(instance).__name__} has no tenant_id, so its tenant cannot be "
+            f"pinned. An unsaved instance, or a tenant-optional model - those "
+            f"should use tenant_context() explicitly."
+        )
+    return _ContextBlock(tenant_id, platform_access=False)
+
+
 def platform_context() -> _ContextBlock:
     """Grant cross-tenant visibility for a block of work.
 

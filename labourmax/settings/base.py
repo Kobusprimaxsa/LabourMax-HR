@@ -132,6 +132,10 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
+# Enforced by core.files.store before any bytes are written. Checking after the
+# fact means a large upload has already cost the bandwidth and the disk.
+FILE_UPLOAD_MAX_BYTES = 20 * 1024 * 1024
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # --- Labourmax settings -------------------------------------------------------

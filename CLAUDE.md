@@ -68,13 +68,25 @@ Editing an applied migration is otherwise not allowed — a policy *change* gets
 migration that re-applies (see `0002_harden_rls_casts`); only a call that would no
 longer import gets edited in place.
 
-**Any helper that counts or aggregates tenant-scoped rows must run inside a tenant
-context.** Row-level security makes a missing context look exactly like an empty table:
-the query returns zero rows rather than raising, so the caller reads "none" where the
-truth is "not allowed". `all_tenants` does not help — it bypasses the manager, not the
-policy. A seat-limit check bitten by this returned 0 seats in use and waved through
-every request. When a count comes back suspiciously zero, check the context before
-checking the data.
+**Every service function that touches a tenant-scoped row must pin the tenant.**
+Use `tenant_context_of(instance)` for a row you were handed, or `tenant_context(id)`
+when you only have the id. This has bitten this codebase four times, and the reason it
+keeps happening is that the failure mode depends on how you asked:
+
+| How you queried | What RLS does with no tenant pinned |
+|---|---|
+| `count()` / `filter()` | returns 0 rows — reads as "none", not "not allowed" |
+| `save(update_fields=[...])` | raises "Save with update_fields did not affect any rows" |
+| plain `save()` | **silently writes nothing and reports success** |
+| `INSERT` | "new row violates row-level security policy" |
+
+Only two of those four tell you what is actually wrong. `all_tenants` does not help —
+it bypasses the manager, not the policy. A seat-limit check bitten by this returned
+0 seats in use and waved through every request. When a count comes back suspiciously
+zero, or a save appears to do nothing, check the context before you check the data.
+
+A scanner callback, a Celery task and a retention job all arrive with no request and
+therefore no tenant context, so this is the ordinary path, not an edge case.
 
 **Two PostgreSQL behaviours that will cost you an afternoon if you forget them:**
 
