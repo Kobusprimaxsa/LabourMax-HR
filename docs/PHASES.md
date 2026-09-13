@@ -134,7 +134,7 @@ constraint refuses a blank one on every cited table.
 - [x] `employer_setting`, seeded from sector at onboarding (D-79, D-80)
 - [ ] **Municipality-to-area data** — `municipality_area_map` is empty, so no contract
       cleaning workplace can resolve an area yet
-- [ ] `pay_group` and the pay period generator, all five frequencies
+- [x] `pay_group` and the pay period generator, all five frequencies (D-82, D-83, D-84, D-85)
 - [ ] `payroll_component` catalogue, system components seeded and locked
 
 **Done when:** an employer completes onboarding and generates a full year of pay periods.

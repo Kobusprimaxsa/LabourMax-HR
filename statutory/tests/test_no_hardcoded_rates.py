@@ -62,10 +62,25 @@ DJANGO_SCAFFOLDING = {"apps.py", "admin.py", "models.py", "__init__.py"}
 # The only decimal constants that are not statutory figures.
 #
 # "0.01" is the rounding quantum from invariant 6 — rounding to two places happens at
-# the payslip line, and it needs a literal to quantize against. The rest are identity
-# and zero values, and "100" converts a percentage to a fraction, which is arithmetic
-# rather than a rate.
-PERMITTED_DECIMAL_CONSTANTS = {"0", "0.00", "0.0000", "1", "1.00", "100", "100.00", "-1"}
+# the payslip line, and it needs a literal to quantize against. "0.001" is the same
+# thing one place further out, for the three-decimal columns like
+# pay_period.working_days_in_period. The rest are identity and zero values, and "100"
+# converts a percentage to a fraction, which is arithmetic rather than a rate.
+#
+# Nothing whose VALUE could be a statutory figure belongs here. A quantum is a unit of
+# rounding; a rate is a number somebody gazetted.
+PERMITTED_DECIMAL_CONSTANTS = {
+    "0",
+    "0.00",
+    "0.0000",
+    "0.001",
+    "0.01",
+    "1",
+    "1.00",
+    "100",
+    "100.00",
+    "-1",
+}
 
 
 def application_sources() -> list[pathlib.Path]:

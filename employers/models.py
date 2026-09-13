@@ -512,3 +512,155 @@ class Workplace(AuditedModel, TenantScopedModel):
 
     def __str__(self):
         return self.name
+
+
+class PayGroup(AuditedModel, TenantScopedModel):
+    """What a payroll run actually targets: a basis plus a calendar.
+
+    Two employees on the same weekly basis but different week-ending days belong in
+    different runs, which is why the calendar lives here and not on the employee
+    (D-15).
+
+    Every column below is the workbook's, including the shape of the period rules.
+    The five ``pay_frequency`` values are the five bases in the brief — hourly and
+    daily are attendance-driven, the other three are salaried (D-25), and the
+    attendance grid uses that distinction to decide whether to pre-fill.
+
+    **``default_days_per_week`` and ``default_hours_per_day`` are the employer's
+    working pattern, not the statutory maximum.** They default to 5 and 9 because
+    that is the commonest pattern, and it happens to coincide with the BCEA's
+    ordinary-hours shape — which is a coincidence worth naming, because the statutory
+    limit still lives in ``working_time_rule_set`` with its citation. ``clean()``
+    checks the pattern against the sector's rule set rather than a constant.
+    """
+
+    class PayFrequency(models.TextChoices):
+        HOURLY = "hourly", "Hourly"
+        DAILY = "daily", "Daily"
+        WEEKLY = "weekly", "Weekly"
+        FORTNIGHTLY = "fortnightly", "Fortnightly"
+        MONTHLY = "monthly", "Monthly"
+
+    class PeriodEndRule(models.TextChoices):
+        CALENDAR_MONTH_END = "calendar_month_end", "Last day of the calendar month"
+        FIXED_DAY_OF_MONTH = "fixed_day_of_month", "A fixed day of the month"
+        WEEK_ENDING_DAY = "week_ending_day", "A fixed weekday"
+
+    #: The frequencies whose pay follows captured attendance rather than a salary.
+    ATTENDANCE_DRIVEN = {PayFrequency.HOURLY, PayFrequency.DAILY}
+
+    employer = models.ForeignKey(Employer, on_delete=models.PROTECT, related_name="pay_groups")
+    name = models.CharField(max_length=100, help_text="e.g. 'Monthly staff', 'Weekly cleaners'.")
+
+    pay_frequency = models.CharField(max_length=20, choices=PayFrequency.choices, db_index=True)
+    period_end_rule = models.CharField(
+        max_length=30,
+        choices=PeriodEndRule.choices,
+        default=PeriodEndRule.CALENDAR_MONTH_END,
+    )
+    week_ending_weekday = models.SmallIntegerField(
+        null=True, blank=True, help_text="0=Monday .. 6=Sunday. Weekly and fortnightly."
+    )
+    period_end_day_of_month = models.SmallIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "1-28 for fixed_day_of_month. Capped at 28 so February behaves like every "
+            "other month instead of needing its own clamping rule."
+        ),
+    )
+    payment_day_offset = models.SmallIntegerField(
+        default=0, help_text="Days after period end that payment is made."
+    )
+    first_period_start = models.DateField(help_text="Anchors period generation.")
+
+    default_days_per_week = models.DecimalField(max_digits=4, decimal_places=2, default=5)
+    default_hours_per_day = models.DecimalField(max_digits=5, decimal_places=2, default=9)
+
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "pay_group"
+        ordering = ["employer_id", "name"]
+        indexes = [models.Index(fields=["tenant", "pay_frequency"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employer", "name"], name="uniq_pay_group_per_employer"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(period_end_day_of_month__isnull=True)
+                | models.Q(period_end_day_of_month__gte=1, period_end_day_of_month__lte=28),
+                name="pay_group_period_end_day_is_1_to_28",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(week_ending_weekday__isnull=True)
+                | models.Q(week_ending_weekday__gte=0, week_ending_weekday__lte=6),
+                name="pay_group_week_ending_weekday_is_a_weekday",
+            ),
+            # The rule and its parameter travel together. A week_ending_day rule with
+            # no weekday, or a fixed_day rule with no day, is a calendar nobody can
+            # generate from - and it fails at generation time rather than here.
+            models.CheckConstraint(
+                condition=~models.Q(period_end_rule="week_ending_day")
+                | models.Q(week_ending_weekday__isnull=False),
+                name="pay_group_week_ending_rule_needs_a_weekday",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(period_end_rule="fixed_day_of_month")
+                | models.Q(period_end_day_of_month__isnull=False),
+                name="pay_group_fixed_day_rule_needs_a_day",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(default_days_per_week__gt=0, default_days_per_week__lte=7),
+                name="pay_group_days_per_week_is_a_week",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(default_hours_per_day__gt=0, default_hours_per_day__lte=24),
+                name="pay_group_hours_per_day_is_a_day",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.pay_frequency})"
+
+    @property
+    def is_attendance_driven(self) -> bool:
+        """Hourly and daily. The attendance grid does not pre-fill for these (D-25)."""
+        return self.pay_frequency in self.ATTENDANCE_DRIVEN
+
+    def clean(self):
+        """Check the working pattern against the sector's rule set, not a constant.
+
+        A pay group claiming ten ordinary hours a day on a five-day week exceeds BCEA
+        s9, and the figure it exceeds lives in ``working_time_rule_set`` with a
+        citation. Validation rather than a CHECK constraint because the limit is
+        effective-dated and sector-specific — a database constraint would have to
+        hard-code it, which is the one thing that must not happen.
+        """
+        super().clean()
+        from statutory import resolve
+
+        try:
+            rules = resolve.working_time_rules(self.employer.sector, self.first_period_start)
+        except resolve.StatutoryValueMissingError:
+            # No rule set loaded for this date. The staleness guard blocks the payroll
+            # run itself; refusing to define a pay group would block onboarding for a
+            # reason the employer cannot act on.
+            return
+
+        limit = (
+            rules.ordinary_hours_per_day_5day
+            if self.default_days_per_week <= 5
+            else rules.ordinary_hours_per_day_6day
+        )
+        if self.default_hours_per_day > limit:
+            raise ValidationError(
+                {
+                    "default_hours_per_day": (
+                        f"{self.default_hours_per_day} hours a day over "
+                        f"{self.default_days_per_week} days exceeds the {limit} ordinary "
+                        f"hours this sector allows. Hours beyond that are overtime, and "
+                        f"a pay group cannot treat them as ordinary."
+                    )
+                }
+            )

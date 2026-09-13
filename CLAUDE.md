@@ -361,7 +361,7 @@ CI. Tenant isolation proven at all three layers, field-level audit trail with se
 masking, the administrative seat limit enforced by trigger, and file storage behind a
 virus-scan gate.
 
-**P3 — Employer Setup: started** (13 September 2026). 413 tests green. `employer`,
+**P3 — Employer Setup: started** (13 September 2026). 439 tests green. `employer`,
 `employer_statutory_registration` and `employer_bank_account` exist, tenant-scoped and picked
 up automatically by the generated isolation suite. `core/db/fields.py` brings the first
 encrypted column in the schema, unsearchable by design (D-77). Two structural findings came
@@ -373,8 +373,11 @@ municipality and stored with the date it was read (D-81) — and `municipality_a
 **empty**, so no contract cleaning workplace resolves an area today. That is a data-sourcing
 job, and until it is done onboarding a contract cleaning employer stops at the address.
 
-Still to come in P3: `pay_group` and the pay period generator, and the `payroll_component`
-catalogue.
+`pay_group` and the period generator are in, built to sheet 02 of the workbook (D-82 settled a
+design question against Claude's proposal — the workbook wins). A period belongs to the tax year
+its **payment date** falls in, not its period end (D-83).
+
+Still to come in P3: the `payroll_component` catalogue.
 
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting
 verification** (13 September 2026). 351 tests green. All twenty tables exist with their
