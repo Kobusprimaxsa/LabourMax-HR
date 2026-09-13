@@ -222,8 +222,17 @@ Things that are easy to get wrong, and have been got wrong before:
 - **Commission is excluded** from the UIF contribution base. Bonuses are not.
 - **Bonuses in PAYE**: annualise regular pay ×12, then add the annual payment **once**.
   Multiplying a bonus by twelve is the classic December over-deduction.
-- **Parental leave** is under an interim Constitutional Court reading-in (4 months + 10 days,
-  shareable). Held as effective-dated data so remedial legislation is a data load.
+- **Parental leave** is under an interim Constitutional Court reading-in — *Van Wyk v Minister
+  of Employment and Labour* [2025] ZACC 20, 3 October 2025: four months and ten days for all
+  parents together, divided as they agree and split as equally as possible if they cannot.
+  The declaration of invalidity is suspended 36 months for Parliament to legislate, so this
+  **will** change. Stored as months plus days, never as a day count.
+- **The maternity restriction runs after the birth, not before it.** A birth mother may not
+  work for six weeks after giving birth unless certified fit; separately, she may start leave
+  up to four weeks before. Two different rules, two columns.
+- **Domestic workers depart from the BCEA in three places** (SD7): five days' family
+  responsibility leave rather than three, fifteen hours' overtime a week rather than ten, and
+  four weeks' notice from six months' service rather than two.
 
 `reference_data_version.data_current_through` is the **staleness guard**: a payroll run
 whose period ends beyond it raises a *blocking* validation issue rather than silently
@@ -326,25 +335,25 @@ CI. Tenant isolation proven at all three layers, field-level audit trail with se
 masking, the administrative seat limit enforced by trigger, and file storage behind a
 virus-scan gate.
 
-**P2 — Statutory Reference Data: structure complete, first data load in, awaiting
-verification** (13 September 2026). 317 tests green. All twenty tables exist with their
+**P2 — Statutory Reference Data: structure complete, data loaded, awaiting
+verification** (13 September 2026). 323 tests green. All twenty tables exist with their
 constraints; `statutory/resolve.py` is the only place that answers "what applied on this date";
 the loader refuses any file with an uncited row and never updates an existing one;
 `loadstatutory` and `verifystatutory` are two commands because loading and verifying are two
 people; and the no-hard-coded-rate rule runs as a test on every commit rather than as a grep
 somebody remembers.
 
-`reference/ref-2026.03.01.json` holds 61 rows researched from primary sources: the 1 March 2026
+`reference/ref-2026.03.01.json` holds 61 rows and `reference/ref-2026.03.01-rules.json` six more, researched from primary sources: the 1 March 2026
 wage floors, the SARS 2027 tax year tables, the contribution parameters, public holidays for
-2026 and 2027, and the maintenance calendar. It is loaded and reconciles, and it is **not
+2026 and 2027, the maintenance calendar, and the BCEA and domestic-sector rule sets. It is loaded and reconciles, and it is **not
 verified** — `in_force_on()` cannot see it, so every payroll run is still blocked. That is
 correct and deliberate.
 
 **What remains in P2:**
 
 - Kobus verifies every figure against its source document, then `verifystatutory`
-- The three sector rule sets — leave, working time, termination — from the BCEA, SD7 and SD1.
-  Not researched yet, and the largest remaining reading job
+- Contract cleaning rule sets. SD1 has not been read, so contract cleaning falls back to the
+  BCEA default — visibly wrong for that sector, which is the point (D-66)
 - Contract cleaning **Area C (KwaZulu-Natal)** has no rate: the gazette states none and points
   at the BCCCI collective agreement, which nobody has. A KwaZulu-Natal contract cleaning
   employer cannot be onboarded until it is loaded

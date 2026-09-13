@@ -977,14 +977,36 @@ class LeaveRuleSet(SectorRuleSet):
     family_resp_min_service_months = models.SmallIntegerField()
     family_resp_min_days_per_week = models.SmallIntegerField()
 
-    # Under an interim Constitutional Court reading-in: four months plus ten days,
-    # shareable between parents. Held as data precisely because remedial
-    # legislation is expected, and when it arrives this must be a data load rather
-    # than a release.
-    parental_leave_total_days = models.SmallIntegerField()
+    # Van Wyk v Minister of Employment and Labour [2025] ZACC 20, handed down
+    # 3 October 2025: all parents together get four months and ten days, divided as
+    # they agree and split as equally as possible if they cannot. The declaration of
+    # invalidity is suspended for 36 months for Parliament to legislate, so this is
+    # an interim position that WILL change - which is exactly why it is data.
+    #
+    # Stored as months plus days rather than as a day count, because the statute
+    # says months: four calendar months from 15 January is not the same number of
+    # days as four from 15 June, and converting to days here would bake one
+    # interpretation into the reference data. The leave engine in P6 does the
+    # calendar arithmetic against the actual start date.
+    parental_leave_total_months = models.SmallIntegerField(
+        help_text="Calendar months. Four, under the interim reading-in."
+    )
+    parental_leave_additional_days = models.SmallIntegerField(
+        help_text="Days on top of the months. Ten, under the interim reading-in."
+    )
     parental_leave_shareable = models.BooleanField()
-    maternity_pre_birth_reserved_days = models.SmallIntegerField(
-        help_text="Days reserved to the birth mother, if any."
+
+    # Two distinct rules, and conflating them is how a payroll system tells a woman
+    # she may work when she may not. The first is the earliest she may START; the
+    # second is a period she may not work AT ALL, which is the one with teeth.
+    maternity_earliest_start_weeks_before_birth = models.SmallIntegerField(
+        help_text="How early leave may begin before the expected date of birth."
+    )
+    maternity_no_work_weeks_after_birth = models.SmallIntegerField(
+        help_text=(
+            "A birth mother may not work for this many weeks after the birth unless a "
+            "medical practitioner certifies her fit. Not merely leave she may take."
+        )
     )
 
     class Meta:
@@ -1090,7 +1112,14 @@ class TerminationRuleSet(SectorRuleSet):
     annual_bonus_weeks = models.DecimalField(
         max_digits=6, decimal_places=3, help_text="Contract cleaning: 4.333 weeks under SD1."
     )
-    annual_bonus_month = models.SmallIntegerField(help_text="Calendar month of normal payment.")
+    annual_bonus_month = models.SmallIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Calendar month of normal payment. NULL where the sector has no statutory "
+            "bonus at all - which is the domestic sector and the BCEA default."
+        ),
+    )
     annual_bonus_pro_rata_on_termination = models.BooleanField()
     annual_bonus_min_service_months = models.SmallIntegerField()
 
@@ -1101,7 +1130,8 @@ class TerminationRuleSet(SectorRuleSet):
             source_reference_not_blank("termination_rule_set"),
             rule_set_no_overlap("termination_rule_set"),
             models.CheckConstraint(
-                condition=models.Q(annual_bonus_month__gte=1, annual_bonus_month__lte=12),
+                condition=models.Q(annual_bonus_month__isnull=True)
+                | models.Q(annual_bonus_month__gte=1, annual_bonus_month__lte=12),
                 name="termination_annual_bonus_month_is_a_month",
             ),
         ]

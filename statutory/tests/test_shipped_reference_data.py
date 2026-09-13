@@ -151,3 +151,84 @@ def test_the_version_is_loaded_but_not_in_force(loaded):
     assert version.verified_at is None
     assert version.is_usable is False
     assert ReferenceDataVersion.in_force_on(MARCH_2026) is None
+
+
+# ------------------------------------------------------------------- rule sets
+
+RULES_FIXTURE = FIXTURE.parent / "ref-2026.03.01-rules.json"
+
+
+@pytest.fixture
+def rules_loaded(loaded):
+    document = json.loads(RULES_FIXTURE.read_text(encoding="utf-8"))
+    return load_reference_data(document)
+
+
+@pytest.mark.statutory
+def test_the_rule_set_fixture_loads(rules_loaded):
+    assert rules_loaded.created["leave_rule_set"] == 2
+    assert rules_loaded.created["working_time_rule_set"] == 2
+    assert rules_loaded.created["termination_rule_set"] == 2
+
+
+@pytest.mark.statutory
+def test_the_domestic_sector_overrides_the_bcea_where_sd7_differs(rules_loaded):
+    """Three places SD7 departs from the Act, and getting any of them wrong
+    underpays or over-restricts every domestic employee in the system."""
+    domestic = Sector.objects.get(code=Sector.Code.DOMESTIC)
+    on = datetime.date(2026, 6, 1)
+
+    assert resolve.leave_rules(domestic, on).family_responsibility_days == 5
+    assert resolve.leave_rules(None, on).family_responsibility_days == 3
+
+    assert resolve.working_time_rules(domestic, on).max_overtime_hours_per_week == Decimal("15.00")
+    assert resolve.working_time_rules(None, on).max_overtime_hours_per_week == Decimal("10.00")
+
+    assert resolve.termination_rules(domestic, on).notice_weeks_6_months_and_over == Decimal("4.00")
+    assert resolve.termination_rules(None, on).notice_weeks_6_months_and_over == Decimal("2.00")
+
+
+@pytest.mark.statutory
+def test_contract_cleaning_falls_back_to_the_bcea_because_sd1_is_not_loaded(rules_loaded):
+    """Visibly wrong for that sector, and visible is the point.
+
+    SD1 has not been read. A contract cleaning employer therefore resolves to the
+    BCEA default, which understates their notice periods and knows nothing of the
+    statutory annual bonus. Loading a contract cleaning row that merely copied the
+    BCEA values would hide exactly this, under a citation claiming SD1.
+    """
+    cleaning = Sector.objects.get(code=Sector.Code.CONTRACT_CLEANING)
+    rules = resolve.termination_rules(cleaning, datetime.date(2026, 6, 1))
+
+    assert rules.sector is None
+    assert rules.annual_bonus_weeks == Decimal("0.000")
+    assert cleaning.has_statutory_annual_bonus is True, (
+        "The sector flag says a bonus exists while no rule set carries its terms - "
+        "which is the gap this test is here to keep visible."
+    )
+
+
+@pytest.mark.statutory
+def test_parental_leave_is_stored_as_months_plus_days(rules_loaded):
+    """Four calendar months from January is not four from June. The statute says
+    months, so the reference data says months."""
+    rules = resolve.leave_rules(None, datetime.date(2026, 6, 1))
+    assert rules.parental_leave_total_months == 4
+    assert rules.parental_leave_additional_days == 10
+    assert rules.parental_leave_shareable is True
+
+
+@pytest.mark.statutory
+def test_the_post_birth_restriction_is_stored_separately_from_the_earliest_start(rules_loaded):
+    rules = resolve.leave_rules(None, datetime.date(2026, 6, 1))
+    assert rules.maternity_no_work_weeks_after_birth == 6
+    assert rules.maternity_earliest_start_weeks_before_birth == 4
+
+
+@pytest.mark.statutory
+def test_a_column_with_no_statutory_figure_says_so_in_its_notes(rules_loaded):
+    """Zero in night_allowance_value means the Act sets no amount, not that the
+    allowance is nil. A reader who misses that underpays every night shift."""
+    rules = resolve.working_time_rules(None, datetime.date(2026, 6, 1))
+    assert rules.night_allowance_value == Decimal("0.0000")
+    assert "NO STATUTORY FIGURE" in rules.notes

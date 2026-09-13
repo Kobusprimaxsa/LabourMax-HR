@@ -107,7 +107,8 @@ The most important phase in the build. Can overlap P1.
       contribution parameters, public holidays 2026 and 2027, the watch calendar. 61 rows,
       each with a citation, loaded and unverified
 - [ ] **Kobus verifies every figure against its source**, then `verifystatutory`
-- [ ] The three sector rule sets from the BCEA, SD7 and SD1 — the largest reading job left
+- [x] Rule sets, BCEA default and domestic (SD7): `reference/ref-2026.03.01-rules.json`
+- [ ] Contract cleaning rule sets — Sectoral Determination 1 has not been read (D-66)
 - [ ] Contract cleaning Area C (KwaZulu-Natal): the BCCCI collective agreement (D-63)
 - [ ] `sars_source_code` and the bank list
 - [ ] Golden tests reproducing the published SARS and DEL worked examples
