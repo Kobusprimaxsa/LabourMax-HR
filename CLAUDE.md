@@ -361,16 +361,20 @@ CI. Tenant isolation proven at all three layers, field-level audit trail with se
 masking, the administrative seat limit enforced by trigger, and file storage behind a
 virus-scan gate.
 
-**P3 — Employer Setup: started** (13 September 2026). 388 tests green. `employer`,
+**P3 — Employer Setup: started** (13 September 2026). 413 tests green. `employer`,
 `employer_statutory_registration` and `employer_bank_account` exist, tenant-scoped and picked
 up automatically by the generated isolation suite. `core/db/fields.py` brings the first
 encrypted column in the schema, unsearchable by design (D-77). Two structural findings came
 out of it: FORCE RLS defeats foreign key enforcement (D-76) and the reference tables now refuse
 DELETE by trigger.
 
-Still to come in P3: `workplace` with area resolution, `pay_group` and the pay period
-generator for all five frequencies, `employer_setting` seeded from sector, and the
-`payroll_component` catalogue.
+`workplace` and `employer_setting` are in too. A workplace's wage area is derived from its
+municipality and stored with the date it was read (D-81) — and `municipality_area_map` is
+**empty**, so no contract cleaning workplace resolves an area today. That is a data-sourcing
+job, and until it is done onboarding a contract cleaning employer stops at the address.
+
+Still to come in P3: `pay_group` and the pay period generator, and the `payroll_component`
+catalogue.
 
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting
 verification** (13 September 2026). 351 tests green. All twenty tables exist with their

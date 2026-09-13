@@ -317,3 +317,198 @@ class EmployerBankAccount(AuditedModel, TenantScopedModel):
 
     def __str__(self):
         return f"{self.employer_id} ****{self.account_number_last4}"
+
+
+class EmployerSetting(AuditedModel, TenantScopedModel):
+    """One employer preference, typed, with a definition that lives in code.
+
+    Key-value rather than a wide row, for the reason ``statutory_parameter`` is:
+    settings arrive one at a time over years, and a column per setting means a
+    migration every time somebody wants a new default. The usual cost of key-value —
+    everything becomes a string — is paid off the same way too, with four typed value
+    columns and a CHECK that exactly one of them is set.
+
+    **What a setting is NOT.** It is never a statutory figure. The BCEA's overtime
+    multiplier is not an employer preference and must never end up here; it lives in
+    ``working_time_rule_set`` with a citation. What belongs here is the handful of
+    things the statute genuinely leaves to the employer — the night work allowance
+    that BCEA s17(2) requires and deliberately sets no amount for — and pure
+    presentation, like which name the employee list sorts on.
+
+    ``SETTING_DEFINITIONS`` below is the registry: what exists, what type it is, what
+    it defaults to, and which sector seeds which default at onboarding.
+    """
+
+    class ValueType(models.TextChoices):
+        TEXT = "text", "Text"
+        NUMERIC = "numeric", "Numeric"
+        BOOLEAN = "boolean", "Boolean"
+        DATE = "date", "Date"
+
+    employer = models.ForeignKey(Employer, on_delete=models.PROTECT, related_name="settings")
+    setting_key = models.CharField(max_length=60, db_index=True)
+    value_type = models.CharField(max_length=20, choices=ValueType.choices)
+
+    value_text = models.CharField(max_length=200, blank=True)
+    value_numeric = models.DecimalField(max_digits=16, decimal_places=6, null=True, blank=True)
+    value_boolean = models.BooleanField(null=True, blank=True)
+    value_date = models.DateField(null=True, blank=True)
+
+    set_by_employer = models.BooleanField(
+        default=False,
+        help_text=(
+            "False means this is still the value seeded at onboarding. True means a "
+            "person chose it. The difference matters when a sector default changes."
+        ),
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "employer_setting"
+        ordering = ["employer_id", "setting_key"]
+        indexes = [models.Index(fields=["tenant", "employer"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employer", "setting_key"], name="uniq_setting_per_employer"
+            ),
+            # Exactly one typed column carries the value. Without this a row can hold
+            # a number AND text, and which one a reader believes depends on which
+            # column it looked at first.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        value_type="text",
+                        value_numeric__isnull=True,
+                        value_boolean__isnull=True,
+                        value_date__isnull=True,
+                    )
+                    | models.Q(
+                        value_type="numeric",
+                        value_numeric__isnull=False,
+                        value_boolean__isnull=True,
+                        value_date__isnull=True,
+                        value_text="",
+                    )
+                    | models.Q(
+                        value_type="boolean",
+                        value_boolean__isnull=False,
+                        value_numeric__isnull=True,
+                        value_date__isnull=True,
+                        value_text="",
+                    )
+                    | models.Q(
+                        value_type="date",
+                        value_date__isnull=False,
+                        value_numeric__isnull=True,
+                        value_boolean__isnull=True,
+                        value_text="",
+                    )
+                ),
+                name="employer_setting_exactly_one_typed_value",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.employer_id} {self.setting_key}"
+
+    @property
+    def value(self):
+        """The one column this row's type says is the value."""
+        return {
+            self.ValueType.TEXT: self.value_text,
+            self.ValueType.NUMERIC: self.value_numeric,
+            self.ValueType.BOOLEAN: self.value_boolean,
+            self.ValueType.DATE: self.value_date,
+        }[self.value_type]
+
+
+class Workplace(AuditedModel, TenantScopedModel):
+    """A site where work is performed. A household, or a client's premises.
+
+    Four reasons this is its own table rather than an address on the employer:
+
+    - **Documents file against it** (D-42). A contract cleaning company's client
+      contract belongs to the site, not to the company record with the site name
+      typed into the title.
+    - **Cost per contract** (D-48) needs employees allocated to a site.
+    - **The wage area is a property of where the work happens**, not of where the
+      employer's office is. A Johannesburg company cleaning a Durban building pays
+      the KwaZulu-Natal rates for that site.
+    - A domestic employer has exactly one, and it is their home — which makes the
+      table trivial for them and correct for everyone else.
+
+    ``sector_area`` is stored rather than resolved on read, because the resolution
+    depends on ``municipality_area_map`` as it stood on a date, and a payroll re-run
+    in 2030 must reproduce the area the 2026 run used.
+    """
+
+    public_uid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+
+    employer = models.ForeignKey(Employer, on_delete=models.PROTECT, related_name="workplaces")
+    name = models.CharField(max_length=150)
+
+    client_name = models.CharField(
+        max_length=150,
+        blank=True,
+        help_text="Contract cleaning: whose premises these are. Blank for a household.",
+    )
+    contract_reference = models.CharField(
+        max_length=60,
+        blank=True,
+        db_index=True,
+        help_text="What cost-per-contract reporting groups on.",
+    )
+
+    line1 = models.CharField(max_length=120, blank=True)
+    line2 = models.CharField(max_length=120, blank=True)
+    suburb = models.CharField(max_length=120, blank=True)
+    city = models.CharField(max_length=120, blank=True)
+    municipality = models.CharField(
+        max_length=120,
+        blank=True,
+        db_index=True,
+        help_text="What municipality_area_map resolves the wage area from.",
+    )
+    province_code = models.CharField(max_length=10, choices=PROVINCE_CODES, blank=True)
+    postal_code = models.CharField(max_length=10, blank=True)
+
+    sector_area = models.ForeignKey(
+        "statutory.SectorArea",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="workplaces",
+        help_text=(
+            "Resolved from the municipality and STORED, so a re-run reproduces the "
+            "area that applied at the time. NULL means unresolved, which blocks "
+            "payroll for a sector that uses area rates rather than guessing."
+        ),
+    )
+    area_resolved_on = models.DateField(
+        null=True,
+        blank=True,
+        help_text="The date the mapping was read. The mapping itself is effective-dated.",
+    )
+
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        db_table = "workplace"
+        ordering = ["employer_id", "name"]
+        indexes = [
+            models.Index(fields=["tenant", "employer"]),
+            models.Index(fields=["contract_reference"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employer", "name"], name="uniq_workplace_name_per_employer"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(sector_area__isnull=True, area_resolved_on__isnull=True)
+                | models.Q(sector_area__isnull=False, area_resolved_on__isnull=False),
+                name="workplace_area_and_resolution_date_together",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name

@@ -130,9 +130,11 @@ constraint refuses a blank one on every cited table.
 - [x] `employer`, `employer_statutory_registration`, `employer_bank_account`
 - [x] `core/db/fields.py` — encryption at rest, unsearchable by design (D-77)
 - [x] Reference tables refuse DELETE by trigger — FORCE RLS defeats the foreign key (D-76)
-- [ ] `workplace` with client name, contract reference, area resolution
+- [x] `workplace` with client name, contract reference, area resolution (D-81)
+- [x] `employer_setting`, seeded from sector at onboarding (D-79, D-80)
+- [ ] **Municipality-to-area data** — `municipality_area_map` is empty, so no contract
+      cleaning workplace can resolve an area yet
 - [ ] `pay_group` and the pay period generator, all five frequencies
-- [ ] `employer_setting`, seeded from sector at onboarding (including default sort)
 - [ ] `payroll_component` catalogue, system components seeded and locked
 
 **Done when:** an employer completes onboarding and generates a full year of pay periods.
