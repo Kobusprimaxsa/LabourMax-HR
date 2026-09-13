@@ -10,12 +10,15 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
+      # The container's POSTGRES_USER is created as a SUPERUSER. It therefore
+      # stays 'postgres' and is used only for setup: a superuser BYPASSES row
+      # level security, so pointing the application at it would make the whole
+      # isolation suite pass while protecting nothing. The first CI run proved
+      # this - four tests failed, exactly as designed.
       postgres:
         image: postgres:18
         env:
-          POSTGRES_DB: labourmax
-          POSTGRES_USER: labourmax
-          POSTGRES_PASSWORD: labourmax
+          POSTGRES_PASSWORD: postgres-setup-only
         ports: ["5432:5432"]
         options: >-
           --health-cmd pg_isready --health-interval 10s
@@ -26,7 +29,7 @@ jobs:
       DJANGO_SECRET_KEY: ci-only-key
       POSTGRES_DB: labourmax
       POSTGRES_USER: labourmax
-      POSTGRES_PASSWORD: labourmax
+      POSTGRES_PASSWORD: labourmax-ci
       POSTGRES_HOST: localhost
       POSTGRES_PORT: "5432"
 
@@ -38,6 +41,31 @@ jobs:
           cache: pip
 
       - run: pip install -r requirements-dev.txt
+
+      # Mirrors the local setup: the application owns its tables but holds no
+      # superuser rights. Extensions go into template1 as well, because pytest
+      # creates test_labourmax from that template and P2's exclusion constraints
+      # need btree_gist there.
+      - name: Create the application role, without superuser rights
+        env:
+          PGPASSWORD: postgres-setup-only
+        run: |
+          set -euo pipefail
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c \
+            "CREATE ROLE labourmax LOGIN PASSWORD 'labourmax-ci' CREATEDB;"
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c \
+            "CREATE DATABASE labourmax OWNER labourmax;"
+          for db in template1 labourmax; do
+            psql -h localhost -U postgres -d "$db" -v ON_ERROR_STOP=1 -c \
+              "CREATE EXTENSION IF NOT EXISTS citext;
+               CREATE EXTENSION IF NOT EXISTS btree_gist;
+               CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+          done
+
+      # Fail here, with one clear line, rather than fifteen tests down. Also
+      # confirms the extensions landed and the role can actually connect.
+      - name: Verify the database is wired up correctly
+        run: python manage.py dbcheck
 
       - name: Lint
         run: ruff check .
