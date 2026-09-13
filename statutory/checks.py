@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from statutory.models import MinimumWageRate, PayeRebate, TaxYear
+from statutory.models import MinimumWageRate, PayeRebate, SarsSourceCode, TaxYear
 
 HUNDRED = Decimal(100)
 
@@ -179,6 +179,61 @@ def check_gazetted_wage_derivations(*, hours_per_week: int = 45) -> list[Issue]:
     return issues
 
 
+def check_source_codes() -> list[Issue]:
+    """Two invariants the four base flags must satisfy, whatever the readings are.
+
+    **A non-taxable code cannot be in the UIF or SDL base.** Both are built on the
+    Fourth Schedule's definition of remuneration, which is also what "subject to
+    PAYE" means — so a code outside it is outside all three. (COIDA's "earnings" is
+    its own definition and is deliberately not covered by this rule.)
+
+    **A total or a deduction is not a pay line**, so nothing is ever calculated from
+    it. A base flag set on 4141 or 3699 means somebody has mistaken a column that
+    receives a calculation for one that feeds it, and the result is UIF charged on
+    the UIF figure.
+
+    Neither check knows which flags are correct. They catch the two shapes of
+    mistake that are wrong under any reading.
+    """
+    issues = []
+    for row in SarsSourceCode.objects.all():
+        if not row.is_taxable and (row.is_uif_remuneration or row.is_sdl_remuneration):
+            issues.append(
+                Issue(
+                    True,
+                    f"source code {row.code}",
+                    "is not taxable but sits in the UIF or SDL base. Both are built on "
+                    "the Fourth Schedule definition of remuneration, so a code outside "
+                    "it is outside them too.",
+                )
+            )
+
+        is_not_a_pay_line = row.code_group in {
+            SarsSourceCode.Group.TOTAL,
+            SarsSourceCode.Group.DEDUCTION,
+        }
+        in_a_base = any(
+            (
+                row.is_taxable,
+                row.is_uif_remuneration,
+                row.is_sdl_remuneration,
+                row.is_coida_remuneration,
+            )
+        )
+        if is_not_a_pay_line and in_a_base:
+            issues.append(
+                Issue(
+                    True,
+                    f"source code {row.code}",
+                    f"is a {row.code_group} but carries a base flag. Nothing is "
+                    f"calculated FROM a total or a deduction - it is calculated INTO "
+                    f"one.",
+                )
+            )
+
+    return issues
+
+
 def check_citations() -> list[Issue]:
     """Nothing cited to a placeholder.
 
@@ -188,7 +243,7 @@ def check_citations() -> list[Issue]:
     """
     placeholders = ("tbc", "tbd", "todo", "unknown", "n/a", "test fixture", "placeholder")
     issues = []
-    for model in (MinimumWageRate, PayeRebate):
+    for model in (MinimumWageRate, PayeRebate, SarsSourceCode):
         for row in model.objects.all():
             reference = (row.source_reference or "").strip().lower()
             if any(reference.startswith(bad) or reference == bad for bad in placeholders):
@@ -206,5 +261,6 @@ def run_all(year: TaxYear | None = None) -> list[Issue]:
         issues.extend(check_paye_brackets(one))
         issues.extend(check_paye_rebates(one))
     issues.extend(check_gazetted_wage_derivations())
+    issues.extend(check_source_codes())
     issues.extend(check_citations())
     return issues

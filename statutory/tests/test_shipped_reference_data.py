@@ -280,3 +280,53 @@ def test_a_column_with_no_statutory_figure_says_so_in_its_notes(rules_loaded):
     rules = resolve.working_time_rules(None, datetime.date(2026, 6, 1))
     assert rules.night_allowance_value == Decimal("0.0000")
     assert "NO STATUTORY FIGURE" in rules.notes
+
+
+# --------------------------------------------------------------- source codes
+
+CODES_FIXTURE = FIXTURE.parent / "ref-2026.03.01-codes.json"
+
+
+@pytest.fixture
+def codes_loaded(db):
+    document = json.loads(CODES_FIXTURE.read_text(encoding="utf-8"))
+    return load_reference_data(document)
+
+
+@pytest.mark.statutory
+def test_the_source_code_fixture_loads_and_holds_together(codes_loaded):
+    from statutory.models import SarsSourceCode
+
+    assert codes_loaded.created["sars_source_code"] > 10
+    blocking = [issue for issue in checks.check_source_codes() if issue.blocking]
+    assert not blocking, "\n".join(str(issue) for issue in blocking)
+    assert SarsSourceCode.objects.filter(source_reference="").count() == 0
+
+
+@pytest.mark.statutory
+def test_commission_is_out_of_the_uif_base_and_in_every_other(codes_loaded):
+    """The row the table exists for. Get this wrong and it surfaces at a UI-19
+    reconciliation months later, not on the payslip."""
+    from statutory.models import SarsSourceCode
+
+    commission = SarsSourceCode.objects.get(code="3606")
+    assert commission.is_taxable is True
+    assert commission.is_uif_remuneration is False
+    assert commission.is_sdl_remuneration is True
+
+
+@pytest.mark.statutory
+def test_the_bonus_code_is_in_the_uif_base_unlike_commission(codes_loaded):
+    from statutory.models import SarsSourceCode
+
+    bonus = SarsSourceCode.objects.get(code="3605")
+    assert bonus.is_uif_remuneration is True
+
+
+@pytest.mark.statutory
+def test_every_base_flag_carries_its_reasoning(codes_loaded):
+    """A boolean with no note beside it is a compliance decision nobody can audit."""
+    from statutory.models import SarsSourceCode
+
+    for row in SarsSourceCode.objects.all():
+        assert len(row.notes) > 40, f"{row.code} carries no reasoning for its flags."

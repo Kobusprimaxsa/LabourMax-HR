@@ -190,3 +190,63 @@ def test_a_placeholder_citation_is_caught(db):
     )
     issues = checks.check_citations()
     assert issues and issues[0].blocking
+
+
+# ----------------------------------------------------------------- source codes
+
+
+def source_code(**overrides):
+    from statutory.models import SarsSourceCode
+
+    values = {
+        "code": "3601",
+        "description": "Income (Subject to PAYE)",
+        "code_group": SarsSourceCode.Group.INCOME,
+        "is_taxable": True,
+        "is_uif_remuneration": True,
+        "is_sdl_remuneration": True,
+        "is_coida_remuneration": True,
+        "source_reference": CITATION,
+    }
+    values.update(overrides)
+    return SarsSourceCode.objects.create(**values)
+
+
+@pytest.mark.statutory
+def test_a_consistent_source_code_reports_nothing(db):
+    source_code()
+    assert checks.check_source_codes() == []
+
+
+@pytest.mark.statutory
+def test_a_non_taxable_code_in_the_uif_base_is_caught(db):
+    """Both bases are built on the Fourth Schedule definition. A code outside it
+    cannot be inside them."""
+    source_code(code="3602", is_taxable=False, is_uif_remuneration=True)
+    issues = checks.check_source_codes()
+    assert issues and issues[0].blocking
+
+
+@pytest.mark.statutory
+def test_a_total_carrying_a_base_flag_is_caught(db):
+    """UIF charged on the UIF figure is what this prevents."""
+    from statutory.models import SarsSourceCode
+
+    source_code(code="4141", code_group=SarsSourceCode.Group.DEDUCTION, is_taxable=False)
+    issues = checks.check_source_codes()
+    assert issues and any("calculated FROM" in issue.message for issue in issues)
+
+
+@pytest.mark.statutory
+def test_commission_is_a_valid_shape(db):
+    """Taxable, in the SDL base, out of the UIF base - the row this table exists for,
+    and no check may object to it."""
+    source_code(
+        code="3606",
+        description="Commission (Subject to PAYE)",
+        is_taxable=True,
+        is_uif_remuneration=False,
+        is_sdl_remuneration=True,
+        is_coida_remuneration=True,
+    )
+    assert checks.check_source_codes() == []

@@ -340,7 +340,7 @@ masking, the administrative seat limit enforced by trigger, and file storage beh
 virus-scan gate.
 
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting
-verification** (13 September 2026). 326 tests green. All twenty tables exist with their
+verification** (13 September 2026). 336 tests green. All twenty tables exist with their
 constraints; `statutory/resolve.py` is the only place that answers "what applied on this date";
 the loader refuses any file with an uncited row and never updates an existing one;
 `loadstatutory` and `verifystatutory` are two commands because loading and verifying are two
@@ -349,7 +349,7 @@ somebody remembers.
 
 `reference/ref-2026.03.01.json` holds 61 rows and `reference/ref-2026.03.01-rules.json` six more, researched from primary sources: the 1 March 2026
 wage floors, the SARS 2027 tax year tables, the contribution parameters, public holidays for
-2026 and 2027, the maintenance calendar, and the BCEA, domestic and contract cleaning rule sets. It is loaded and reconciles, and it is **not
+2026 and 2027, the maintenance calendar, the BCEA, domestic and contract cleaning rule sets, and 19 SARS source codes with cited base flags. It is loaded and reconciles, and it is **not
 verified** — `in_force_on()` cannot see it, so every payroll run is still blocked. That is
 correct and deliberate.
 
@@ -361,7 +361,7 @@ correct and deliberate.
 - Contract cleaning **Area C (KwaZulu-Natal)** has no rate: the gazette states none and points
   at the BCCCI collective agreement, which nobody has. A KwaZulu-Natal contract cleaning
   employer cannot be onboarded until it is loaded
-- SARS source codes and the bank list
+- The bank list and branch codes
 - The golden tests, which are what finally allows `golden_tests_passed`
 
 Chosen ahead of P1 because nothing in the payroll engine can be tested against a SARS worked

@@ -111,11 +111,17 @@ def test_holidays_come_back_in_date_order(db):
 @pytest.mark.statutory
 def test_a_source_code_is_unique(db):
     SarsSourceCode.objects.create(
-        code="3601", description="Income (PAYE)", code_group=SarsSourceCode.Group.INCOME
+        code="3601",
+        description="Income (PAYE)",
+        code_group=SarsSourceCode.Group.INCOME,
+        source_reference=CITATION,
     )
     with pytest.raises(IntegrityError), transaction.atomic():
         SarsSourceCode.objects.create(
-            code="3601", description="Loaded twice", code_group=SarsSourceCode.Group.INCOME
+            code="3601",
+            description="Loaded twice",
+            code_group=SarsSourceCode.Group.INCOME,
+            source_reference=CITATION,
         )
 
 
@@ -135,6 +141,7 @@ def test_the_four_remuneration_bases_are_independent(db):
         is_uif_remuneration=False,
         is_sdl_remuneration=True,
         is_coida_remuneration=True,
+        source_reference=CITATION,
     )
     commission.refresh_from_db()
     assert commission.is_taxable is True
@@ -146,7 +153,10 @@ def test_a_code_may_be_bounded_by_tax_year_rather_than_by_date(db):
     """SARS retires codes at tax-year boundaries, and a retired code must stay usable
     for reprints of the years it was valid in."""
     code = SarsSourceCode.objects.create(
-        code="3699", description="Gross remuneration", code_group=SarsSourceCode.Group.TOTAL
+        code="3699",
+        description="Gross remuneration",
+        code_group=SarsSourceCode.Group.TOTAL,
+        source_reference=CITATION,
     )
     assert code.valid_from_tax_year is None
     assert code.valid_to_tax_year is None
@@ -205,3 +215,16 @@ def test_a_bank_with_branches_cannot_be_deleted(db):
 
     with pytest.raises(ProtectedError):
         bank.delete()
+
+
+@pytest.mark.statutory
+def test_a_source_code_without_a_citation_is_refused(db):
+    """The four base flags are compliance decisions, so the row must say where they
+    came from. Added when the table became a cited one - see D-69."""
+    with pytest.raises(IntegrityError), transaction.atomic():
+        SarsSourceCode.objects.create(
+            code="3607",
+            description="Overtime",
+            code_group=SarsSourceCode.Group.INCOME,
+            source_reference="",
+        )

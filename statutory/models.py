@@ -1195,8 +1195,15 @@ class PublicHoliday(AuditedModel, AuditMixin, CitedStatutoryModel):
 # ----------------------------------------------------------- SARS source codes
 
 
-class SarsSourceCode(AuditedModel, AuditMixin):
+class SarsSourceCode(AuditedModel, AuditMixin, CitedStatutoryModel):
     """IRP5 / IT3(a) source codes and their tax treatment.
+
+    **Cited, because the four base flags are compliance decisions rather than
+    descriptions.** The code and its wording come straight from SARS, but whether an
+    amount enters the UIF, SDL or COIDA base is a reading of three different statutes
+    with three different definitions of what counts — and the reading has to be
+    recorded next to the answer. Without ``source_reference`` and ``notes`` this table
+    would hold fifty-six booleans that nobody can audit and nobody dares change.
 
     This table is what stops "is this taxable?" being decided in four places. Every
     payslip line carries a source code, and the four booleans here decide whether
@@ -1240,6 +1247,9 @@ class SarsSourceCode(AuditedModel, AuditMixin):
         db_table = "sars_source_code"
         ordering = ["code"]
         indexes = [models.Index(fields=["code_group"])]
+        constraints = [
+            source_reference_not_blank("sars_source_code"),
+        ]
 
     def __str__(self):
         return f"{self.code} {self.description}"
