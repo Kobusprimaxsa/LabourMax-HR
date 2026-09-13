@@ -144,7 +144,7 @@ constraint refuses a blank one on every cited table.
 
 ---
 
-## P4 — Employee Master File · 5 weeks · 15 tables
+## P4 — Employee Master File · 6 weeks · 16 tables
 
 - [x] `employee` with encrypted ID number, hash-based duplicate prevention, sort columns
       (D-95 the hash is scoped per tenant, D-96 checksum + date cross-check, D-97 the
@@ -163,9 +163,13 @@ constraint refuses a blank one on every cited table.
 - [ ] `document`, `document_category` — four-way attachment arc, visibility whitelist
 - [ ] Current-state cache columns, maintained on write **and** by a nightly job
 - [ ] Employee list: grouped by pay group, sector-derived default sort, remembered per user
+- [ ] `employee_import_batch` — bulk import from a generated .xlsx template, on the
+      preview-validate-apply-reverse pattern, running every validation the single-capture
+      path runs (D-121, closes O-11). ADDED to P4 scope, +1 week
 
 **Done when:** capturing an employee below the sectoral minimum raises a visible, logged
-exception, and a future-dated increase flips the cache on its own effective date.
+exception, and a future-dated increase flips the cache on its own effective date. Forty employees
+import from a spreadsheet with every one of those checks applied, and the batch reverses as a unit.
 
 ---
 
