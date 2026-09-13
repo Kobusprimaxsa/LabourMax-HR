@@ -107,7 +107,16 @@ on every run, so an extension installed by hand into one database is how a const
 to exist in development and be missing in production. All three are trusted in PostgreSQL
 13+, so the non-superuser application role can create them.
 
-**Two PostgreSQL behaviours that will cost you an afternoon if you forget them:**
+**FORCE RLS subjects the FOREIGN KEY check to the policy.** This is the worst one, because
+three layers fail together and none raises. Deleting a `sector` row from a session with no
+tenant pinned succeeds and orphans every `employer` that referenced it: Django's `PROTECT`
+collector finds no referencing rows (RLS hides them), PostgreSQL's own FK check finds none for
+the same reason, and `platform_context()` does not help because strict tenant tables carry no
+platform override. Reference tables that tenant tables point at therefore carry a
+**BEFORE DELETE trigger** — `no_delete()` in `core/db/rls.py` — which runs regardless of what
+the deleting session can see (D-76).
+
+**Three PostgreSQL behaviours that will cost you an afternoon if you forget them:**
 
 - `''::bigint` **raises**, it does not evaluate false, and SQL gives no
   left-to-right evaluation guarantee — so a guard clause does not reliably protect a
@@ -351,6 +360,17 @@ ruff check . && ruff format .
 CI. Tenant isolation proven at all three layers, field-level audit trail with sensitive-value
 masking, the administrative seat limit enforced by trigger, and file storage behind a
 virus-scan gate.
+
+**P3 — Employer Setup: started** (13 September 2026). 388 tests green. `employer`,
+`employer_statutory_registration` and `employer_bank_account` exist, tenant-scoped and picked
+up automatically by the generated isolation suite. `core/db/fields.py` brings the first
+encrypted column in the schema, unsearchable by design (D-77). Two structural findings came
+out of it: FORCE RLS defeats foreign key enforcement (D-76) and the reference tables now refuse
+DELETE by trigger.
+
+Still to come in P3: `workplace` with area resolution, `pay_group` and the pay period
+generator for all five frequencies, `employer_setting` seeded from sector, and the
+`payroll_component` catalogue.
 
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting
 verification** (13 September 2026). 351 tests green. All twenty tables exist with their

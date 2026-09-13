@@ -163,3 +163,63 @@ CREATE TRIGGER {table}_append_only
 
 def drop_append_only(table: str) -> str:
     return f"DROP TRIGGER IF EXISTS {table}_append_only ON {table};"
+
+
+# ------------------------------------------------------- reference delete guard
+
+REFERENCE_MAINTENANCE_VAR = "labourmax.allow_reference_maintenance"
+
+NO_DELETE_FUNCTION = f"""
+CREATE OR REPLACE FUNCTION labourmax_no_delete() RETURNS trigger AS $$
+BEGIN
+    IF coalesce(current_setting('{REFERENCE_MAINTENANCE_VAR}', true), 'off') = 'on' THEN
+        RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'This reference table cannot be deleted from. Tenant tables '
+        'reference it, and FORCE ROW LEVEL SECURITY makes the foreign key check '
+        'subject to the policy - so a session that cannot see the referencing rows '
+        'deletes the row and orphans them, with neither PROTECT nor the foreign key '
+        'raising. Supersede the row with a new effective-dated one instead. Deliberate '
+        'maintenance sets {REFERENCE_MAINTENANCE_VAR}.';
+END;
+$$ LANGUAGE plpgsql;
+"""  # noqa: S608
+
+DROP_NO_DELETE_FUNCTION = "DROP FUNCTION IF EXISTS labourmax_no_delete();"
+
+
+def no_delete(table: str) -> str:
+    """Refuse DELETE on a reference table that tenant-scoped tables point at.
+
+    **The trap this closes, found in P3 and reproduced before it was fixed.**
+    ``employer.sector_id`` is ``on_delete=PROTECT`` and PostgreSQL carries its own
+    foreign key constraint. Neither stops ``Sector.objects.get(...).delete()`` from a
+    session with no tenant pinned:
+
+    - Django's collector queries ``employer WHERE sector_id = X`` to find the rows it
+      must protect. Row-level security returns **none**, so it finds nothing to
+      protect and proceeds.
+    - PostgreSQL's referential integrity check is itself subject to the policy when
+      the table has ``FORCE ROW LEVEL SECURITY``, so it also sees no referencing row.
+
+    The sector is deleted, the employer row keeps a ``sector_id`` pointing at nothing,
+    and not one of the three layers raises. ``platform_context()`` does not help
+    either: by decision D-54 the strict tenant tables carry no platform override, so
+    the referencing rows stay invisible there too.
+
+    A trigger on the referenced table is the only layer left, because it runs
+    regardless of what the deleting session can see.
+
+    Requires ``NO_DELETE_FUNCTION`` to have been run once in an earlier operation of
+    the same migration.
+    """
+    return f"""
+DROP TRIGGER IF EXISTS {table}_no_delete ON {table};
+CREATE TRIGGER {table}_no_delete
+    BEFORE DELETE ON {table}
+    FOR EACH ROW EXECUTE FUNCTION labourmax_no_delete();
+"""
+
+
+def drop_no_delete(table: str) -> str:
+    return f"DROP TRIGGER IF EXISTS {table}_no_delete ON {table};"

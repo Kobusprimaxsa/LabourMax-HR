@@ -127,7 +127,9 @@ constraint refuses a blank one on every cited table.
 
 ## P3 — Employer Setup · 2 weeks · 7 tables
 
-- [ ] `employer`, `employer_statutory_registration`, `employer_bank_account`
+- [x] `employer`, `employer_statutory_registration`, `employer_bank_account`
+- [x] `core/db/fields.py` — encryption at rest, unsearchable by design (D-77)
+- [x] Reference tables refuse DELETE by trigger — FORCE RLS defeats the foreign key (D-76)
 - [ ] `workplace` with client name, contract reference, area resolution
 - [ ] `pay_group` and the pay period generator, all five frequencies
 - [ ] `employer_setting`, seeded from sector at onboarding (including default sort)
