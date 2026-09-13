@@ -23,12 +23,47 @@ The abstract bases below are what the remaining eighteen tables inherit.
 
 from __future__ import annotations
 
+from django.contrib.postgres.constraints import ExclusionConstraint
+from django.contrib.postgres.fields import DateRangeField, RangeBoundary, RangeOperators
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Func, Value
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from core.audit import AuditedModel
 from core.models import AuditMixin
+
+# ------------------------------------------------------------ constraint helpers
+#
+# These are functions rather than constraints on an abstract Meta, because Django
+# does NOT merge an abstract base's ``Meta.constraints`` into a child that declares
+# its own ``Meta`` — and every model here declares one, for ``db_table``. The
+# constraint would simply not exist, while the base class made it look as though it
+# did. That is the same shape as row-level security without FORCE, and it is caught
+# by the generated test in ``statutory/tests/test_citations.py`` rather than trusted.
+
+
+def source_reference_not_blank(model_name: str) -> models.CheckConstraint:
+    """Every cited row must actually carry its citation.
+
+    A ``NOT NULL`` CharField accepts the empty string, so NOT NULL alone forbids an
+    uncited rate in appearance only.
+    """
+    return models.CheckConstraint(
+        condition=~models.Q(source_reference=""),
+        name=f"{model_name}_source_reference_not_blank",
+    )
+
+
+def effective_range_ordered(model_name: str) -> models.CheckConstraint:
+    """``effective_to`` is exclusive, so it must be strictly after ``effective_from``."""
+    return models.CheckConstraint(
+        condition=models.Q(effective_to__isnull=True)
+        | models.Q(effective_to__gt=models.F("effective_from")),
+        name=f"{model_name}_effective_range_ordered",
+    )
+
 
 # --------------------------------------------------------------- abstract bases
 
@@ -101,12 +136,6 @@ class CitedStatutoryModel(models.Model):
 
     class Meta:
         abstract = True
-        constraints = [
-            models.CheckConstraint(
-                condition=~models.Q(source_reference=""),
-                name="%(app_label)s_%(class)s_source_reference_not_blank",
-            ),
-        ]
 
 
 # ------------------------------------------------------------ reference version
@@ -322,3 +351,272 @@ class StatutoryWatchItem(AuditedModel, AuditMixin):
             ]
         )
         return self
+
+
+# ------------------------------------------------------------- sectors and areas
+
+
+class Sector(AuditedModel, AuditMixin):
+    """A sectoral determination the product supports.
+
+    Which sector an employer belongs to decides which rule set every calculator
+    loads, so this is not a label — it is the switch. The flags are here rather
+    than in code because the two sectors differ in ways that would otherwise
+    become ``if sector == "CONTRACT_CLEANING"`` scattered through the engine.
+    """
+
+    class Code(models.TextChoices):
+        DOMESTIC = "DOMESTIC", "Domestic worker sector"
+        CONTRACT_CLEANING = "CONTRACT_CLEANING", "Contract cleaning sector"
+
+    code = models.CharField(max_length=30, unique=True, choices=Code.choices)
+    name = models.CharField(max_length=120)
+    determination_reference = models.CharField(
+        max_length=120,
+        blank=True,
+        help_text="e.g. 'Sectoral Determination 7' or 'Sectoral Determination 1'.",
+    )
+    uses_area_rates = models.BooleanField(
+        default=False,
+        help_text="True for contract cleaning, where the minimum differs by geographic area.",
+    )
+    has_statutory_annual_bonus = models.BooleanField(
+        default=False,
+        help_text="True for contract cleaning: 4.333 weeks' remuneration, accrued monthly.",
+    )
+    has_provident_fund = models.BooleanField(
+        default=False,
+        help_text="True for contract cleaning, via the bargaining council.",
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "sector"
+
+    def __str__(self):
+        return self.name
+
+
+class SectorArea(AuditedModel, AuditMixin):
+    """A geographic wage area within a sector.
+
+    Contract cleaning has Area A, Area B (KwaZulu-Natal) and Area C. KwaZulu-Natal
+    is the awkward one: its rates come from the BCCCI collective agreement rather
+    than from the gazette, which is why ``uses_bargaining_council_rates`` exists as
+    data — the loader needs to know a different source applies, and the citation on
+    those rows will not be a gazette number.
+    """
+
+    sector = models.ForeignKey(Sector, on_delete=models.PROTECT, related_name="areas")
+    code = models.CharField(max_length=20, help_text="AREA_A | AREA_B_KZN | AREA_C")
+    name = models.CharField(max_length=120)
+    description = models.TextField(blank=True, help_text="Which councils and metros are included.")
+    uses_bargaining_council_rates = models.BooleanField(
+        default=False,
+        help_text="True for KwaZulu-Natal: rates come from the BCCCI collective agreement.",
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "sector_area"
+        constraints = [
+            models.UniqueConstraint(fields=["sector", "code"], name="uniq_area_code_per_sector"),
+        ]
+
+    def __str__(self):
+        return f"{self.sector.code} {self.code}"
+
+
+class MunicipalityAreaMap(AuditedModel, AuditMixin, EffectiveDatedModel):
+    """Maps a municipality to a wage area, so the area is derived, not guessed.
+
+    Effective-dated because municipal boundaries and names change — amalgamations
+    have moved workplaces between areas before. A payroll re-run for 2026 must use
+    the mapping as it stood in 2026, not today's.
+
+    Asking an employer "are you in Area A or Area C?" produces a wrong answer
+    confidently. Deriving it from the workplace address produces a wrong answer
+    visibly, which can be corrected.
+    """
+
+    class MunicipalityType(models.TextChoices):
+        METRO = "metro", "Metropolitan municipality"
+        DISTRICT = "district", "District municipality"
+        LOCAL = "local", "Local municipality"
+
+    sector_area = models.ForeignKey(
+        SectorArea, on_delete=models.PROTECT, related_name="municipalities"
+    )
+    province_code = models.CharField(
+        max_length=10, db_index=True, help_text="GP|WC|KZN|EC|FS|MP|LP|NW|NC"
+    )
+    municipality_name = models.CharField(max_length=120, db_index=True)
+    municipality_type = models.CharField(
+        max_length=20, choices=MunicipalityType.choices, default=MunicipalityType.LOCAL
+    )
+
+    class Meta:
+        db_table = "municipality_area_map"
+        indexes = [models.Index(fields=["province_code", "municipality_name"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["municipality_name", "effective_from"],
+                name="uniq_municipality_mapping_per_date",
+            ),
+            effective_range_ordered("municipality_area_map"),
+        ]
+
+    def __str__(self):
+        return f"{self.municipality_name} -> {self.sector_area_id}"
+
+
+class JobGrade(AuditedModel, AuditMixin):
+    """A job category within a sector that carries its own minimum rate.
+
+    Contract cleaning: general cleaner, supervisor, window cleaner, machine
+    operator. Domestic: domestic worker, gardener, child minder, home carer.
+    """
+
+    sector = models.ForeignKey(Sector, on_delete=models.PROTECT, related_name="job_grades")
+    code = models.CharField(max_length=40)
+    name = models.CharField(max_length=120)
+    sort_order = models.SmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "job_grade"
+        ordering = ["sector_id", "sort_order", "name"]
+        constraints = [
+            models.UniqueConstraint(fields=["sector", "code"], name="uniq_job_grade_per_sector"),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+# ------------------------------------------------------------------ minimum wages
+
+
+class DateRange(Func):
+    """``daterange(from, to, '[)')`` — for the overlap exclusion constraint."""
+
+    function = "daterange"
+    output_field = DateRangeField()
+
+
+class MinimumWageRate(AuditedModel, AuditMixin, EffectiveDatedModel, CitedStatutoryModel):
+    """The effective-dated minimum wage table. Every capture and every run validates against it.
+
+    Four nullable scope columns, each meaning "applies to everything below me":
+
+    - ``sector`` NULL is the general National Minimum Wage
+    - ``sector_area`` NULL is a sector that does not use areas (domestic)
+    - ``job_grade`` NULL applies to every grade in the sector
+    - ``hours_band`` covers the SD7 split between 27-hour weeks and longer
+
+    ``hourly_rate`` is authoritative and everything else is derived from it. The
+    gazetted weekly, monthly and daily figures are stored **as published** rather
+    than recomputed, because the gazettes round and a payslip that disagrees with
+    the gazette by two cents is a dispute nobody wants to have. Where both exist
+    and they disagree, the gazetted figure is what the employer will be shown.
+
+    Two constraints do the real work, and both are database-level because a rate
+    table with overlapping periods produces a different answer depending on row
+    order, which is the least debuggable class of payroll bug:
+
+    ``UniqueConstraint(..., nulls_distinct=False)``
+        In PostgreSQL NULL is not equal to NULL, so an ordinary unique constraint
+        would happily allow two National Minimum Wage rows for the same date —
+        precisely the rows most likely to be loaded twice. ``nulls_distinct=False``
+        (PostgreSQL 15+, Django 5.0+) makes NULLs compare equal for this purpose.
+
+    ``ExclusionConstraint``
+        Forbids two rows for the same scope whose date ranges overlap at all, not
+        merely those starting on the same day. ``Coalesce(..., 0)`` on the three
+        nullable keys for the same NULL-is-not-NULL reason: without it, overlapping
+        National Minimum Wage periods would slip straight through.
+    """
+
+    class HoursBand(models.TextChoices):
+        ALL = "all", "All hours"
+        LTE_27 = "lte_27_hours", "27 ordinary hours per week or fewer"
+        GT_27 = "gt_27_hours", "More than 27 ordinary hours per week"
+
+    sector = models.ForeignKey(
+        Sector,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="minimum_wages",
+        help_text="NULL = the general National Minimum Wage.",
+    )
+    sector_area = models.ForeignKey(
+        SectorArea,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="minimum_wages",
+        help_text="NULL when the sector does not use area rates.",
+    )
+    job_grade = models.ForeignKey(
+        JobGrade,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="minimum_wages",
+        help_text="NULL = applies to every grade in the sector.",
+    )
+    hours_band = models.CharField(max_length=20, choices=HoursBand.choices, default=HoursBand.ALL)
+
+    hourly_rate = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        help_text="The authoritative figure. Four decimals: gazettes publish rates like 30.2300.",
+    )
+    weekly_rate_45h = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="As gazetted, not recomputed. Gazettes round.",
+    )
+    monthly_rate_45h = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True, help_text="As gazetted."
+    )
+    daily_rate_9h = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True, help_text="As gazetted."
+    )
+
+    class Meta:
+        db_table = "minimum_wage_rate"
+        indexes = [models.Index(fields=["effective_from", "effective_to"])]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(hourly_rate__gt=0),
+                name="minimum_wage_rate_hourly_rate_positive",
+            ),
+            effective_range_ordered("minimum_wage_rate"),
+            source_reference_not_blank("minimum_wage_rate"),
+            models.UniqueConstraint(
+                fields=["sector", "sector_area", "job_grade", "hours_band", "effective_from"],
+                name="uniq_minimum_wage_scope_per_date",
+                nulls_distinct=False,
+            ),
+            ExclusionConstraint(
+                name="minimum_wage_rate_no_overlapping_periods",
+                expressions=[
+                    (
+                        DateRange("effective_from", "effective_to", RangeBoundary()),
+                        RangeOperators.OVERLAPS,
+                    ),
+                    (Coalesce("sector", Value(0)), RangeOperators.EQUAL),
+                    (Coalesce("sector_area", Value(0)), RangeOperators.EQUAL),
+                    (Coalesce("job_grade", Value(0)), RangeOperators.EQUAL),
+                    ("hours_band", RangeOperators.EQUAL),
+                ],
+            ),
+        ]
+
+    def __str__(self):
+        scope = self.sector.code if self.sector else "NMW"
+        return f"{scope} {self.hourly_rate}/h from {self.effective_from}"

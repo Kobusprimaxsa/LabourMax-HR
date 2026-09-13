@@ -88,6 +88,25 @@ zero, or a save appears to do nothing, check the context before you check the da
 A scanner callback, a Celery task and a retention job all arrive with no request and
 therefore no tenant context, so this is the ordinary path, not an edge case.
 
+**An abstract base's `Meta.constraints` is NOT inherited** by a child that declares its
+own `Meta` — and every model here declares one, for `db_table`. Put a CHECK on an abstract
+base and it silently does not exist, while the base class makes the code read as though it
+does. Statutory constraints are therefore explicit per model via the helpers in
+`statutory/models.py`, with `statutory/tests/test_citations.py` reading `pg_constraint` to
+prove they landed.
+
+**`NULL = NULL` is unknown in PostgreSQL, so nullable key columns escape both unique and
+exclusion constraints.** A `UniqueConstraint` over nullable scope columns permits duplicates,
+and an `ExclusionConstraint` permits overlaps, precisely for the rows where every scope
+column is NULL — which in `minimum_wage_rate` is the general National Minimum Wage, the row
+most likely to be loaded twice. Use `nulls_distinct=False` and `Coalesce(col, 0)`.
+
+**Extensions belong in migrations, not in a setup script.** `BtreeGistExtension()`,
+`CITextExtension()`, `CryptoExtension()`. pytest rebuilds the test database from `template1`
+on every run, so an extension installed by hand into one database is how a constraint comes
+to exist in development and be missing in production. All three are trusted in PostgreSQL
+13+, so the non-superuser application role can create them.
+
 **Two PostgreSQL behaviours that will cost you an afternoon if you forget them:**
 
 - `''::bigint` **raises**, it does not evaluate false, and SQL gives no

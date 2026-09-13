@@ -43,9 +43,14 @@ jobs:
       - run: pip install -r requirements-dev.txt
 
       # Mirrors the local setup: the application owns its tables but holds no
-      # superuser rights. Extensions go into template1 as well, because pytest
-      # creates test_labourmax from that template and P2's exclusion constraints
-      # need btree_gist there.
+      # superuser rights.
+      #
+      # Extensions are created here only in the application's own database, so
+      # `manage.py dbcheck` can assert they are present. The TEST database gets
+      # what it needs from migration operations instead (BtreeGistExtension in
+      # statutory/0002) - pytest rebuilds test_labourmax from template1 on every
+      # run, and an extension installed by hand into one database is how a
+      # constraint comes to exist in development and be missing in production.
       - name: Create the application role, without superuser rights
         env:
           PGPASSWORD: postgres-setup-only
@@ -55,12 +60,10 @@ jobs:
             "CREATE ROLE labourmax LOGIN PASSWORD 'labourmax-ci' CREATEDB;"
           psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c \
             "CREATE DATABASE labourmax OWNER labourmax;"
-          for db in template1 labourmax; do
-            psql -h localhost -U postgres -d "$db" -v ON_ERROR_STOP=1 -c \
-              "CREATE EXTENSION IF NOT EXISTS citext;
-               CREATE EXTENSION IF NOT EXISTS btree_gist;
-               CREATE EXTENSION IF NOT EXISTS pgcrypto;"
-          done
+          psql -h localhost -U postgres -d labourmax -v ON_ERROR_STOP=1 -c \
+            "CREATE EXTENSION IF NOT EXISTS citext;
+             CREATE EXTENSION IF NOT EXISTS btree_gist;
+             CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 
       # Fail here, with one clear line, rather than fifteen tests down. Also
       # confirms the extensions landed and the role can actually connect.
