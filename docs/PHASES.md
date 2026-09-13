@@ -34,12 +34,12 @@ Nothing else can start until tenant isolation is proven.
 - [x] Audit log signal wiring — field-level diffs, masked sensitive fields
 - [x] File storage abstraction with virus-scan status gate
 - [x] Generated tenant isolation suite passing
-- [ ] CI green: lint, migration check, isolation suite, full tests
+- [x] CI green: lint, format, system checks, migration check, isolation suite, full tests
 
 **Done when:** an automated cross-tenant leakage suite runs on every commit and passes,
 and RLS is enabled *and forced* on every tenant-scoped table.
 
-**Status: 124 tests passing locally. Outstanding: CI green end to end.**
+**Status: COMPLETE, 13 September 2026.** 124 tests passing locally and on CI, against PostgreSQL 18 and Python 3.14.
 
 Four defects of one shape were found and fixed during this phase, all of them
 protection that read convincingly in the source and did nothing at runtime: five
@@ -48,6 +48,12 @@ never setting the database session variable, so RLS was dormant in every test an
 task; `append_only()` being a `REVOKE` against `PUBLIC`, which does not bind the
 table owner; and service functions querying tenant-scoped rows with no tenant pinned,
 where RLS returns zero rows rather than an error. See `CLAUDE.md`.
+
+A fifth was caught by the suite itself on its first CI run: the `postgres` Docker image
+creates `POSTGRES_USER` as a superuser, and a superuser bypasses row-level security, so
+CI was running the whole isolation suite against a connection that could see everything.
+`test_application_role_is_not_a_superuser` is the only reason that surfaced as four
+failures rather than as a green badge asserting protection that was never enforced.
 
 ---
 

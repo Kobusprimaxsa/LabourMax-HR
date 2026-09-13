@@ -290,7 +290,17 @@ ruff check . && ruff format .
 
 ## Current state
 
-**Phase P0 — Foundation & Tenancy.** See `docs/PHASES.md` for the task breakdown.
+**P0 — Foundation & Tenancy: COMPLETE** (13 September 2026). 124 tests green locally and on
+CI. Tenant isolation proven at all three layers, field-level audit trail with sensitive-value
+masking, the administrative seat limit enforced by trigger, and file storage behind a
+virus-scan gate.
+
+**Next: P2 — Statutory Reference Data.** Not P1. Nothing in the payroll engine can be tested
+against a SARS worked example until the reference tables exist, and a wrong UIF ceiling
+blocks a pilot employer in a way billing does not. P1 also carries the most open decisions
+(O-03 rand amounts, O-04 payment gateway), so starting it means stopping to ask.
+
+See `docs/PHASES.md` for the task breakdown.
 
 Nothing is deployed. There is no customer data. This is the right moment to be rigid
 about the invariants above, because retrofitting any of them later is a rewrite.
