@@ -33,6 +33,25 @@ jobs:
       POSTGRES_HOST: localhost
       POSTGRES_PORT: "5432"
 
+      # Without a key every encrypted column refuses the write rather than
+      # storing plaintext (D-77), so the whole suite dies inside the encryption
+      # layer for a reason that has nothing to do with the code under test.
+      # That is what happened across four commits while the same suite was green
+      # locally, where setup-windows.ps1 had generated a key months earlier
+      # (D-94).
+      #
+      # The key decodes to the ASCII string "CI-ONLY-NEVER-USE-IN-PRODUCTION!",
+      # which is the whole point of writing it out rather than generating one
+      # per run into $GITHUB_ENV. The generated version worked and was fragile:
+      # it depended on step ordering, and anything that put a step needing the
+      # key before the step producing it failed with a message about the key
+      # rather than about the ordering. A literal cannot be got wrong.
+      #
+      # The usual objection to a committed key is that somebody copies it into a
+      # production .env. Here the key SAYS SO when you decode it, and this one
+      # protects an ephemeral database that is destroyed with the runner.
+      FIELD_ENCRYPTION_KEY: Q0ktT05MWS1ORVZFUi1VU0UtSU4tUFJPRFVDVElPTiE=
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
