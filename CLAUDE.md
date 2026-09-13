@@ -198,7 +198,14 @@ example exactly — does not ship either.
 Every statutory number lives in an effective-dated table with a gazette citation and a
 source URL. The annual March change is then a data load, not a release.
 
-Current seeded values (effective 1 March 2026 unless noted) are on sheet 05 of the workbook.
+The loaded figures live in `reference/ref-2026.03.01.json`, built by
+`tools/build_reference_fixture.py`, with a citation on every row. Sheet 05 of the workbook
+is the earlier draft of the same thing and is **not** the source: where the two disagree,
+the gazette or the SARS table wins and the workbook gets corrected.
+
+`manage.py checkstatutory` reconciles the loaded data against itself — every PAYE base
+against the bands below it, every tax threshold against its rebates. `verifystatutory`
+refuses to record verification while anything blocking is outstanding.
 
 Things that are easy to get wrong, and have been got wrong before:
 
@@ -319,18 +326,30 @@ CI. Tenant isolation proven at all three layers, field-level audit trail with se
 masking, the administrative seat limit enforced by trigger, and file storage behind a
 virus-scan gate.
 
-**P2 — Statutory Reference Data: the structure is complete, the data is not** (13 September
-2026). 291 tests green. All twenty tables exist with their constraints; `statutory/resolve.py`
-is the only place that answers "what applied on this date"; the loader refuses any file with an
-uncited row and never updates an existing one; `loadstatutory` and `verifystatutory` are two
-commands because loading and verifying are two people; and the no-hard-coded-rate rule runs as a
-test on every commit rather than as a grep somebody remembers.
+**P2 — Statutory Reference Data: structure complete, first data load in, awaiting
+verification** (13 September 2026). 317 tests green. All twenty tables exist with their
+constraints; `statutory/resolve.py` is the only place that answers "what applied on this date";
+the loader refuses any file with an uncited row and never updates an existing one;
+`loadstatutory` and `verifystatutory` are two commands because loading and verifying are two
+people; and the no-hard-coded-rate rule runs as a test on every commit rather than as a grep
+somebody remembers.
 
-**What remains in P2 is the data itself** — every figure on workbook sheet 05, loaded with its
-citation and verified against the source document, then the golden tests that reproduce the
-published SARS and DEL worked examples. Until that is done the tables are empty and every
-`resolve` call raises, which is the correct behaviour for a system that does not yet know the
-rates.
+`reference/ref-2026.03.01.json` holds 61 rows researched from primary sources: the 1 March 2026
+wage floors, the SARS 2027 tax year tables, the contribution parameters, public holidays for
+2026 and 2027, and the maintenance calendar. It is loaded and reconciles, and it is **not
+verified** — `in_force_on()` cannot see it, so every payroll run is still blocked. That is
+correct and deliberate.
+
+**What remains in P2:**
+
+- Kobus verifies every figure against its source document, then `verifystatutory`
+- The three sector rule sets — leave, working time, termination — from the BCEA, SD7 and SD1.
+  Not researched yet, and the largest remaining reading job
+- Contract cleaning **Area C (KwaZulu-Natal)** has no rate: the gazette states none and points
+  at the BCCCI collective agreement, which nobody has. A KwaZulu-Natal contract cleaning
+  employer cannot be onboarded until it is loaded
+- SARS source codes and the bank list
+- The golden tests, which are what finally allows `golden_tests_passed`
 
 Chosen ahead of P1 because nothing in the payroll engine can be tested against a SARS worked
 example until the reference tables exist, and a wrong UIF ceiling blocks a pilot employer in a

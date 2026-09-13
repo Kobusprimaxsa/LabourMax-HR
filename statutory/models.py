@@ -400,15 +400,19 @@ class Sector(AuditedModel, AuditMixin):
 class SectorArea(AuditedModel, AuditMixin):
     """A geographic wage area within a sector.
 
-    Contract cleaning has Area A, Area B (KwaZulu-Natal) and Area C. KwaZulu-Natal
-    is the awkward one: its rates come from the BCCCI collective agreement rather
-    than from the gazette, which is why ``uses_bargaining_council_rates`` exists as
-    data — the loader needs to know a different source applies, and the citation on
-    those rows will not be a gazette number.
+    Contract cleaning has three, and the gazette's lettering is not the one people
+    assume: **Area A is the metropolitan councils, Area B is a named list of local
+    councils, and Area C is the whole of KwaZulu-Natal** (GN R.7083, GG 54075,
+    3 February 2026). KwaZulu-Natal is the awkward one: the gazette gives it no
+    figure at all and points instead at the collective agreement concluded in the
+    Bargaining Council for the Contract Cleaning Service Industry. That is why
+    ``uses_bargaining_council_rates`` exists as data — the loader needs to know a
+    different source applies, and the citation on those rows is a clause of an
+    agreement rather than a gazette number.
     """
 
     sector = models.ForeignKey(Sector, on_delete=models.PROTECT, related_name="areas")
-    code = models.CharField(max_length=20, help_text="AREA_A | AREA_B_KZN | AREA_C")
+    code = models.CharField(max_length=20, help_text="AREA_A | AREA_B | AREA_C_KZN")
     name = models.CharField(max_length=120)
     description = models.TextField(blank=True, help_text="Which councils and metros are included.")
     uses_bargaining_council_rates = models.BooleanField(

@@ -101,7 +101,15 @@ The most important phase in the build. Can overlap P1.
 - [x] `manage.py loadstatutory` and `manage.py verifystatutory` — two commands, two people
 - [x] Staleness guard blocking payroll runs beyond `data_current_through`
 - [x] The no-hard-coded-rate rule as a test rather than a grep (D-59)
-- [ ] Seed all values from workbook sheet 05 — **the phase's remaining work**
+- [x] `statutory/checks.py` + `manage.py checkstatutory` — the loaded data reconciles with
+      itself, and verification is refused until it does (D-62)
+- [x] First data load: `reference/ref-2026.03.01.json` — wage floors, SARS 2027 tax year,
+      contribution parameters, public holidays 2026 and 2027, the watch calendar. 61 rows,
+      each with a citation, loaded and unverified
+- [ ] **Kobus verifies every figure against its source**, then `verifystatutory`
+- [ ] The three sector rule sets from the BCEA, SD7 and SD1 — the largest reading job left
+- [ ] Contract cleaning Area C (KwaZulu-Natal): the BCCCI collective agreement (D-63)
+- [ ] `sars_source_code` and the bank list
 - [ ] Golden tests reproducing the published SARS and DEL worked examples
 
 `source_url` is deliberately optional rather than mandatory as this plan originally

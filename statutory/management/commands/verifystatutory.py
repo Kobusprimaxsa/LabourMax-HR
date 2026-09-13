@@ -20,6 +20,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from core.models import AppUser
+from statutory import checks
 from statutory.models import ReferenceDataVersion
 
 
@@ -79,6 +80,16 @@ class Command(BaseCommand):
             raise CommandError(
                 f"--current-through {current_through} is before this version applies "
                 f"({version.applies_from})."
+            )
+
+        outstanding = [issue for issue in checks.run_all() if issue.blocking]
+        if outstanding:
+            for issue in outstanding:
+                self.stdout.write(self.style.ERROR(str(issue)))
+            raise CommandError(
+                "The loaded reference data does not reconcile with itself, so it cannot "
+                "be verified. Every one of these is arithmetic the published source "
+                "settles - fix the data and re-run."
             )
 
         if not options["golden_tests_passed"]:
