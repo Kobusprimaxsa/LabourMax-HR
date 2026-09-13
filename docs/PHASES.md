@@ -133,8 +133,8 @@ constraint refuses a blank one on every cited table.
 - [x] Reference tables refuse DELETE by trigger — FORCE RLS defeats the foreign key (D-76)
 - [x] `workplace` with client name, contract reference, area resolution (D-81)
 - [x] `employer_setting`, seeded from sector at onboarding (D-79, D-80)
-- [ ] **Municipality-to-area data** — `municipality_area_map` is empty, so no contract
-      cleaning workplace can resolve an area yet
+- [x] **Municipality-to-area data** — the twelve Area A municipalities the determination
+      names are loaded; Area B is a province and Area C a residual, so neither is a list (D-118)
 - [x] `pay_group` and the pay period generator, all five frequencies (D-82, D-83, D-84, D-85)
 - [x] `payroll_component` catalogue, sixteen system components seeded and locked
       (D-87 shared tenancy, D-88 no rate lives here, D-89 flags follow the source code,
@@ -165,7 +165,7 @@ constraint refuses a blank one on every cited table.
 - [ ] Employee list: grouped by pay group, sector-derived default sort, remembered per user
 - [ ] `employee_import_batch` — bulk import from a generated .xlsx template, on the
       preview-validate-apply-reverse pattern, running every validation the single-capture
-      path runs (D-121, closes O-11). ADDED to P4 scope, +1 week
+      path runs (D-122, closes O-11). ADDED to P4 scope, +1 week
 
 **Done when:** capturing an employee below the sectoral minimum raises a visible, logged
 exception, and a future-dated increase flips the cache on its own effective date. Forty employees

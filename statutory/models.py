@@ -424,7 +424,10 @@ class SectorArea(AuditedModel, AuditMixin):
     sector = models.ForeignKey(Sector, on_delete=models.PROTECT, related_name="areas")
     code = models.CharField(
         max_length=20,
-        help_text="AREA_A (listed councils) | AREA_B (KwaZulu-Natal, BCCCI) | AREA_C (rest of the RSA)",
+        help_text=(
+            "AREA_A (listed Metropolitan and Local Councils) | "
+            "AREA_B (KwaZulu-Natal, BCCCI) | AREA_C (rest of the RSA)"
+        ),
     )
     name = models.CharField(max_length=120)
     description = models.TextField(blank=True, help_text="Which councils and metros are included.")

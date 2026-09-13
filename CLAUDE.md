@@ -402,9 +402,12 @@ out of it: FORCE RLS defeats foreign key enforcement (D-76) and the reference ta
 DELETE by trigger.
 
 `workplace` and `employer_setting` are in too. A workplace's wage area is derived from its
-municipality and stored with the date it was read (D-81) — and `municipality_area_map` is
-**empty**, so no contract cleaning workplace resolves an area today. That is a data-sourcing
-job, and until it is done onboarding a contract cleaning employer stops at the address.
+municipality and stored with the date it was read (D-81). `municipality_area_map` now holds
+the **twelve municipalities the determination itself names** (D-118) — and D-118 also corrected
+the area lettering that D-61 got wrong: Area A is the listed Metropolitan **and** Local Councils
+in one column, Area B is all of KwaZulu-Natal with no gazetted figure (BCCCI rates), and Area C
+is the residual "rest of the RSA" where most workplaces land. The table is not a gazetteer and
+must not become one.
 
 `pay_group` and the period generator are in, built to sheet 02 of the workbook (D-82 settled a
 design question against Claude's proposal — the workbook wins). A period belongs to the tax year
@@ -506,9 +509,10 @@ correct and deliberate.
 - Kobus verifies every figure against its source document, then `verifystatutory`
 - The notice band gap (D-68): SD1 splits notice at four weeks of service and the rule set
   table cannot express it. Fix before P6 builds the termination engine
-- Contract cleaning **Area C (KwaZulu-Natal)** has no rate: the gazette states none and points
+- Contract cleaning **Area B (KwaZulu-Natal)** has no rate: the gazette states none and points
   at the BCCCI collective agreement, which nobody has. A KwaZulu-Natal contract cleaning
-  employer cannot be onboarded until it is loaded
+  employer cannot be onboarded until it is loaded. (Area B, not Area C — D-61 had the
+  lettering the wrong way round, and D-118 corrected it)
 - Account number lengths per bank (D-72). NULL today; they come from the banks or from the
   EFT specification the payment partner supplies, and a guessed bound stops someone being paid
 - The golden tests, which are what finally allows `golden_tests_passed`

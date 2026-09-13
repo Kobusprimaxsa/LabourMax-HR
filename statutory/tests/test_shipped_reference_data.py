@@ -84,19 +84,69 @@ def test_the_day_before_the_gazette_takes_effect_resolves_to_nothing(loaded):
 
 @pytest.mark.statutory
 def test_kwazulu_natal_contract_cleaning_has_no_rate_and_falls_back_visibly(loaded):
-    """The gazette gives Area C no figure, so none was invented.
+    """The gazette gives Area B no figure, so none was invented.
 
     A KwaZulu-Natal employer therefore resolves to the sector-wide fallback, which is
     wrong for them — the BCCCI agreement governs. That is why the area is flagged
     ``uses_bargaining_council_rates`` and why the watch list carries it as not loaded:
     onboarding must refuse a KwaZulu-Natal contract cleaning employer until the
     agreement is in hand.
+
+    KwaZulu-Natal is **Area B**, not Area C. D-61 had it the other way round and D-118
+    corrected it; this test asserts the corrected lettering.
     """
     cleaning = Sector.objects.get(code=Sector.Code.CONTRACT_CLEANING)
-    kzn = cleaning.areas.get(code="AREA_C_KZN")
+    kzn = cleaning.areas.get(code="AREA_B")
 
     assert kzn.uses_bargaining_council_rates is True
     assert not MinimumWageRate.objects.filter(sector_area=kzn).exists()
+
+
+@pytest.mark.statutory
+def test_the_contract_cleaning_area_lettering_is_the_gazettes_and_not_d61s(loaded):
+    """D-61 read the gazette's three columns wrongly and D-118 corrected it.
+
+    Getting this wrong is not cosmetic. Reading the listed Local Councils as a separate
+    Area B at the low rate underpaid every one of them by R2,94 an hour, and putting
+    KwaZulu-Natal in Area C left the residual — most of the country — with no rate at
+    all. The correction lives in data, so only a test holds it in place.
+    """
+    cleaning = Sector.objects.get(code=Sector.Code.CONTRACT_CLEANING)
+    assert set(cleaning.areas.values_list("code", flat=True)) == {"AREA_A", "AREA_B", "AREA_C"}
+
+    area_a = cleaning.areas.get(code="AREA_A")
+    area_c = cleaning.areas.get(code="AREA_C")
+
+    # The metros AND the listed local councils share one column, at the HIGH rate.
+    assert area_a.municipalities.count() == 12
+    assert {m.municipality_type for m in area_a.municipalities.all()} == {"metro", "local"}
+
+    high = MinimumWageRate.objects.get(sector_area=area_a).hourly_rate
+    low = MinimumWageRate.objects.get(sector_area=area_c).hourly_rate
+    assert high > low, "Area A is the high-rate column"
+
+    # Area B is a province and Area C a residual, so neither is a list.
+    assert cleaning.areas.get(code="AREA_B").municipalities.count() == 0
+    assert area_c.municipalities.count() == 0
+
+
+def test_the_builder_still_reproduces_the_shipped_fixture():
+    """``tools/build_reference_fixture.py`` is the source; the JSON is its output.
+
+    They drifted apart once: the fixture was hand-corrected for D-118 and the builder
+    was not, so the next regeneration would have silently reinstated D-61's wrong
+    lettering and the R2,94 underpayment with it. Nothing else would have noticed.
+    """
+    import sys
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    tools = str(root / "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    from build_reference_fixture import DOCUMENT
+
+    shipped = json.loads((root / "reference" / "ref-2026.03.01.json").read_text(encoding="utf-8"))
+    assert DOCUMENT == shipped, "regenerate reference/ref-2026.03.01.json from the builder"
 
 
 @pytest.mark.statutory

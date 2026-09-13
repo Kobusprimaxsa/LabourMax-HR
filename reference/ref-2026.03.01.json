@@ -569,7 +569,7 @@
       {
         "watch_code": "BCCCI_KZN_AGREEMENT",
         "name": "Contract cleaning KwaZulu-Natal collective agreement",
-        "description": "Area C has no gazetted figure. Its wages come from the BCCCI collective agreement, which is extended by the Minister and runs on its own cycle. NOT YET LOADED - the agreement is needed before any KwaZulu-Natal contract cleaning employer can be onboarded.",
+        "description": "Area B (KwaZulu-Natal) has no gazetted figure. Its wages come from the BCCCI collective agreement, which is extended by the Minister and runs on its own cycle. NOT YET LOADED - the agreement is needed before any KwaZulu-Natal contract cleaning employer can be onboarded.",
         "change_cadence": "irregular",
         "typical_publication_window": "per the council's agreement cycle",
         "status": "change_published_not_loaded",

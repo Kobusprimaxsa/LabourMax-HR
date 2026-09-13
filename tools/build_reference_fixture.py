@@ -162,31 +162,125 @@ DOCUMENT = {
             {
                 "sector": "CONTRACT_CLEANING",
                 "code": "AREA_A",
-                "name": "Area A - Metropolitan Councils",
+                "name": "Area A - listed Metropolitan and Local Councils",
                 "description": (
-                    "City of Cape Town, Greater East Rand Metro, City of Johannesburg, "
-                    "City of Tshwane, Nelson Mandela Metro."
+                    "Metropolitan Councils: City of Cape Town, Greater East Rand Metro, City of "
+                    "Johannesburg, Tshwane and Nelson Mandela. Local Council: Emfuleni, Merafong, "
+                    "Mogale City, Metsimaholo, Randfontein, Stellenbosch, Westonaria. The gazette "
+                    "prints the metros and the local councils in ONE column, not two - see "
+                    "municipality_area_map for the list as loaded."
                 ),
             },
             {
                 "sector": "CONTRACT_CLEANING",
                 "code": "AREA_B",
-                "name": "Area B - named Local Councils",
+                "name": "Area B - KwaZulu-Natal",
                 "description": (
-                    "Emfuleni, Merafong, Mogale City, Metsimaholo, Randfontein, "
-                    "Stellenbosch and Westonaria Local Councils."
+                    "All Areas in KwaZulu-Natal. The gazette states no figure: conditions of "
+                    "employment and minimum wage rates for KwaZulu-Natal areas are subject to the "
+                    "collective agreement concluded in the Bargaining Council for the Contract "
+                    "Cleaning Service Industry (BCCCI)."
                 ),
+                "uses_bargaining_council_rates": True,
             },
             {
                 "sector": "CONTRACT_CLEANING",
-                "code": "AREA_C_KZN",
-                "name": "Area C - KwaZulu-Natal",
+                "code": "AREA_C",
+                "name": "Area C - the rest of the RSA",
                 "description": (
-                    "All KwaZulu-Natal areas. The gazette states no figure: wages and "
-                    "conditions follow the collective agreement of the Bargaining Council "
-                    "for the Contract Cleaning Service Industry."
+                    "In the rest of the RSA. This is a RESIDUAL, not a list: anywhere that is "
+                    "neither one of the Area A councils nor in KwaZulu-Natal. It is therefore the "
+                    "area most contract cleaning workplaces fall into, and it has no "
+                    "municipality_area_map rows by design."
                 ),
-                "uses_bargaining_council_rates": True,
+            },
+        ],
+        # Only the twelve municipalities the determination NAMES. Area B is a province
+        # and Area C is a residual, so neither is a list and neither has rows (D-118).
+        "municipality_area_map": [
+            {
+                "sector_area": "AREA_A",
+                "province_code": "WC",
+                "municipality_name": "City of Cape Town",
+                "municipality_type": "metro",
+                "effective_from": "2026-03-01",
+            },
+            {
+                "sector_area": "AREA_A",
+                "province_code": "GP",
+                "municipality_name": "Greater East Rand Metro",
+                "municipality_type": "metro",
+                "effective_from": "2026-03-01",
+            },
+            {
+                "sector_area": "AREA_A",
+                "province_code": "GP",
+                "municipality_name": "City of Johannesburg",
+                "municipality_type": "metro",
+                "effective_from": "2026-03-01",
+            },
+            {
+                "sector_area": "AREA_A",
+                "province_code": "GP",
+                "municipality_name": "Tshwane",
+                "municipality_type": "metro",
+                "effective_from": "2026-03-01",
+            },
+            {
+                "sector_area": "AREA_A",
+                "province_code": "EC",
+                "municipality_name": "Nelson Mandela",
+                "municipality_type": "metro",
+                "effective_from": "2026-03-01",
+            },
+            {
+                "sector_area": "AREA_A",
+                "province_code": "GP",
+                "municipality_name": "Emfuleni",
+                "municipality_type": "local",
+                "effective_from": "2026-03-01",
+            },
+            {
+                "sector_area": "AREA_A",
+                "province_code": "GP",
+                "municipality_name": "Merafong",
+                "municipality_type": "local",
+                "effective_from": "2026-03-01",
+            },
+            {
+                "sector_area": "AREA_A",
+                "province_code": "GP",
+                "municipality_name": "Mogale City",
+                "municipality_type": "local",
+                "effective_from": "2026-03-01",
+            },
+            {
+                "sector_area": "AREA_A",
+                "province_code": "FS",
+                "municipality_name": "Metsimaholo",
+                "municipality_type": "local",
+                "effective_from": "2026-03-01",
+            },
+            {
+                "sector_area": "AREA_A",
+                "province_code": "GP",
+                "municipality_name": "Randfontein",
+                "municipality_type": "local",
+                "effective_from": "2026-03-01",
+            },
+            {
+                "sector_area": "AREA_A",
+                "province_code": "WC",
+                "municipality_name": "Stellenbosch",
+                "municipality_type": "local",
+                "effective_from": "2026-03-01",
+            },
+            {
+                "sector_area": "AREA_A",
+                "province_code": "GP",
+                "municipality_name": "Westonaria",
+                "municipality_type": "local",
+                "effective_from": "2026-03-01",
             },
         ],
         "minimum_wage_rate": [
@@ -222,23 +316,33 @@ DOCUMENT = {
                 "effective_from": "2026-03-01",
                 "source_reference": NMW_GAZETTE,
                 "source_url": NMW_URL,
-                "notes": "Weekly and monthly figures stored as gazetted, not recomputed.",
+                "notes": (
+                    "Weekly and monthly figures stored as gazetted, not recomputed. Weekly is on a"
+                    " 45-hour week and monthly on 4.333 weeks, per the gazette's own footnotes. "
+                    "Applies to the listed metros AND the listed local councils - both sit in this"
+                    " one column."
+                ),
             },
             {
                 "sector": "CONTRACT_CLEANING",
-                "sector_area": "AREA_B",
+                "sector_area": "AREA_C",
                 "hourly_rate": "30.3300",
                 "weekly_rate_45h": "1364.85",
                 "monthly_rate_45h": "5913.90",
                 "effective_from": "2026-03-01",
                 "source_reference": NMW_GAZETTE,
                 "source_url": NMW_URL,
-                "notes": "Weekly and monthly figures stored as gazetted, not recomputed.",
+                "notes": (
+                    "Weekly and monthly figures stored as gazetted, not recomputed. THIS IS THE "
+                    "RESIDUAL RATE - the rest of the RSA, which is most of the country. Area B "
+                    "(KwaZulu-Natal) deliberately has no row: the gazette gives it no figure and "
+                    "points at the BCCCI agreement."
+                ),
             },
-            # Area C (KwaZulu-Natal) is deliberately absent. The gazette gives no
-            # figure for it, and inventing one would be exactly the failure this
-            # phase exists to prevent. It loads when the BCCCI collective agreement
-            # is in hand, as its own version.
+            # Area B (KwaZulu-Natal) is deliberately absent. The gazette gives no figure
+            # for it and points at the BCCCI collective agreement, and inventing one would
+            # be exactly the failure this phase exists to prevent. It loads when the
+            # agreement is in hand, as its own version.
         ],
         "tax_year": [
             {
@@ -508,7 +612,8 @@ DOCUMENT = {
                 "watch_code": "BCCCI_KZN_AGREEMENT",
                 "name": "Contract cleaning KwaZulu-Natal collective agreement",
                 "description": (
-                    "Area C has no gazetted figure. Its wages come from the BCCCI "
+                    "Area B (KwaZulu-Natal) has no gazetted figure. Its wages come "
+                    "from the BCCCI "
                     "collective agreement, which is extended by the Minister and runs on "
                     "its own cycle. NOT YET LOADED - the agreement is needed before any "
                     "KwaZulu-Natal contract cleaning employer can be onboarded."
