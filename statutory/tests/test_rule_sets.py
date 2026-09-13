@@ -26,6 +26,7 @@ The values used below are placeholders. Not one statutory figure appears in this
 from __future__ import annotations
 
 import datetime
+from decimal import Decimal
 
 import pytest
 from django.db import IntegrityError, transaction
@@ -214,3 +215,75 @@ def test_an_overtime_multiplier_below_one_is_refused(db, domestic):
 def test_a_bonus_month_outside_the_calendar_is_refused(db, cleaning):
     with pytest.raises(IntegrityError), transaction.atomic():
         rule_set(TerminationRuleSet, sector=cleaning, annual_bonus_month=13)
+
+
+# ------------------------------------------- the night allowance pairing (D-113)
+
+
+@pytest.mark.statutory
+def test_a_zero_night_allowance_with_a_percentage_type_is_refused(db, domestic):
+    """THE ROW NOBODY WOULD NOTICE WAS WRONG.
+
+    ``night_allowance_value`` is NUMERIC, so BCEA s17(2) - which requires night work
+    to be compensated and deliberately names no amount - is recorded as zero with a
+    type of ``by_agreement`` beside it. Zero therefore means two different things and
+    only the type column tells them apart: "the statute names no figure" against "the
+    gazetted figure is nil".
+
+    A row claiming ``percentage`` with a value of zero tells any calculator reading it
+    literally that night work is compensated at nothing. It looks like data rather
+    than like a mistake, and this check is the only thing between it and a payslip.
+
+    Raised in the first verification pass, where the zero was marked wrong before the
+    pair was agreed to say it already (D-113). Keeping the NUMERIC column was the
+    decision; this is what stops the ambiguity becoming an underpayment.
+    """
+    from statutory import checks
+
+    rule_set(
+        WorkingTimeRuleSet,
+        sector=domestic,
+        night_allowance_type="percentage",
+        night_allowance_value=Decimal(0),
+    )
+
+    issues = checks.check_night_allowance_coherence()
+    assert [issue for issue in issues if issue.blocking], "A promised figure of zero must block."
+    assert "pays nothing for night work" in " ".join(issue.message for issue in issues)
+
+
+@pytest.mark.statutory
+def test_by_agreement_with_a_zero_value_is_accepted(db, domestic):
+    """The pair D-113 settled: the type carries the meaning and the zero is a
+    placeholder. Together they are coherent, which is the whole argument for leaving
+    the column as it is."""
+    from statutory import checks
+
+    rule_set(
+        WorkingTimeRuleSet,
+        sector=domestic,
+        night_allowance_type="by_agreement",
+        night_allowance_value=Decimal(0),
+    )
+    assert checks.check_night_allowance_coherence() == []
+
+
+@pytest.mark.statutory
+def test_by_agreement_carrying_a_figure_is_refused(db, domestic):
+    """The mirror image, and the likelier accident.
+
+    SD1 gazettes ten percent for contract cleaning, so that sector carries a real
+    figure with a real type. A value sitting behind ``by_agreement`` means one column
+    was edited and the other was not - and the value is the one that gets used.
+    """
+    from statutory import checks
+
+    rule_set(
+        WorkingTimeRuleSet,
+        sector=domestic,
+        night_allowance_type="by_agreement",
+        night_allowance_value=Decimal("10.0000"),
+    )
+    issues = checks.check_night_allowance_coherence()
+    assert [issue for issue in issues if issue.blocking]
+    assert "names no figure" in " ".join(issue.message for issue in issues)

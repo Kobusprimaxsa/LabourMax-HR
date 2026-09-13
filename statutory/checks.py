@@ -33,6 +33,7 @@ from statutory.models import (
     SarsSourceCode,
     StatutoryParameter,
     TaxYear,
+    WorkingTimeRuleSet,
 )
 
 HUNDRED = Decimal(100)
@@ -264,6 +265,54 @@ def check_banks() -> list[Issue]:
     return issues
 
 
+def check_night_allowance_coherence() -> list[Issue]:
+    """A zero night allowance must be paired with a type that means "no figure".
+
+    **Why this check exists.** ``night_allowance_value`` is NUMERIC, so BCEA s17(2) —
+    which requires night work to be compensated and deliberately sets no amount — is
+    recorded as a zero with ``night_allowance_type`` of ``by_agreement`` beside it.
+    Zero therefore carries two possible meanings, and only the type column tells them
+    apart: "the statute names no figure, the employer sets one" against "the gazetted
+    figure is nil".
+
+    Kobus raised exactly this in the first verification pass, marking the zero wrong
+    before agreeing the pair already says it (D-113). Keeping the NUMERIC column was
+    the decision; this is what stops the ambiguity becoming a real underpayment. A
+    row claiming ``percentage`` or ``fixed_amount`` with a value of zero says, to any
+    calculator reading it literally, that night work is compensated at nothing — and
+    that is a row nobody would notice was wrong.
+
+    BLOCKING, because it is a contradiction rather than a judgement call.
+    """
+    issues = []
+    for rule_set in WorkingTimeRuleSet.objects.select_related("sector").all():
+        sector = rule_set.sector.code if rule_set.sector else "BCEA default"
+        names_a_figure = rule_set.night_allowance_type in {"percentage", "fixed_amount"}
+        if names_a_figure and rule_set.night_allowance_value == 0:
+            issues.append(
+                Issue(
+                    True,
+                    f"working_time_rule_set {sector}",
+                    f"has night_allowance_type {rule_set.night_allowance_type!r}, which "
+                    f"promises a figure, and night_allowance_value of zero. A "
+                    f"calculator reading that pays nothing for night work. Either the "
+                    f"amount is missing, or the type should say the statute sets none.",
+                )
+            )
+        if not names_a_figure and rule_set.night_allowance_value != 0:
+            issues.append(
+                Issue(
+                    True,
+                    f"working_time_rule_set {sector}",
+                    f"has night_allowance_type {rule_set.night_allowance_type!r}, which "
+                    f"names no figure, and a night_allowance_value of "
+                    f"{rule_set.night_allowance_value}. One of the two is wrong, and "
+                    f"the value is the one a calculator will use.",
+                )
+            )
+    return issues
+
+
 def check_citations() -> list[Issue]:
     """Nothing cited to a placeholder.
 
@@ -336,5 +385,6 @@ def run_all(year: TaxYear | None = None) -> list[Issue]:
     issues.extend(check_gazetted_wage_derivations())
     issues.extend(check_source_codes())
     issues.extend(check_banks())
+    issues.extend(check_night_allowance_coherence())
     issues.extend(check_citations())
     return issues
