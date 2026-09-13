@@ -150,8 +150,9 @@ constraint refuses a blank one on every cited table.
       unique is per tenant, D-98 email is not CITEXT)
 - [x] ICU collation set in the creating migration
 - [x] `employee_address`, `employee_contact`
-- [ ] `employee_engagement` — start, termination, fixed-term end; re-hire support
-- [ ] `employee_position` with site assignment (single or multi)
+- [x] `employee_engagement` — start, termination, fixed-term end; re-hire support (D-103)
+- [x] BCEA s43 minimum age, as reference data rather than a literal (D-100, D-101, D-102)
+- [x] `employee_position` with site assignment (single or multi), EXCLUDE on the date range
 - [ ] `employee_remuneration` — five pay bases, derived rates computed once and stored
 - [ ] Minimum-wage validation at capture
 - [ ] `employee_bank_account` with active and end dates

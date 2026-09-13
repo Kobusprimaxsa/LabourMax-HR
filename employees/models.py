@@ -37,6 +37,8 @@ from __future__ import annotations
 import datetime
 import uuid
 
+from django.contrib.postgres.constraints import ExclusionConstraint
+from django.contrib.postgres.fields import RangeBoundary, RangeOperators
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models.functions import Now
@@ -46,6 +48,7 @@ from core.db.fields import EncryptedCharField, keyed_hash, last4
 from core.models import TenantScopedModel
 from employees import identity
 from employers.models import PROVINCE_CODES
+from statutory.models import DateRange
 
 
 class Employee(AuditedModel, TenantScopedModel):
@@ -473,3 +476,307 @@ class EmployeeContact(AuditedModel, TenantScopedModel):
 
     def __str__(self):
         return f"{self.full_name} ({self.contact_type})"
+
+
+# ---------------------------------------------------------------- engagements
+
+
+class EmployeeEngagement(AuditedModel, TenantScopedModel):
+    """One period of employment. A re-hire is a second row, never an edited first.
+
+    **Service length is computed from this table, and that is the whole reason it
+    exists.** Notice periods, severance, annual leave accrual and the BCEA's
+    six-month thresholds all count continuous service, and an employee who left in
+    2027 and came back in 2029 has two periods, not one long one. Overwriting the
+    first engagement's dates on re-hire would silently grant them four years of
+    accrued service they never had — and every downstream figure would look
+    plausible.
+
+    ``is_current`` is a cached flag with a partial unique behind it: at most one
+    current engagement per employee. It is not merely "termination_date is NULL",
+    because a future-dated termination is captured in advance and the employee is
+    still currently employed until it arrives.
+
+    ``termination_reason_code`` decides more than reporting. Only ``retrenchment``
+    triggers severance under BCEA s41, and the UI-19 declaration carries its own
+    code — so this is a compliance field, not a note.
+    """
+
+    class ContractType(models.TextChoices):
+        PERMANENT = "permanent", "Permanent"
+        FIXED_TERM = "fixed_term", "Fixed term"
+        TEMPORARY = "temporary", "Temporary"
+        CASUAL = "casual", "Casual"
+        PROJECT = "project", "Project"
+
+    class TerminationReason(models.TextChoices):
+        RESIGNATION = "resignation", "Resignation"
+        DISMISSAL_MISCONDUCT = "dismissal_misconduct", "Dismissal — misconduct"
+        DISMISSAL_INCAPACITY = "dismissal_incapacity", "Dismissal — incapacity"
+        RETRENCHMENT = "retrenchment", "Retrenchment (operational requirements)"
+        END_OF_CONTRACT = "end_of_contract", "End of fixed-term contract"
+        RETIREMENT = "retirement", "Retirement"
+        DEATH = "death", "Death"
+        ABSCONDED = "absconded", "Absconded"
+        MUTUAL_SEPARATION = "mutual_separation", "Mutual separation"
+
+    #: BCEA s41: severance is due on dismissal for operational requirements, and on
+    #: nothing else in this list. Named here so the termination engine reads the
+    #: rule rather than restating it.
+    SEVERANCE_REASONS = {TerminationReason.RETRENCHMENT}
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="engagements")
+    engagement_number = models.SmallIntegerField(
+        default=1, help_text="1 for the first engagement, 2 for a re-hire, and so on."
+    )
+
+    start_date = models.DateField(db_index=True, help_text="Date of engagement.")
+    probation_end_date = models.DateField(null=True, blank=True)
+
+    contract_type = models.CharField(
+        max_length=30, choices=ContractType.choices, default=ContractType.PERMANENT
+    )
+    fixed_term_end_date = models.DateField(
+        null=True, blank=True, help_text="Required for a fixed-term contract."
+    )
+    fixed_term_reason = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="LRA s198B justification for employing on a fixed term.",
+    )
+
+    termination_date = models.DateField(
+        null=True, blank=True, db_index=True, help_text="Last day of service."
+    )
+    termination_reason_code = models.CharField(
+        max_length=40, choices=TerminationReason.choices, blank=True
+    )
+    termination_notes = models.TextField(blank=True)
+    notice_given_date = models.DateField(null=True, blank=True)
+    notice_worked = models.BooleanField(
+        null=True, blank=True, help_text="FALSE triggers notice pay in the termination engine."
+    )
+    uif_status_code = models.CharField(
+        max_length=10, blank=True, help_text="UI-19 reason code for the declaration."
+    )
+
+    is_current = models.BooleanField(
+        default=True, help_text="At most one per employee. Not the same as 'not terminated'."
+    )
+
+    class Meta:
+        db_table = "employee_engagement"
+        ordering = ["employee_id", "-engagement_number"]
+        indexes = [
+            models.Index(fields=["tenant", "start_date"]),
+            models.Index(fields=["termination_date"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee", "engagement_number"], name="uniq_engagement_number_per_employee"
+            ),
+            models.UniqueConstraint(
+                fields=["employee"],
+                condition=models.Q(is_current=True),
+                name="uniq_current_engagement_per_employee",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(termination_date__isnull=True)
+                | models.Q(termination_date__gte=models.F("start_date")),
+                name="engagement_ends_on_or_after_it_starts",
+            ),
+            # Sheet 03 writes this as an implication: fixed_term implies an end date.
+            # A fixed-term contract with no end date is not a fixed-term contract, and
+            # LRA s198B turns an unterminated one into permanent employment after
+            # three months - which is a liability created by a blank field.
+            models.CheckConstraint(
+                condition=~models.Q(contract_type="fixed_term")
+                | models.Q(fixed_term_end_date__isnull=False),
+                name="engagement_fixed_term_has_an_end_date",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(is_current=False) | models.Q(termination_date__isnull=True),
+                name="engagement_current_means_not_yet_terminated",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(termination_date__isnull=True)
+                | ~models.Q(termination_reason_code=""),
+                name="engagement_termination_has_a_reason",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(engagement_number__gte=1),
+                name="engagement_number_starts_at_one",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Engagement {self.engagement_number} of {self.employee_id} from {self.start_date}"
+
+    @property
+    def triggers_severance(self) -> bool:
+        """BCEA s41. Only operational requirements, and this is where that is stated."""
+        return self.termination_reason_code in self.SEVERANCE_REASONS
+
+    def service_days_to(self, on_date: datetime.date) -> int:
+        """Days of service in THIS engagement up to a date, inclusive of both ends.
+
+        This engagement only. Continuous service across a re-hire is a different
+        question with a different answer, and conflating them is how a returning
+        employee gets a notice period they have not earned.
+        """
+        end = self.termination_date or on_date
+        end = min(end, on_date)
+        if end < self.start_date:
+            return 0
+        return (end - self.start_date).days + 1
+
+    def clean(self):
+        super().clean()
+
+        if self.termination_date and self.start_date and self.termination_date < self.start_date:
+            raise ValidationError({"termination_date": "Employment cannot end before it started."})
+
+        if self.contract_type == self.ContractType.FIXED_TERM and not self.fixed_term_end_date:
+            raise ValidationError(
+                {
+                    "fixed_term_end_date": (
+                        "A fixed-term contract needs an end date. Without one it is not "
+                        "fixed-term, and LRA s198B can turn it into permanent employment "
+                        "after three months."
+                    )
+                }
+            )
+
+        if self.termination_date and not self.termination_reason_code:
+            raise ValidationError(
+                {
+                    "termination_reason_code": (
+                        "A termination needs a reason. It decides whether severance is "
+                        "due and what goes on the UI-19 — it is not a note."
+                    )
+                }
+            )
+
+        if self.is_current and self.termination_date:
+            raise ValidationError(
+                {
+                    "is_current": (
+                        "An engagement with a termination date is not the current one. "
+                        "Capture the termination and let the engagement close."
+                    )
+                }
+            )
+
+
+class EmployeePosition(AuditedModel, TenantScopedModel):
+    """Effective-dated job title, grade, workplace and reporting line.
+
+    Never overwritten. A promotion inserts a row and closes the previous one, because
+    ``job_grade`` selects the minimum wage row the employee is measured against — so
+    a March payslip re-run in 2029 has to see the grade they held in March, not the
+    one they were promoted into in July.
+
+    ``site_assignment`` is D-47, and deliberately small: single-site hides the site
+    column from the attendance grid entirely, multi-site exposes a per-day picker,
+    and a day belongs to one site. An allocation table for splitting a day across
+    sites was considered and rejected as disproportionate.
+    """
+
+    class SiteAssignment(models.TextChoices):
+        SINGLE_SITE = "single_site", "One site"
+        MULTI_SITE = "multi_site", "More than one site"
+
+    class ChangeReason(models.TextChoices):
+        NEW_ENGAGEMENT = "new_engagement", "New engagement"
+        PROMOTION = "promotion", "Promotion"
+        TRANSFER = "transfer", "Transfer"
+        REDEPLOYMENT = "redeployment", "Redeployment"
+        CORRECTION = "correction", "Correction"
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="positions")
+    engagement = models.ForeignKey(
+        EmployeeEngagement, on_delete=models.CASCADE, related_name="positions"
+    )
+
+    job_title = models.CharField(max_length=120, help_text="Free text, as the employer says it.")
+    job_grade = models.ForeignKey(
+        "statutory.JobGrade",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="positions",
+        help_text="Selects the applicable minimum wage row.",
+    )
+    workplace = models.ForeignKey(
+        "employers.Workplace",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="positions",
+    )
+    site_assignment = models.CharField(
+        max_length=20, choices=SiteAssignment.choices, default=SiteAssignment.SINGLE_SITE
+    )
+    reports_to_employee = models.ForeignKey(
+        Employee, null=True, blank=True, on_delete=models.SET_NULL, related_name="direct_reports"
+    )
+    occupational_level = models.CharField(
+        max_length=40, blank=True, help_text="For EEA reporting if it is ever required."
+    )
+
+    effective_from = models.DateField(db_index=True)
+    effective_to = models.DateField(
+        null=True, blank=True, help_text="Exclusive. NULL means current."
+    )
+    change_reason = models.CharField(max_length=60, choices=ChangeReason.choices, blank=True)
+
+    class Meta:
+        db_table = "employee_position"
+        ordering = ["employee_id", "-effective_from"]
+        indexes = [
+            models.Index(fields=["employee", "-effective_from"]),
+            models.Index(fields=["tenant"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee", "effective_from"], name="uniq_position_start_per_employee"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(effective_to__isnull=True)
+                | models.Q(effective_to__gt=models.F("effective_from")),
+                name="employee_position_period_ordered",
+            ),
+            # Sheet 03 asks for an EXCLUDE over the half-open range per employee, and
+            # this is it. The unique on (employee, effective_from) stops two rows
+            # STARTING on one day; only the exclusion stops a row that starts inside
+            # another's period — which is what a back-dated promotion does, and which
+            # would make two grades apply at once with the ORM picking one by ordering.
+            ExclusionConstraint(
+                name="employee_position_no_overlapping_periods",
+                expressions=[
+                    (
+                        DateRange("effective_from", "effective_to", RangeBoundary()),
+                        RangeOperators.OVERLAPS,
+                    ),
+                    ("employee", RangeOperators.EQUAL),
+                ],
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.job_title} from {self.effective_from}"
+
+    def clean(self):
+        super().clean()
+        if self.effective_to and self.effective_to <= self.effective_from:
+            raise ValidationError({"effective_to": "The end date must be after the start date."})
+
+        if (
+            self.site_assignment == self.SiteAssignment.SINGLE_SITE
+            and self.workplace_id is None
+            and self.engagement_id
+        ):
+            # A warning rather than a refusal: a domestic employer has no workplace
+            # records at all, and the household IS the site. Refusing here would
+            # block the simpler half of the market to serve the other half.
+            return

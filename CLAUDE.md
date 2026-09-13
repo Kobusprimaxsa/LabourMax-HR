@@ -428,8 +428,8 @@ python manage.py seedcomponents --list   # the catalogue, without touching the d
 
 Still open in P3: the municipality-to-area data.
 
-**P4 — Employee Master File: started** (13 September 2026). 553 tests green. `employee`,
-`employee_address` and `employee_contact` are in. Two things on the employee table are
+**P4 — Employee Master File: started** (13 September 2026). 583 tests green. `employee`,
+`employee_address`, `employee_contact`, `employee_engagement` and `employee_position` are in. Two things on the employee table are
 worth knowing before touching it.
 
 `id_number_hash` is a keyed HMAC **scoped to the tenant** (D-95). Unscoped, the same
@@ -448,6 +448,18 @@ captured date decide.
 The two sort columns are generated, lower-cased in the expression, and carry
 `en-ZA-x-icu` **set in the creating migration** (D-17) — changing a collation later
 rewrites the table and every index on it.
+
+A re-hire is a **new engagement row**, never an edited first one (D-103). Service length
+is read from `employee_engagement`, so editing would hand a returning employee notice,
+leave and severance they never earned, all of it plausible on screen.
+
+**The BCEA s43 minimum age is reference data, not a literal** (D-100). It is a statutory
+threshold, and `test_no_hardcoded_rates` would not have caught a literal `15` — that test
+scans for `Decimal` and `float`, and an age is an `int`. This is the first case where the
+rule and the automated guard come apart, so read the rule rather than trusting the test.
+And unlike `PayGroup.clean()`, the age check **refuses** when the figure is not loaded
+(D-101): there is no staleness guard behind it, and the failure is an offence under
+s43(3) rather than a wrong number on a payslip.
 
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting
 verification** (13 September 2026). 351 tests green. All twenty tables exist with their

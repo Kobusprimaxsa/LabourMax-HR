@@ -247,24 +247,34 @@ def test_the_first_fixture_creates_the_sectors_the_others_reference():
 @pytest.mark.statutory
 def test_load_all_loads_every_fixture_from_empty(db):
     """The whole reference set, in one command, on a fresh database."""
+    from statutory import loader
     from statutory.models import Bank, LeaveRuleSet, MinimumWageRate, ReferenceDataVersion
 
     call_command("loadstatutory", "--all")
 
-    assert ReferenceDataVersion.objects.count() == 5
+    assert ReferenceDataVersion.objects.count() == len(loader.FIXTURE_ORDER)
     assert MinimumWageRate.objects.exists()
     assert LeaveRuleSet.objects.count() == 3, "BCEA default, domestic and contract cleaning."
     assert Bank.objects.exists()
 
+    from statutory import resolve
+
+    assert resolve.parameter_value("MINIMUM_EMPLOYMENT_AGE", datetime.date(2026, 3, 1)) == 15, (
+        "BCEA s43(1). Loaded as data with a citation rather than written as a literal "
+        "in employees/ - the no-hard-coded-rate test scans for Decimal and float, and "
+        "an age is an int, so nothing would have caught it there."
+    )
+
 
 @pytest.mark.statutory
 def test_load_all_is_safe_to_run_twice(db):
+    from statutory import loader
     from statutory.models import ReferenceDataVersion
 
     call_command("loadstatutory", "--all")
     call_command("loadstatutory", "--all")
 
-    assert ReferenceDataVersion.objects.count() == 5
+    assert ReferenceDataVersion.objects.count() == len(loader.FIXTURE_ORDER)
 
 
 @pytest.mark.statutory

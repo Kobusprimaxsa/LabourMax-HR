@@ -835,6 +835,7 @@ class StatutoryParameter(AuditedModel, AuditMixin, EffectiveDatedModel, CitedSta
         HOURS = "hours", "Hours"
         RATIO = "ratio", "Ratio"
         WEEKS = "weeks", "Weeks"
+        YEARS = "years", "Years"
 
     parameter_code = models.CharField(
         max_length=60,
@@ -842,7 +843,7 @@ class StatutoryParameter(AuditedModel, AuditMixin, EffectiveDatedModel, CitedSta
         help_text=(
             "UIF_EMPLOYEE_RATE_PCT, UIF_MONTHLY_CEILING, SDL_RATE_PCT, "
             "SDL_ANNUAL_EXEMPTION, COIDA_ANNUAL_CEILING, BCEA_EARNINGS_THRESHOLD, "
-            "VAT_RATE_PCT, LEAVE_ACCRUAL_DIVISOR_DAYS"
+            "VAT_RATE_PCT, LEAVE_ACCRUAL_DIVISOR_DAYS, MINIMUM_EMPLOYMENT_AGE"
         ),
     )
     value_numeric = models.DecimalField(
