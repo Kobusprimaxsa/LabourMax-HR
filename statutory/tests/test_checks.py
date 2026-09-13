@@ -296,3 +296,32 @@ def test_one_account_length_bound_without_the_other_is_refused(db):
             universal_branch_code="198765",
             account_number_min_length=9,
         )
+
+
+# ------------------------------------------------------- the vacuous green tick
+
+
+@pytest.mark.statutory
+def test_an_empty_database_is_itself_a_blocking_finding(db):
+    """The failure this guards against reported success.
+
+    Every check in this module iterates rows. Over no rows they all return nothing,
+    and the command prints a green tick on a database that knows no rates at all —
+    the same shape as the five P0 defects, where protection read convincingly and
+    did nothing because the thing it protected was absent.
+    """
+    issues = checks.check_something_is_loaded()
+    assert issues and issues[0].blocking
+    assert "nothing is loaded" in issues[0].message
+    assert "loadstatutory" in issues[0].message
+
+
+@pytest.mark.statutory
+def test_run_all_stays_out_of_it_so_a_version_can_be_verified_in_any_order(db):
+    """Emptiness gates the REPORT, not the verification of one version.
+
+    Versions are loaded and verified in any order. Refusing to verify the bank list
+    because the wage rates are not loaded yet would be wrong, so run_all - which is
+    what verifystatutory calls - reports only on the rows that exist.
+    """
+    assert checks.run_all() == []

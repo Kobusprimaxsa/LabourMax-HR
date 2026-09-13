@@ -14,7 +14,7 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand, CommandError
 
 from statutory import checks
-from statutory.models import TaxYear
+from statutory.models import MinimumWageRate, SarsSourceCode, StatutoryParameter, TaxYear
 
 
 class Command(BaseCommand):
@@ -30,7 +30,7 @@ class Command(BaseCommand):
             if year is None:
                 raise CommandError(f"No tax year '{options['tax_year']}'.")
 
-        issues = checks.run_all(year)
+        issues = checks.check_something_is_loaded() + checks.run_all(year)
         blocking = [issue for issue in issues if issue.blocking]
         warnings = [issue for issue in issues if not issue.blocking]
 
@@ -39,7 +39,12 @@ class Command(BaseCommand):
             self.stdout.write(style(str(issue)))
 
         if not issues:
-            self.stdout.write(self.style.SUCCESS("Every check reconciles."))
+            counted = (
+                f"{MinimumWageRate.objects.count()} wage rates, "
+                f"{StatutoryParameter.objects.count()} parameters, "
+                f"{SarsSourceCode.objects.count()} source codes"
+            )
+            self.stdout.write(self.style.SUCCESS(f"Every check reconciles over {counted}."))
             return
 
         self.stdout.write("")

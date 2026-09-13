@@ -26,7 +26,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from statutory.models import Bank, MinimumWageRate, PayeRebate, SarsSourceCode, TaxYear
+from statutory.models import (
+    Bank,
+    MinimumWageRate,
+    PayeRebate,
+    SarsSourceCode,
+    StatutoryParameter,
+    TaxYear,
+)
 
 HUNDRED = Decimal(100)
 
@@ -276,8 +283,51 @@ def check_citations() -> list[Issue]:
     return issues
 
 
+def check_something_is_loaded() -> list[Issue]:
+    """An empty database passes every other check in this module. That is the bug.
+
+    Each check here iterates rows and reports what does not add up. Over no rows,
+    every one of them returns nothing and ``checkstatutory`` prints "Every check
+    reconciles" — a green tick on a database that knows no rates at all. It is
+    exactly the shape of the five defects P0 turned up: protection that reads
+    convincingly and does nothing, because the thing it protects was not there.
+
+    Called by the reporting command rather than by ``run_all``, because ``run_all``
+    gates the verification of a single version and versions are verified in any
+    order. The tables listed are the ones a payroll run cannot proceed without.
+    """
+    empty = [
+        name
+        for name, model in (
+            ("minimum_wage_rate", MinimumWageRate),
+            ("tax_year", TaxYear),
+            ("statutory_parameter", StatutoryParameter),
+        )
+        if not model.objects.exists()
+    ]
+    if not empty:
+        return []
+
+    return [
+        Issue(
+            True,
+            "reference data",
+            f"nothing is loaded in {', '.join(empty)}. Every other check passes over an "
+            f"empty table, so a green result here would mean nothing. Run "
+            f"'manage.py loadstatutory reference/ref-2026.03.01.json' and the other "
+            f"fixtures in reference/ first.",
+        )
+    ]
+
+
 def run_all(year: TaxYear | None = None) -> list[Issue]:
-    """Every check, over every tax year unless one is named."""
+    """Every row-consistency check, over every tax year unless one is named.
+
+    Deliberately does NOT include ``check_something_is_loaded``. This set is used to
+    gate verification of one reference version, and versions are verified in any
+    order — refusing to verify the bank list because the wage rates are not loaded
+    yet would be wrong. Emptiness is the reporting command's concern, not this one's.
+    """
     issues = []
     years = [year] if year is not None else list(TaxYear.objects.all())
     for one in years:

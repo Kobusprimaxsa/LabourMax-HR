@@ -207,6 +207,14 @@ the gazette or the SARS table wins and the workbook gets corrected.
 against the bands below it, every tax threshold against its rebates. `verifystatutory`
 refuses to record verification while anything blocking is outstanding.
 
+**A clone of this repo has empty reference tables.** The fixtures in `reference/` must be
+loaded before anything works, and `checkstatutory` refuses rather than reporting success on an
+empty database (D-74) — every check iterates rows, so over no rows they all pass.
+
+```powershell
+Get-ChildItem reference\*.json | ForEach-Object { python manage.py loadstatutory $_.FullName }
+```
+
 Things that are easy to get wrong, and have been got wrong before:
 
 - **UIF ceiling** moves on ministerial notice, on **no fixed calendar** — independent of the
@@ -340,7 +348,7 @@ masking, the administrative seat limit enforced by trigger, and file storage beh
 virus-scan gate.
 
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting
-verification** (13 September 2026). 343 tests green. All twenty tables exist with their
+verification** (13 September 2026). 345 tests green. All twenty tables exist with their
 constraints; `statutory/resolve.py` is the only place that answers "what applied on this date";
 the loader refuses any file with an uncited row and never updates an existing one;
 `loadstatutory` and `verifystatutory` are two commands because loading and verifying are two
