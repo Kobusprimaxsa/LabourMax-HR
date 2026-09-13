@@ -201,3 +201,79 @@ def test_the_staleness_guard_reads_what_verification_wrote(
 
     with pytest.raises(ReferenceDataStaleError):
         assert_reference_data_covers(datetime.date(2027, 3, 31))
+
+
+# ------------------------------------------------------------- the load order
+
+
+@pytest.mark.statutory
+def test_every_fixture_in_the_directory_is_in_the_load_order():
+    """A new fixture that nobody adds to FIXTURE_ORDER would never be loaded by --all.
+
+    Generated from the directory rather than listed, for the same reason the tenant
+    isolation suite is generated from the model registry: the failure is silent. The
+    fixture sits in the repo looking loaded and its rows are simply absent.
+    """
+    import pathlib
+
+    from statutory.loader import FIXTURE_DIRECTORY, FIXTURE_ORDER
+
+    repo = pathlib.Path(__file__).resolve().parents[2]
+    on_disk = {p.name for p in (repo / FIXTURE_DIRECTORY).glob("*.json")}
+
+    assert on_disk == set(FIXTURE_ORDER), (
+        f"reference/ holds {sorted(on_disk)} but FIXTURE_ORDER lists "
+        f"{sorted(FIXTURE_ORDER)}. Add the new fixture to FIXTURE_ORDER, in the "
+        f"position its dependencies require."
+    )
+
+
+@pytest.mark.statutory
+def test_the_first_fixture_creates_the_sectors_the_others_reference():
+    """The dependency that alphabetical order gets wrong, asserted rather than assumed."""
+    import json
+    import pathlib
+
+    from statutory.loader import FIXTURE_DIRECTORY, FIXTURE_ORDER
+
+    repo = pathlib.Path(__file__).resolve().parents[2]
+    first = json.loads((repo / FIXTURE_DIRECTORY / FIXTURE_ORDER[0]).read_text(encoding="utf-8"))
+
+    assert "sector" in first["tables"], (
+        "The first fixture must create the sectors, because later fixtures reference them by code."
+    )
+
+
+@pytest.mark.statutory
+def test_load_all_loads_every_fixture_from_empty(db):
+    """The whole reference set, in one command, on a fresh database."""
+    from statutory.models import Bank, LeaveRuleSet, MinimumWageRate, ReferenceDataVersion
+
+    call_command("loadstatutory", "--all")
+
+    assert ReferenceDataVersion.objects.count() == 5
+    assert MinimumWageRate.objects.exists()
+    assert LeaveRuleSet.objects.count() == 3, "BCEA default, domestic and contract cleaning."
+    assert Bank.objects.exists()
+
+
+@pytest.mark.statutory
+def test_load_all_is_safe_to_run_twice(db):
+    from statutory.models import ReferenceDataVersion
+
+    call_command("loadstatutory", "--all")
+    call_command("loadstatutory", "--all")
+
+    assert ReferenceDataVersion.objects.count() == 5
+
+
+@pytest.mark.statutory
+def test_a_fixture_path_and_all_together_is_refused(db, fixture_file):
+    with pytest.raises(CommandError):
+        call_command("loadstatutory", str(fixture_file), "--all")
+
+
+@pytest.mark.statutory
+def test_neither_a_path_nor_all_is_refused(db):
+    with pytest.raises(CommandError):
+        call_command("loadstatutory")

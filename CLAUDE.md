@@ -212,8 +212,12 @@ loaded before anything works, and `checkstatutory` refuses rather than reporting
 empty database (D-74) — every check iterates rows, so over no rows they all pass.
 
 ```powershell
-Get-ChildItem reference\*.json | ForEach-Object { python manage.py loadstatutory $_.FullName }
+python manage.py loadstatutory --all
 ```
+
+**Never load them with a shell glob.** Alphabetical order puts the rule set fixtures before
+the file that creates the sectors they reference, and the loader refuses them (D-75). `--all`
+uses `FIXTURE_ORDER` in `statutory/loader.py`, which is dependency order.
 
 Things that are easy to get wrong, and have been got wrong before:
 
@@ -318,6 +322,7 @@ python manage.py migrate
 python manage.py createsuperuser
 python manage.py dbcheck            # connection, extensions, and the superuser refusal
 
+python manage.py loadstatutory --all        # dependency order; never a shell glob
 python manage.py loadstatutory reference/ref-2026.03.01.json --loaded-by you@example.com
 python manage.py verifystatutory REF-2026.03.01 --verified-by someone-else@example.com `
     --current-through 2027-02-28 --golden-tests-passed
@@ -348,7 +353,7 @@ masking, the administrative seat limit enforced by trigger, and file storage beh
 virus-scan gate.
 
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting
-verification** (13 September 2026). 345 tests green. All twenty tables exist with their
+verification** (13 September 2026). 351 tests green. All twenty tables exist with their
 constraints; `statutory/resolve.py` is the only place that answers "what applied on this date";
 the loader refuses any file with an uncited row and never updates an existing one;
 `loadstatutory` and `verifystatutory` are two commands because loading and verifying are two

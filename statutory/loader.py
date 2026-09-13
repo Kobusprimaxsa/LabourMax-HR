@@ -209,6 +209,25 @@ TABLES: dict[str, TableSpec] = {
 }
 
 
+# The fixtures in reference/, in dependency order.
+#
+# This is a property of the data, not of the filenames: the rule set and contract
+# cleaning fixtures reference sectors by code, and those sectors are created by the
+# first file. Alphabetical order puts them the wrong way round, so a shell glob loads
+# them in an order the loader correctly refuses - which is how this list came to
+# exist. `loadstatutory --all` reads it; `test_every_fixture_is_in_the_load_order`
+# fails if a new fixture is added to the directory and not to this list.
+FIXTURE_ORDER = [
+    "ref-2026.03.01.json",
+    "ref-2026.03.01-rules.json",
+    "ref-2026.03.01-sd1.json",
+    "ref-2026.03.01-codes.json",
+    "ref-2026.03.01-banks.json",
+]
+
+FIXTURE_DIRECTORY = "reference"
+
+
 @dataclass
 class LoadReport:
     """What the load did, in the terms the verifier will check it in."""
@@ -457,3 +476,27 @@ def load_reference_file(path: str | Path, *, loaded_by=None) -> LoadReport:
     except json.JSONDecodeError as exc:
         raise ReferenceDataLoadError(f"{path} is not valid JSON: {exc}") from exc
     return load_reference_data(document, loaded_by=loaded_by)
+
+
+def load_reference_directory(directory: str | Path | None = None, *, loaded_by=None):
+    """Load every fixture in ``reference/``, in dependency order, one file at a time.
+
+    Deliberately NOT one transaction across all five. Each file is its own reference
+    data version and each is verified separately, so a later file failing must not
+    roll back an earlier one that loaded cleanly - the person fixing the failure
+    should not also have to reload what already worked.
+
+    Files already loaded report as such and are skipped, so this is safe to re-run.
+    """
+    base = Path(directory) if directory else Path(FIXTURE_DIRECTORY)
+    missing = [name for name in FIXTURE_ORDER if not (base / name).exists()]
+    if missing:
+        raise ReferenceDataLoadError(
+            f"Missing from {base}: {', '.join(missing)}. The load order is fixed "
+            f"because the rule set fixtures reference sectors the first file creates."
+        )
+
+    reports = []
+    for name in FIXTURE_ORDER:
+        reports.append(load_reference_file(base / name, loaded_by=loaded_by))
+    return reports
