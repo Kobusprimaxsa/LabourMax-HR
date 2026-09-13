@@ -64,13 +64,16 @@ DJANGO_SCAFFOLDING = {"apps.py", "admin.py", "models.py", "__init__.py"}
 # "0.01" is the rounding quantum from invariant 6 — rounding to two places happens at
 # the payslip line, and it needs a literal to quantize against. "0.001" is the same
 # thing one place further out, for the three-decimal columns like
-# pay_period.working_days_in_period. The rest are identity and zero values, and "100"
-# converts a percentage to a fraction, which is arithmetic rather than a rate.
+# pay_period.working_days_in_period, and "0.000001" one further still, for the
+# six-decimal derived rate columns on employee_remuneration. The rest are identity and
+# zero values, and "100" converts a percentage to a fraction, which is arithmetic
+# rather than a rate.
 #
 # Nothing whose VALUE could be a statutory figure belongs here. A quantum is a unit of
 # rounding; a rate is a number somebody gazetted.
 PERMITTED_DECIMAL_CONSTANTS = {
     "0",
+    "0.000001",
     "0.00",
     "0.0000",
     "0.001",

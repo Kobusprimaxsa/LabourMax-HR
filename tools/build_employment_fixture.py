@@ -1,14 +1,18 @@
 """Build ``reference/ref-2026.03.01-employment.json``.
 
-One parameter, and it is here rather than as a literal ``15`` in ``employees/``
-because it is a statutory threshold and CLAUDE.md's rule covers thresholds, not
-only rates. The no-hard-coded-rate test would not have caught it — that test scans
-for ``Decimal`` and ``float`` literals, and an age is an ``int``.
+One parameter: the age below which a person may not be employed at all. Here
+rather than as a literal ``15`` in ``employees/`` because CLAUDE.md's rule covers
+thresholds, not only rates — and because the automated guard would NOT have caught
+it: ``test_no_hardcoded_rates`` scans for ``Decimal`` and ``float`` literals, and an
+age is an ``int``. Getting this wrong in the permissive direction is not a payslip a
+few rand out; it is a criminal offence under s43(3), committed by the employer, with
+this system having recorded the engagement.
 
-The figure is the age below which a person may not be employed at all. Getting it
-wrong in the permissive direction is not a payslip that is a few rand out; it is a
-criminal offence under BCEA s43(3), committed by the employer, with this system
-having recorded the engagement.
+The rate-derivation constant from s35 lives in ``build_remuneration_fixture.py``,
+in its own version. It started out in this file and the loader refused the second
+load, exactly as designed — a version already loaded is never edited in place. The
+refusal produced the better structure: employment eligibility and rate derivation
+are different subjects with different reasons to change.
 """
 
 from __future__ import annotations
@@ -61,7 +65,7 @@ FIXTURE = {
                     "2026, because the threshold has applied continuously since then and "
                     "an engagement backdated to 2015 must resolve against it too."
                 ),
-            }
+            },
         ]
     },
 }

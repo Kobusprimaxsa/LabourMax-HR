@@ -428,8 +428,10 @@ python manage.py seedcomponents --list   # the catalogue, without touching the d
 
 Still open in P3: the municipality-to-area data.
 
-**P4 — Employee Master File: started** (13 September 2026). 583 tests green. `employee`,
-`employee_address`, `employee_contact`, `employee_engagement` and `employee_position` are in. Two things on the employee table are
+**P4 — Employee Master File: started** (13 September 2026). 620 tests green. `employee`,
+`employee_address`, `employee_contact`, `employee_engagement`, `employee_position` and
+`employee_remuneration` are in, and P4's definition of done is met: a rate below the
+sectoral minimum raises with both figures and the gazette citation. Two things on the employee table are
 worth knowing before touching it.
 
 `id_number_hash` is a keyed HMAC **scoped to the tenant** (D-95). Unscoped, the same
@@ -460,6 +462,22 @@ rule and the automated guard come apart, so read the rule rather than trusting t
 And unlike `PayGroup.clean()`, the age check **refuses** when the figure is not loaded
 (D-101): there is no staleness guard behind it, and the failure is an offence under
 s43(3) rather than a wrong number on a payslip.
+
+**Rate derivation has exactly one statutory constant** — BCEA s35's four and one-third,
+in `statutory_parameter` and handed into `employees/rates.py` rather than known by it
+(D-104). **Weekly is the hub**: every basis converts to weekly first and hourly and daily
+both come off it, because deriving daily as hourly × `hours_per_day` disagrees with
+weekly ÷ `days_per_week` whenever the two do not reconcile — and the employee would be
+paid one figure for a day of leave and another for a day of work (D-106). The three
+derived rates are stored columns, not properties: recomputing on read would recompute
+with today's hours and today's factor, and a 2029 re-run of March 2026 would differ from
+the payslip the employee was handed.
+
+The minimum wage is checked on the **derived hourly rate**, raises with both figures, and
+can be accepted by a named user whose id is stored (D-108). The pay cache is refreshed as
+at **today**, never as at the new row's effective date — that mistake moves a July rate
+onto the employee list in March, and it is the bug D-18's nightly job exists to catch
+(D-107).
 
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting
 verification** (13 September 2026). 351 tests green. All twenty tables exist with their

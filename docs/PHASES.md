@@ -153,8 +153,9 @@ constraint refuses a blank one on every cited table.
 - [x] `employee_engagement` — start, termination, fixed-term end; re-hire support (D-103)
 - [x] BCEA s43 minimum age, as reference data rather than a literal (D-100, D-101, D-102)
 - [x] `employee_position` with site assignment (single or multi), EXCLUDE on the date range
-- [ ] `employee_remuneration` — five pay bases, derived rates computed once and stored
-- [ ] Minimum-wage validation at capture
+- [x] `employee_remuneration` — five pay bases, derived rates computed once and stored (D-104, D-106)
+- [x] Minimum-wage validation at capture, raising and acknowledgeable (D-108)
+- [x] Pay cache maintained on write; the nightly job is the remaining half (D-107)
 - [ ] `employee_bank_account` with active and end dates
 - [ ] `employee_tax_profile`, `work_schedule`, `work_schedule_day`
 - [ ] `employee_leave_entitlement`, `employee_recurring_component`, `employee_note`

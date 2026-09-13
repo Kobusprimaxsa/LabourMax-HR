@@ -780,3 +780,155 @@ class EmployeePosition(AuditedModel, TenantScopedModel):
             # records at all, and the household IS the site. Refusing here would
             # block the simpler half of the market to serve the other half.
             return
+
+
+# --------------------------------------------------------------- remuneration
+
+
+class EmployeeRemuneration(AuditedModel, TenantScopedModel):
+    """The employee's pay, effective-dated. The row in force is what payroll reads.
+
+    **The three derived rates are stored, not computed on read**, and that is
+    invariant 2 rather than an optimisation. Recomputing on read would recompute
+    with today's ``hours_per_week`` and today's statutory factor, so a March 2026
+    payslip re-run in 2029 would quietly differ from the one the employee was given.
+    The derivation is in ``employees/rates.py``, pure and handed its inputs.
+
+    **The captured basis is preserved exactly.** An employee captured at R4,500 a
+    month has ``derived_monthly_rate`` of exactly 4500 — not 4500 converted to a week
+    and back, which would land a few cents away from the figure on their contract.
+
+    **``is_below_minimum`` is a flag, not a block**, and that is the workbook's call.
+    The service function refuses unless somebody acknowledges it, and the
+    acknowledging user is recorded — because "the system let me" is not a defence, and
+    an employer who genuinely has a correction to make in the next five minutes must
+    not be locked out of their own record while they make it.
+
+    ``minimum_wage_rate`` points at the row the rate was measured against, so the
+    question "which floor was this checked against, on the day it was captured" has a
+    stored answer rather than a re-derivation against whatever is loaded now.
+    """
+
+    class PayBasis(models.TextChoices):
+        HOURLY = "hourly", "Hourly"
+        DAILY = "daily", "Daily"
+        WEEKLY = "weekly", "Weekly"
+        FORTNIGHTLY = "fortnightly", "Fortnightly"
+        MONTHLY = "monthly", "Monthly"
+
+    class ChangeReason(models.TextChoices):
+        NEW_ENGAGEMENT = "new_engagement", "New engagement"
+        ANNUAL_INCREASE = "annual_increase", "Annual increase"
+        MINIMUM_WAGE_UPLIFT = "minimum_wage_uplift", "Minimum wage uplift"
+        PROMOTION = "promotion", "Promotion"
+        CORRECTION = "correction", "Correction"
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="remuneration")
+    engagement = models.ForeignKey(
+        EmployeeEngagement, on_delete=models.CASCADE, related_name="remuneration"
+    )
+    pay_group = models.ForeignKey(
+        "employers.PayGroup", on_delete=models.PROTECT, related_name="remuneration"
+    )
+
+    pay_basis = models.CharField(max_length=20, choices=PayBasis.choices, db_index=True)
+    rate_amount = models.DecimalField(
+        max_digits=14, decimal_places=4, help_text="As captured, in the unit of pay_basis."
+    )
+
+    derived_hourly_rate = models.DecimalField(
+        max_digits=14,
+        decimal_places=6,
+        help_text="Normalised. The single input every calculator uses.",
+    )
+    derived_daily_rate = models.DecimalField(max_digits=14, decimal_places=6)
+    derived_monthly_rate = models.DecimalField(max_digits=14, decimal_places=6)
+
+    hours_per_day = models.DecimalField(max_digits=5, decimal_places=2, default=9)
+    days_per_week = models.DecimalField(max_digits=4, decimal_places=2, default=5)
+    hours_per_week = models.DecimalField(max_digits=5, decimal_places=2, default=45)
+
+    minimum_wage_rate = models.ForeignKey(
+        "statutory.MinimumWageRate",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="validated_remuneration",
+        help_text="The floor this rate was measured against, as at capture.",
+    )
+    is_below_minimum = models.BooleanField(
+        default=False, help_text="A flag, not a block. Allows the correction workflow."
+    )
+    below_minimum_ack_by_user = models.ForeignKey(
+        "core.AppUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        help_text="Who accepted a below-minimum rate. 'The system let me' is not a defence.",
+    )
+
+    effective_from = models.DateField(db_index=True)
+    effective_to = models.DateField(
+        null=True, blank=True, help_text="Exclusive. NULL means current."
+    )
+    change_reason = models.CharField(max_length=60, choices=ChangeReason.choices, blank=True)
+
+    class Meta:
+        db_table = "employee_remuneration"
+        ordering = ["employee_id", "-effective_from"]
+        indexes = [
+            models.Index(fields=["employee", "-effective_from"]),
+            models.Index(fields=["tenant", "pay_basis"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee", "effective_from"],
+                name="uniq_remuneration_start_per_employee",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(rate_amount__gt=0), name="remuneration_rate_is_positive"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    pay_basis__in=["hourly", "daily", "weekly", "fortnightly", "monthly"]
+                ),
+                name="remuneration_pay_basis_is_known",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(effective_to__isnull=True)
+                | models.Q(effective_to__gt=models.F("effective_from")),
+                name="remuneration_period_ordered",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(hours_per_week__gt=0, days_per_week__gt=0, hours_per_day__gt=0),
+                name="remuneration_working_pattern_is_positive",
+            ),
+            # Two rates in force at once means two answers to "what is this employee
+            # paid", with the ORM picking one by row order. The unique on
+            # (employee, effective_from) only stops two rows STARTING on one day; a
+            # back-dated increase starts inside the open period and slips past it.
+            ExclusionConstraint(
+                name="employee_remuneration_no_overlapping_periods",
+                expressions=[
+                    (
+                        DateRange("effective_from", "effective_to", RangeBoundary()),
+                        RangeOperators.OVERLAPS,
+                    ),
+                    ("employee", RangeOperators.EQUAL),
+                ],
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.rate_amount} {self.pay_basis} from {self.effective_from}"
+
+    @property
+    def working_pattern(self):
+        from employees.rates import WorkingPattern
+
+        return WorkingPattern(
+            hours_per_day=self.hours_per_day,
+            days_per_week=self.days_per_week,
+            hours_per_week=self.hours_per_week,
+        )
