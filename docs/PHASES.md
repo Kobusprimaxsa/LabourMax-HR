@@ -156,8 +156,8 @@ constraint refuses a blank one on every cited table.
 - [x] `employee_remuneration` — five pay bases, derived rates computed once and stored (D-104, D-106)
 - [x] Minimum-wage validation at capture, raising and acknowledgeable (D-108)
 - [x] Pay cache maintained on write; the nightly job is the remaining half (D-107)
-- [ ] `employee_bank_account` with active and end dates
-- [ ] `employee_tax_profile`, `work_schedule`, `work_schedule_day`
+- [x] `employee_bank_account` with active and end dates, plus the ghost-employee hash (D-111)
+- [x] `employee_tax_profile`, `work_schedule`, `work_schedule_day` (D-109, D-110)
 - [ ] `employee_leave_entitlement`, `employee_recurring_component`, `employee_note`
 - [ ] `document`, `document_category` — four-way attachment arc, visibility whitelist
 - [ ] Current-state cache columns, maintained on write **and** by a nightly job

@@ -428,9 +428,10 @@ python manage.py seedcomponents --list   # the catalogue, without touching the d
 
 Still open in P3: the municipality-to-area data.
 
-**P4 — Employee Master File: started** (13 September 2026). 620 tests green. `employee`,
+**P4 — Employee Master File: started** (13 September 2026). 665 tests green. `employee`,
 `employee_address`, `employee_contact`, `employee_engagement`, `employee_position` and
-`employee_remuneration` are in, and P4's definition of done is met: a rate below the
+`employee_remuneration`, `work_schedule`, `work_schedule_day`, `employee_tax_profile` and
+`employee_bank_account` are in, and P4's definition of done is met: a rate below the
 sectoral minimum raises with both figures and the gazette citation. Two things on the employee table are
 worth knowing before touching it.
 
@@ -474,7 +475,14 @@ with today's hours and today's factor, and a 2029 re-run of March 2026 would dif
 the payslip the employee was handed.
 
 The minimum wage is checked on the **derived hourly rate**, raises with both figures, and
-can be accepted by a named user whose id is stored (D-108). The pay cache is refreshed as
+can be accepted by a named user whose id is stored (D-108).
+
+**A statutory threshold that only answers a yes/no is stored as a declared boolean, not
+as a figure** (D-110). `work_schedule.works_over_27_hours_week` is the SD7 band selector
+and `employee_tax_profile.is_uif_exempt` carries its reason — the employer states which
+side of the line the person is on, the statute keeps the number, and nothing is
+hard-coded or needs a citation nobody can stand behind. When a statute's number only ever
+decides something a human already knows the answer to, capture the answer. The pay cache is refreshed as
 at **today**, never as at the new row's effective date — that mistake moves a July rate
 onto the employee list in March, and it is the bug D-18's nightly job exists to catch
 (D-107).

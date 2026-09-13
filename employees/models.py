@@ -932,3 +932,505 @@ class EmployeeRemuneration(AuditedModel, TenantScopedModel):
             days_per_week=self.days_per_week,
             hours_per_week=self.hours_per_week,
         )
+
+
+# ------------------------------------------------------------- work schedules
+
+
+class WorkSchedule(AuditedModel, TenantScopedModel):
+    """The employee's ordinary working pattern, effective-dated.
+
+    This is what decides, for one person on one date, whether a day is an ordinary
+    working day — and that single question drives four different payments: whether a
+    public holiday is paid when not worked (BCEA s18), which Sunday multiplier applies
+    (s16 pays double time only when Sunday is NOT ordinarily worked), how many days a
+    period of leave consumes, and what a day of notice is worth.
+
+    ``works_over_27_hours_week`` is the **SD7 rate band selector**, and it is a
+    declared boolean rather than a threshold this system computes. That matters:
+    ``employees/remuneration.py`` first derived the band by comparing hours against a
+    literal 27, the no-hard-coded-rate guard caught it, and the honest answer was that
+    nobody had confirmed the threshold is still live (D-105). The workbook's answer is
+    better than either — the employer states which band the person is in, the gazette
+    keeps its own threshold, and no figure needs to live in code at all (D-110).
+
+    ``cycle_length_days`` is 7 for an ordinary week and 14 for a rotating fortnight.
+    Anything else is allowed by the column and unexercised by the product.
+    """
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="schedules")
+    schedule_name = models.CharField(max_length=80, default="Standard")
+
+    days_per_week = models.DecimalField(max_digits=4, decimal_places=2, default=5)
+    ordinary_hours_per_week = models.DecimalField(max_digits=5, decimal_places=2, default=45)
+    works_over_27_hours_week = models.BooleanField(
+        default=True,
+        help_text=(
+            "The SD7 rate band, declared rather than computed. The gazette owns the "
+            "threshold; this says which side of it the employee is on."
+        ),
+    )
+    cycle_length_days = models.SmallIntegerField(
+        default=7, help_text="7 for a weekly pattern, 14 for a rotating fortnight."
+    )
+
+    effective_from = models.DateField(db_index=True)
+    effective_to = models.DateField(
+        null=True, blank=True, help_text="Exclusive. NULL means current."
+    )
+
+    class Meta:
+        db_table = "work_schedule"
+        ordering = ["employee_id", "-effective_from"]
+        indexes = [
+            models.Index(fields=["employee", "-effective_from"]),
+            models.Index(fields=["tenant"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee", "effective_from"], name="uniq_schedule_start_per_employee"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(effective_to__isnull=True)
+                | models.Q(effective_to__gt=models.F("effective_from")),
+                name="work_schedule_period_ordered",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cycle_length_days__gte=1, cycle_length_days__lte=31),
+                name="work_schedule_cycle_is_a_cycle",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(days_per_week__gt=0, days_per_week__lte=7),
+                name="work_schedule_days_per_week_is_a_week",
+            ),
+            ExclusionConstraint(
+                name="work_schedule_no_overlapping_periods",
+                expressions=[
+                    (
+                        DateRange("effective_from", "effective_to", RangeBoundary()),
+                        RangeOperators.OVERLAPS,
+                    ),
+                    ("employee", RangeOperators.EQUAL),
+                ],
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.schedule_name} from {self.effective_from}"
+
+    @property
+    def hours_band(self) -> str:
+        """The ``minimum_wage_rate`` band this schedule selects."""
+        from statutory.models import MinimumWageRate
+
+        if self.works_over_27_hours_week:
+            return MinimumWageRate.HoursBand.GT_27
+        return MinimumWageRate.HoursBand.LTE_27
+
+
+class WorkScheduleDay(AuditedModel, TenantScopedModel):
+    """One day of a schedule's cycle.
+
+    ``ordinary_hours`` is stored **net of the unpaid break** rather than computed from
+    the times, and the two are allowed to disagree. An employer who says 08:00 to
+    17:00 with a 60-minute break and 8 ordinary hours is describing the ordinary case;
+    one who says 8.5 has an arrangement, and the stored figure is what the employee
+    agreed to. Recomputing would overwrite that silently.
+    """
+
+    work_schedule = models.ForeignKey(WorkSchedule, on_delete=models.CASCADE, related_name="days")
+    cycle_day = models.SmallIntegerField(
+        help_text="0 to cycle_length_days - 1. For a 7-day cycle, 0 is Monday."
+    )
+    is_working_day = models.BooleanField(default=True)
+
+    start_time = models.TimeField(null=True, blank=True)
+    end_time = models.TimeField(null=True, blank=True)
+    unpaid_break_minutes = models.SmallIntegerField(default=60)
+    ordinary_hours = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0, help_text="Net of the unpaid break."
+    )
+
+    class Meta:
+        db_table = "work_schedule_day"
+        ordering = ["work_schedule_id", "cycle_day"]
+        indexes = [models.Index(fields=["tenant"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["work_schedule", "cycle_day"], name="uniq_cycle_day_per_schedule"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(ordinary_hours__gte=0, ordinary_hours__lte=24),
+                name="work_schedule_day_hours_are_a_day",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cycle_day__gte=0), name="work_schedule_day_is_not_negative"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(unpaid_break_minutes__gte=0),
+                name="work_schedule_day_break_is_not_negative",
+            ),
+            # A non-working day with hours on it is the contradiction that makes a
+            # public holiday or a Sunday resolve two ways at once.
+            models.CheckConstraint(
+                condition=models.Q(is_working_day=True) | models.Q(ordinary_hours=0),
+                name="work_schedule_day_off_has_no_hours",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Day {self.cycle_day}: {self.ordinary_hours}h"
+
+
+# ------------------------------------------------------------------ tax profile
+
+
+class EmployeeTaxProfile(AuditedModel, TenantScopedModel):
+    """Tax identity and directives, effective-dated.
+
+    Effective-dated because a directive or a medical dependant count changes mid-year
+    and the March payslip must still reproduce March.
+
+    **``nature_of_person`` is the SARS code that decides how the IRP5 reads**, not a
+    description. A is an individual with a South African ID, B one without, C a
+    director. It defaults from ``employee.id_type`` because the answer is already on
+    the record, and an employer asked to choose a letter will guess.
+
+    **A director uses the ordinary tax tables.** The flat 25% director rate was
+    repealed in 2017, and it is written here because it is the single most persistent
+    piece of out-of-date South African payroll folklore — a future reader reaching for
+    a directors' special case should find this line first.
+
+    ``is_uif_exempt`` and ``is_sdl_exempt`` are declared flags with reasons, not
+    computed. The UIF exemption for an employee working under 24 hours a month is a
+    statutory threshold, and the same argument as the wage band applies (D-110): the
+    employer states the fact, the statute keeps the number, and nothing needs to be
+    hard-coded to ask the question.
+    """
+
+    class TaxStatus(models.TextChoices):
+        STANDARD = "standard", "Standard tables"
+        DIRECTIVE_FIXED_PCT = "directive_fixed_pct", "Directive — fixed percentage"
+        DIRECTIVE_FIXED_AMOUNT = "directive_fixed_amount", "Directive — fixed amount"
+        EXEMPT = "exempt", "Exempt"
+        FOREIGN = "foreign", "Foreign"
+
+    class NatureOfPerson(models.TextChoices):
+        INDIVIDUAL_WITH_ID = "A", "A — individual with a South African ID"
+        INDIVIDUAL_WITHOUT_ID = "B", "B — individual without a South African ID"
+        DIRECTOR = "C", "C — director of a private company"
+
+    class UifExemptReason(models.TextChoices):
+        UNDER_24_HOURS = "under_24_hours_month", "Works under 24 hours a month"
+        FOREIGN_REPATRIATION = "foreign_repatriation", "Foreign national to be repatriated"
+        LEARNER = "learner", "Learner under the Skills Development Act"
+        PUBLIC_SERVANT = "public_servant", "National or provincial public servant"
+
+    #: The two statuses that require a directive on file.
+    DIRECTIVE_STATUSES = {TaxStatus.DIRECTIVE_FIXED_PCT, TaxStatus.DIRECTIVE_FIXED_AMOUNT}
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="tax_profiles")
+
+    tax_reference_number = models.CharField(
+        max_length=15,
+        blank=True,
+        help_text="Ten-digit SARS number. Often genuinely absent below the threshold.",
+    )
+    tax_status = models.CharField(
+        max_length=30, choices=TaxStatus.choices, default=TaxStatus.STANDARD
+    )
+    directive_number = models.CharField(max_length=30, blank=True)
+    directive_percentage = models.DecimalField(
+        max_digits=6, decimal_places=3, null=True, blank=True
+    )
+    directive_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    directive_valid_to = models.DateField(null=True, blank=True)
+
+    medical_scheme_members = models.SmallIntegerField(
+        default=0, help_text="Main member plus dependants, for the medical tax credit."
+    )
+
+    is_uif_exempt = models.BooleanField(default=False)
+    uif_exempt_reason = models.CharField(max_length=60, choices=UifExemptReason.choices, blank=True)
+    is_sdl_exempt = models.BooleanField(default=False)
+
+    nature_of_person = models.CharField(
+        max_length=1,
+        choices=NatureOfPerson.choices,
+        default=NatureOfPerson.INDIVIDUAL_WITH_ID,
+        help_text="The SARS code on the IRP5. Defaults from the employee's id_type.",
+    )
+
+    effective_from = models.DateField(db_index=True)
+    effective_to = models.DateField(null=True, blank=True)
+
+    audit_sensitive_fields = ("tax_reference_number", "directive_number")
+
+    class Meta:
+        db_table = "employee_tax_profile"
+        ordering = ["employee_id", "-effective_from"]
+        indexes = [
+            models.Index(fields=["employee", "-effective_from"]),
+            models.Index(fields=["tenant"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee", "effective_from"], name="uniq_tax_profile_start_per_employee"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(medical_scheme_members__gte=0),
+                name="tax_profile_medical_members_not_negative",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(tax_status="directive_fixed_pct")
+                | models.Q(directive_percentage__isnull=False),
+                name="tax_profile_pct_directive_has_a_percentage",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(tax_status="directive_fixed_amount")
+                | models.Q(directive_amount__isnull=False),
+                name="tax_profile_amount_directive_has_an_amount",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(is_uif_exempt=False) | ~models.Q(uif_exempt_reason=""),
+                name="tax_profile_uif_exemption_has_a_reason",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(effective_to__isnull=True)
+                | models.Q(effective_to__gt=models.F("effective_from")),
+                name="tax_profile_period_ordered",
+            ),
+            ExclusionConstraint(
+                name="employee_tax_profile_no_overlapping_periods",
+                expressions=[
+                    (
+                        DateRange("effective_from", "effective_to", RangeBoundary()),
+                        RangeOperators.OVERLAPS,
+                    ),
+                    ("employee", RangeOperators.EQUAL),
+                ],
+            ),
+        ]
+
+    def __str__(self):
+        return f"Tax profile from {self.effective_from} ({self.tax_status})"
+
+    @staticmethod
+    def nature_from_id_type(id_type: str) -> str:
+        """A for a South African ID, B for anything else.
+
+        C (director) is never derived: being a director is a fact about the person's
+        office, not about their identity document, and nothing on ``employee`` says it.
+        """
+        if id_type == Employee.IdType.SA_ID:
+            return EmployeeTaxProfile.NatureOfPerson.INDIVIDUAL_WITH_ID
+        return EmployeeTaxProfile.NatureOfPerson.INDIVIDUAL_WITHOUT_ID
+
+    def clean(self):
+        super().clean()
+
+        if self.tax_status in self.DIRECTIVE_STATUSES and not self.directive_number:
+            raise ValidationError(
+                {
+                    "directive_number": (
+                        "A directive status needs the directive number. SARS issues it "
+                        "per employee per year, and it goes on the IRP5."
+                    )
+                }
+            )
+        if (
+            self.tax_status == self.TaxStatus.DIRECTIVE_FIXED_PCT
+            and self.directive_percentage is None
+        ):
+            raise ValidationError(
+                {"directive_percentage": "A fixed-percentage directive needs its percentage."}
+            )
+        if (
+            self.tax_status == self.TaxStatus.DIRECTIVE_FIXED_AMOUNT
+            and self.directive_amount is None
+        ):
+            raise ValidationError(
+                {"directive_amount": "A fixed-amount directive needs its amount."}
+            )
+        if self.is_uif_exempt and not self.uif_exempt_reason:
+            raise ValidationError(
+                {
+                    "uif_exempt_reason": (
+                        "A UIF exemption needs its reason. The UI-19 asks for it, and "
+                        "an unexplained exemption is the one an inspector opens with."
+                    )
+                }
+            )
+
+
+# ------------------------------------------------------------- bank accounts
+
+
+class EmployeeBankAccount(AuditedModel, TenantScopedModel):
+    """Where the employee's pay goes. Effective-dated, one live account at a time.
+
+    Same encryption shape as ``employer_bank_account``: the number is encrypted and
+    unqueryable, ``_last4`` is what a person recognises, and ``_hash`` is a keyed HMAC
+    scoped to the tenant (D-95).
+
+    **The hash is beyond sheet 02, and the reason is ghost employees** (D-111). Several
+    "employees" paid into one bank account is the classic payroll fraud in contract
+    cleaning, which is half this product's market, and without a comparable column
+    there is no way to ask the question at all. It is a **signal, not a block**:
+    spouses and families legitimately share an account, and a system that refused the
+    second one would be wrong more often than right.
+
+    ``payment_method`` of ``cash`` is a first-class option rather than an omission. A
+    domestic employer paying a weekly wage in cash still owes a payslip under BCEA
+    s33, and refusing to record the arrangement would push them off the product rather
+    than into compliance.
+    """
+
+    class PaymentMethod(models.TextChoices):
+        EFT = "eft", "Electronic transfer"
+        CASH = "cash", "Cash"
+        CHEQUE = "cheque", "Cheque"
+
+    class AccountType(models.TextChoices):
+        CURRENT = "current", "Current or cheque"
+        SAVINGS = "savings", "Savings"
+        TRANSMISSION = "transmission", "Transmission"
+
+    class HolderRelationship(models.TextChoices):
+        SELF = "self", "The employee"
+        SPOUSE = "spouse", "Spouse"
+        OTHER = "other", "Someone else"
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="bank_accounts")
+
+    payment_method = models.CharField(
+        max_length=20, choices=PaymentMethod.choices, default=PaymentMethod.EFT
+    )
+    bank = models.ForeignKey(
+        "statutory.Bank",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="employee_accounts",
+        help_text="NULL when the employee is paid in cash.",
+    )
+    branch_code = models.CharField(max_length=10, blank=True)
+
+    account_number = EncryptedCharField(max_plaintext_length=30, blank=True, default="")
+    account_number_last4 = models.CharField(max_length=4, blank=True, editable=False)
+    account_number_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        editable=False,
+        db_index=True,
+        help_text="Keyed HMAC, scoped to the tenant. Finds several employees on one account.",
+    )
+    account_type = models.CharField(max_length=20, choices=AccountType.choices, blank=True)
+    account_holder_name = models.CharField(max_length=150, blank=True)
+    account_holder_relationship = models.CharField(
+        max_length=30, choices=HolderRelationship.choices, default=HolderRelationship.SELF
+    )
+    third_party_consent_file = models.ForeignKey(
+        "core.FileObject",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        help_text="Written consent, required when the account is not the employee's own.",
+    )
+
+    active_from = models.DateField(db_index=True)
+    active_to = models.DateField(null=True, blank=True, help_text="Exclusive. NULL means live.")
+    is_verified = models.BooleanField(
+        default=False, help_text="Branch code and account length checks passed."
+    )
+
+    audit_sensitive_fields = ("account_number", "account_number_last4", "account_number_hash")
+
+    class Meta:
+        db_table = "employee_bank_account"
+        ordering = ["employee_id", "-active_from"]
+        indexes = [
+            models.Index(fields=["employee", "-active_from"]),
+            models.Index(fields=["tenant", "account_number_hash"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(active_to__isnull=True)
+                | models.Q(active_to__gt=models.F("active_from")),
+                name="employee_bank_account_period_ordered",
+            ),
+            # An EFT with no account number is a payment that cannot be made, captured
+            # as though it could. The bank file would simply skip the employee.
+            #
+            # The check is on the LAST4 COMPANION, not on the encrypted column, and
+            # that is not a workaround. ``EncryptedCharField`` refused the constraint
+            # outright — Fernet ciphertext is non-deterministic, so comparing it to
+            # anything is meaningless, and the field says so rather than letting a
+            # constraint that can never fire look like protection. The companion is
+            # plain text, derived from the number on every save, and empty exactly
+            # when the number is.
+            models.CheckConstraint(
+                condition=~models.Q(payment_method="eft") | ~models.Q(account_number_last4=""),
+                name="employee_bank_account_eft_has_a_number",
+            ),
+            ExclusionConstraint(
+                name="employee_bank_account_no_overlapping_windows",
+                expressions=[
+                    (
+                        DateRange("active_from", "active_to", RangeBoundary()),
+                        RangeOperators.OVERLAPS,
+                    ),
+                    ("employee", RangeOperators.EQUAL),
+                ],
+            ),
+        ]
+
+    def __str__(self):
+        if self.payment_method != self.PaymentMethod.EFT:
+            return f"{self.get_payment_method_display()} from {self.active_from}"
+        return f"****{self.account_number_last4} from {self.active_from}"
+
+    def save(self, *args, **kwargs):
+        if self.account_number:
+            self.account_number_last4 = last4(self.account_number)
+            self.account_number_hash = keyed_hash(
+                self.account_number, scope=f"tenant:{self.tenant_id}"
+            )
+        else:
+            self.account_number_last4 = ""
+            self.account_number_hash = ""
+
+        if kwargs.get("update_fields") is not None:
+            update_fields = set(kwargs["update_fields"])
+            if "account_number" in update_fields:
+                update_fields |= {"account_number_last4", "account_number_hash"}
+                kwargs["update_fields"] = sorted(update_fields)
+
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        super().clean()
+
+        if self.payment_method == self.PaymentMethod.EFT:
+            if not self.account_number:
+                raise ValidationError(
+                    {"account_number": "An electronic payment needs an account number."}
+                )
+            if not self.bank_id:
+                raise ValidationError({"bank": "An electronic payment needs a bank."})
+
+        if (
+            self.account_holder_relationship != self.HolderRelationship.SELF
+            and self.third_party_consent_file_id is None
+        ):
+            raise ValidationError(
+                {
+                    "third_party_consent_file": (
+                        "Paying into somebody else's account needs the employee's "
+                        "written consent on file. BCEA s34 limits what may be done "
+                        "with an employee's wages, and a verbal arrangement is what "
+                        "this dispute always turns out to have been."
+                    )
+                }
+            )

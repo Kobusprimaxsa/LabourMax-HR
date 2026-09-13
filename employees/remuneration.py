@@ -11,11 +11,10 @@ an hourly rate in ``employees/rates.py``. Comparing monthly-to-monthly instead w
 mean recomputing the gazette's monthly figure from its hourly one, or trusting the
 gazetted monthly column — which is stored as published and rounds.
 
-**Which floor applies depends on four things**, and assembling them is why this is a
-service rather than a ``clean()``: the employer's sector, the workplace's area, the
-position's job grade, and the employee's ordinary hours. The hours matter because
-SD7 splits the domestic wage at 27 ordinary hours a week, so the same employer can
-owe two different rates to two people doing the same job.
+**Which floor applies depends on three things**, and assembling them is why this is a
+service rather than a ``clean()``: the employer's sector, the workplace's area, and
+the position's job grade. A fourth — the ordinary-hours band — is passed in rather
+than derived, and ``check_minimum_wage`` says why (D-105).
 
 **Below the minimum is a refusal that can be accepted, not a block.** The workbook
 makes ``is_below_minimum`` a flag with an acknowledging user beside it, and that is
@@ -39,7 +38,13 @@ from django.utils import timezone
 
 from core.managers import tenant_context_of
 from employees import rates
-from employees.models import Employee, EmployeeEngagement, EmployeePosition, EmployeeRemuneration
+from employees.models import (
+    Employee,
+    EmployeeEngagement,
+    EmployeePosition,
+    EmployeeRemuneration,
+    WorkSchedule,
+)
 from statutory import resolve
 from statutory.models import MinimumWageRate
 
@@ -90,12 +95,40 @@ def _current_position(employee: Employee, on_date: datetime.date) -> EmployeePos
     )
 
 
+def _current_schedule(employee: Employee, on_date: datetime.date) -> WorkSchedule | None:
+    return (
+        WorkSchedule.objects.filter(employee=employee, effective_from__lte=on_date)
+        .exclude(effective_to__lte=on_date)
+        .order_by("-effective_from")
+        .first()
+    )
+
+
+def band_for(employee: Employee, on_date: datetime.date) -> str:
+    """The wage band from the employee's own work schedule, or ``all``.
+
+    This is what D-105 was waiting for. The band is not computed by comparing hours
+    against a threshold — it is read from ``work_schedule.works_over_27_hours_week``,
+    which the employer declares. The gazette keeps its 27; nothing in this codebase
+    needs to know it (D-110).
+
+    An employee with no schedule captured yet resolves to ``all``, which falls back
+    through ``statutory.resolve`` to the sector-wide row. That is the right default:
+    the alternative is refusing to capture a rate until a schedule exists, and the
+    two are captured on the same screen.
+    """
+    schedule = _current_schedule(employee, on_date)
+    if schedule is None:
+        return MinimumWageRate.HoursBand.ALL
+    return schedule.hours_band
+
+
 def check_minimum_wage(
     employee: Employee,
     *,
     hourly_rate: Decimal,
     on_date: datetime.date,
-    hours_band: str = MinimumWageRate.HoursBand.ALL,
+    hours_band: str | None = None,
 ) -> MinimumWageCheck:
     """The applicable floor on a date, and whether this rate clears it.
 
@@ -103,20 +136,13 @@ def check_minimum_wage(
     job grade and workplace area — then hands it to ``statutory.resolve``, which owns
     the fallback order. Nothing here decides which row wins.
 
-    **``hours_band`` is passed in and defaults to ``all``, deliberately (D-105).**
-    ``MinimumWageRate.HoursBand`` carries a split at 27 ordinary hours a week,
-    inherited from the old Sectoral Determination 7 wage tables. This module first
-    computed the band from the employee's hours with a literal ``Decimal(27)``, and
-    the no-hard-coded-rate guard caught it — correctly, because 27 is a gazetted
-    threshold and not arithmetic.
-
-    It has not been replaced with a reference-data lookup, because no loaded rate
-    uses a band: all four minimum wage rows are ``all``, domestic workers having been
-    brought to National Minimum Wage parity. Inventing a parameter would mean citing
-    a threshold nobody has confirmed is still live, which is the one thing this
-    codebase does not do. So the caller says which band applies, the fallback order
-    resolves ``all`` for every sector that has no banded rows, and selecting a band
-    automatically is a task for whoever loads banded rates with a gazette in hand.
+    **``hours_band`` comes from the employee's work schedule when it is not given.**
+    This module first computed the band by comparing hours against a literal
+    ``Decimal(27)`` and the no-hard-coded-rate guard caught it — correctly, because 27
+    is a gazetted threshold rather than arithmetic (D-105). The workbook's answer is
+    better than a reference-data lookup would have been:
+    ``work_schedule.works_over_27_hours_week`` is a boolean the **employer declares**,
+    so the gazette keeps its threshold and no figure lives in code at all (D-110).
     """
     position = _current_position(employee, on_date)
     workplace = position.workplace if position else None
@@ -128,7 +154,7 @@ def check_minimum_wage(
             sector_area=(workplace.sector_area if workplace else None)
             or employee.employer.sector_area,
             job_grade=position.job_grade if position else None,
-            hours_band=hours_band,
+            hours_band=hours_band if hours_band is not None else band_for(employee, on_date),
         )
     except resolve.StatutoryValueMissingError as error:
         raise RemunerationRefusedError(
