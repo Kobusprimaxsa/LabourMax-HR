@@ -225,6 +225,7 @@ FIXTURE_ORDER = [
     "ref-2026.03.01-banks.json",
     "ref-2026.03.01-employment.json",
     "ref-2026.03.01-remuneration.json",
+    "ref-2026.03.01-lumpsum.json",
 ]
 
 FIXTURE_DIRECTORY = "reference"

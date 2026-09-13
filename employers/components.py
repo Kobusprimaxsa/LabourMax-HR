@@ -39,13 +39,8 @@ table could go wrong.
 
     The one component that is not obvious is ``BONUS_PRO_RATA``; see its entry.
 
-Two are not fully settled and say so, rather than being quietly guessed:
+One is not fully settled and says so, rather than being quietly guessed:
 
-- ``SEVERANCE`` ships **inactive**. Severance benefits are source code 3901, which
-  is not in the loaded reference data, and they are taxed on a directive rather than
-  through the ordinary tables. Pointing it at 3601 would put a termination payment
-  on the wrong IRP5 line, so it carries no code and cannot be used until 3901 is
-  loaded and the directive handling is built in P6.
 - ``ACCOM_DED`` is a deduction, so it carries no leave-pay flag — but the
   determination *includes* accommodation received as a benefit in kind in
   remuneration. That is an earnings-side fringe benefit this catalogue does not yet
@@ -60,12 +55,16 @@ row that a finalised payslip line points at must not change under it.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
-from django.db import transaction
+from django.db import connection, transaction
 
+from core.db.rls import REFERENCE_MAINTENANCE_VAR
 from core.managers import platform_context
 from employers.models import PayrollComponent
+
+logger = logging.getLogger(__name__)
 
 EARNING = PayrollComponent.ComponentType.EARNING
 DEDUCTION = PayrollComponent.ComponentType.DEDUCTION
@@ -222,24 +221,24 @@ SYSTEM_COMPONENTS: tuple[SystemComponent, ...] = (
         component_type=EARNING,
         calculation_method=STATUTORY,
         display_order=90,
-        source_code=None,
-        is_active=False,
-        standalone_flags={
-            "is_taxable": False,
-            "is_uif_base": False,
-            "is_sdl_base": False,
-            "is_coida_base": False,
-        },
+        source_code="3901",
         reason=(
-            "SHIPS INACTIVE, deliberately. BCEA s41: one week's remuneration per "
-            "completed year of continuous service on operational-requirements "
-            "dismissal. Severance benefits are source code 3901 and are taxed on a "
-            "SARS directive against the retirement lump sum table, not through the "
-            "ordinary PAYE tables. 3901 is not in the loaded reference data and the "
-            "directive handling does not exist, so pointing this at 3601 would put a "
-            "termination payment on the wrong IRP5 line and tax it at the wrong rate. "
-            "The flags are all false because an inactive component must not look "
-            "usable; they are set from 3901 when P6 loads it."
+            "BCEA s41: one week's remuneration per completed year of continuous "
+            "service on operational-requirements dismissal. It shipped INACTIVE with "
+            "no source code until SARS's own 2026 code guide arrived and 3901 could be "
+            "loaded with a citation (D-90, closed by D-114) - pointing it at 3601 in "
+            "the meantime would have put a termination payment on the wrong IRP5 line "
+            "and taxed it at the wrong rate. "
+            "3901 is 'Gratuities / Severance Benefits', and the guide's third "
+            "qualifying limb is the one that matters here: 'services terminated due to "
+            "reduction of personnel', which is dismissal for operational requirements "
+            "and the only ground on which s41 severance is due. It lines up exactly "
+            "with EmployeeEngagement.SEVERANCE_REASONS. "
+            "A lump sum on resignation or on retirement below 55 is NOT a severance "
+            "benefit and belongs on 3907, which is loaded alongside for that reason. "
+            "The amount is still taxed on a SARS directive against the retirement lump "
+            "sum table rather than the ordinary tables, and that handling arrives with "
+            "the termination engine in P6."
         ),
     ),
     SystemComponent(
@@ -390,9 +389,12 @@ def seed_system_components(*, activate_severance: bool = False) -> list[PayrollC
     and the system-row lock would refuse the write in any case. Changing a system
     component's treatment is a migration with a reason attached, not a re-seed.
 
-    ``activate_severance`` exists so that P6 can turn SEVERANCE on in the same
-    breath as loading source code 3901, without this module having to be edited by
-    someone who has not read why it is off.
+    ``activate_severance`` turns on a SEVERANCE row that was created before source
+    code 3901 was loaded. Seeding never updates, and the system-row lock refuses the
+    write besides — so this is the one deliberate maintenance action in the module,
+    and it opens the escape hatch by name rather than working around the lock
+    (D-114). It does nothing when 3901 is absent, and nothing when the row is
+    already active.
 
     **``transaction.atomic()`` is load-bearing and must stay outside the context
     block.** ``platform_context()`` pushes its flag into the database session with
@@ -411,6 +413,9 @@ def seed_system_components(*, activate_severance: bool = False) -> list[PayrollC
     """
     wanted = {c.source_code for c in SYSTEM_COMPONENTS if c.source_code}
     codes = _source_codes(wanted)
+
+    if activate_severance:
+        _activate_severance(codes)
 
     created: list[PayrollComponent] = []
     with transaction.atomic(), platform_context():
@@ -452,6 +457,48 @@ def seed_system_components(*, activate_severance: bool = False) -> list[PayrollC
             created.append(component)
 
     return created
+
+
+def _activate_severance(codes) -> bool:
+    """Turn on a SEVERANCE row created before 3901 existed. Returns whether it moved.
+
+    **This is the only place in the catalogue that updates a system row**, and it has
+    to open ``labourmax.allow_reference_maintenance`` to do it — the lock that makes
+    system rows read-only binds the platform too (D-93), deliberately, because every
+    tenant reads these rows.
+
+    Opening it by name is the point. The alternative shapes were both worse: dropping
+    and re-creating the row would orphan anything already pointing at it, and relaxing
+    the trigger would quietly make every system component editable forever.
+    """
+    severance = PayrollComponent.objects.shared().filter(code="SEVERANCE").first()
+    if severance is None or (severance.is_active and severance.sars_source_code_id):
+        return False
+
+    code = codes.get("3901")
+    if code is None:
+        return False
+
+    severance.sars_source_code = code
+    severance.is_active = True
+    severance.is_taxable = code.is_taxable
+    severance.is_uif_base = code.is_uif_remuneration
+    severance.is_sdl_base = code.is_sdl_remuneration
+    severance.is_coida_base = code.is_coida_remuneration
+    severance.full_clean(exclude=["tenant"])
+
+    # transaction.atomic() FIRST, then the context, then the flag — all three are
+    # transaction-scoped and all three are needed. Written without the transaction
+    # first, this failed with the lock's own message: under autocommit the
+    # set_config committed on its own and the flag was gone before the UPDATE ran
+    # (D-92, and the second time it has bitten).
+    with transaction.atomic(), platform_context(), connection.cursor() as cursor:
+        cursor.execute("SELECT set_config(%s, 'on', true)", [REFERENCE_MAINTENANCE_VAR])
+        severance.save()
+        cursor.execute("SELECT set_config(%s, 'off', true)", [REFERENCE_MAINTENANCE_VAR])
+
+    logger.info("SEVERANCE activated against SARS source code 3901")
+    return True
 
 
 def component(code: str) -> PayrollComponent:

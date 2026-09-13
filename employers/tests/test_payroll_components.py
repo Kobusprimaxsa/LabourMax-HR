@@ -49,6 +49,9 @@ CODE_FLAGS = {
     "3605": (True, True, True, True),
     "3607": (True, True, True, True),
     "3713": (True, True, True, True),
+    # 3901 is taxable but outside the UIF and SDL bases: both statutes exclude
+    # paragraph (d) gross income amounts, and SARS places severance benefits there.
+    "3901": (True, False, False, False),
     "4102": (False, False, False, False),
     "4141": (False, False, False, False),
     "4142": (False, False, False, False),
@@ -317,27 +320,37 @@ def test_leave_pay_does_not_feed_its_own_average(seeded):
 # --------------------------------------------------------- what is NOT settled
 
 
-def test_severance_ships_inactive_with_no_source_code(seeded):
-    """Recorded as a test so the gap cannot close by accident.
+def test_severance_is_live_against_3901(seeded):
+    """The gap D-90 recorded, closed by D-114 when SARS's own code guide arrived.
 
-    Severance benefits are source code 3901, taxed on a SARS directive against the
-    retirement lump sum table rather than through the ordinary PAYE tables. 3901 is
-    not loaded and the directive handling does not exist. Pointing this at 3601
-    would put a termination payment on the wrong IRP5 line AND tax it at the wrong
-    rate — and every payslip would look correct.
-
-    When P6 loads 3901, this test changes deliberately.
+    It shipped inactive with no source code because pointing it at 3601 would have
+    put a termination payment on the wrong IRP5 line and taxed it at the wrong rate.
+    3901 is "Gratuities / Severance Benefits", and the guide's third qualifying limb
+    — "services terminated due to reduction of personnel" — is dismissal for
+    operational requirements, the only ground on which BCEA s41 severance is due.
     """
     by_code = {c.code: c for c in seeded}
     severance = by_code["SEVERANCE"]
-    assert severance.is_active is False
-    assert severance.sars_source_code_id is None
+    assert severance.is_active is True
+    assert severance.sars_source_code.code == "3901"
 
 
-def test_the_only_components_without_a_source_code_are_the_three_expected(seeded):
+def test_severance_is_outside_the_uif_and_sdl_bases(seeded):
+    """Both statutes exclude paragraph (d) gross income, and SARS puts 3901 there.
+
+    Taxable, because the guide says "(Subject to PAYE)" — on a directive against the
+    retirement lump sum table, which is the termination engine's problem rather than
+    this flag's.
+    """
+    severance = next(c for c in seeded if c.code == "SEVERANCE")
+    assert severance.is_taxable is True
+    assert severance.is_uif_base is False
+    assert severance.is_sdl_base is False
+
+
+def test_the_only_components_without_a_source_code_are_the_two_expected(seeded):
     """A component with no source code has no IRP5 line, so the list stays short."""
     assert {c.code for c in seeded if c.sars_source_code_id is None} == {
-        "SEVERANCE",
         "ACCOM_DED",
         "ADVANCE_DED",
     }

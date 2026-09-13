@@ -1,0 +1,33 @@
+{
+  "version_label": "REF-2026.03.01-LUMPSUM",
+  "applies_from": "2026-03-01",
+  "description": "Termination lump sum source codes 3901 and 3907, from SARS's 2026 code guide. Researched 13 September 2026. NOT verified.",
+  "tables": {
+    "sars_source_code": [
+      {
+        "code": "3901",
+        "description": "Gratuities / Severance Benefits (Subject to PAYE)",
+        "code_group": "income",
+        "is_taxable": true,
+        "is_uif_remuneration": false,
+        "is_sdl_remuneration": false,
+        "is_coida_remuneration": false,
+        "source_reference": "SARS PAYE-AE-06-G06, Guide for Codes Applicable to Employees Tax Certificates 2026, revision 13, effective 19 September 2025",
+        "source_url": "https://www.sars.gov.za/types-of-tax/pay-as-you-earn/",
+        "notes": "The guide: 'Severance benefits, as defined, paid/payable by an employer after 1 March 2011, if employee: is 55 years or older; became permanently incapable to be employed due to ill health, etc.; or services terminated due to reduction of personnel or employer ceased trading.' THE THIRD LIMB IS THE ONE THIS PRODUCT USES: 'reduction of personnel' is dismissal for operational requirements, which is the only ground on which BCEA s41 severance is due. It matches EmployeeEngagement.SEVERANCE_REASONS exactly. A lump sum on resignation, or on retirement below 55, is NOT a severance benefit and goes to 3907 - the guide says MUST. 3951 is for foreign services income only and is not loaded. UIF base False: UICA 4 of 2002 s1 excludes paragraph (d) gross income amounts, and the guide places this code in paragraph (d). SDL base False: SDLA 9 of 1999 s3 excludes paragraph (d) likewise. COIDA base False is a READING, NOT A CITATION - VERIFY. No source was found naming termination lump sums in the COIDA earnings definition; False is the reading that a severance benefit is not earnings in respect of employment during the assessment period."
+      },
+      {
+        "code": "3907",
+        "description": "Other lump sums (Subject to PAYE)",
+        "code_group": "income",
+        "is_taxable": true,
+        "is_uif_remuneration": false,
+        "is_sdl_remuneration": false,
+        "is_coida_remuneration": false,
+        "source_reference": "SARS PAYE-AE-06-G06, Guide for Codes Applicable to Employees Tax Certificates 2026, revision 13, effective 19 September 2025",
+        "source_url": "https://www.sars.gov.za/types-of-tax/pay-as-you-earn/",
+        "notes": "Loaded because leaving it out is the trap. The guide's note on 3901 says a lump sum under paragraph (d) of 'gross income' which is NOT a severance benefit MUST be reflected under 3907 - so without this code the only one available would be 3901, which is exactly the misfiling that note exists to prevent. The guide's examples: 'A lump sum payment paid/payable by an employer due to normal termination of service (e.g., resignation or retirement), which is NOT a severance benefit' and 'Gratuity paid to an employee due to normal termination of service (e.g., resignation or a lump sum paid upon retirement where employee is below 55 years of age).' 3957 is for foreign services income only and is not loaded. Base flags derived exactly as for 3901, same paragraph (d), same two statutes. COIDA base False is a READING - VERIFY."
+      }
+    ]
+  }
+}
