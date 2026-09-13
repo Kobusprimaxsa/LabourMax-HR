@@ -330,3 +330,51 @@ def test_every_base_flag_carries_its_reasoning(codes_loaded):
 
     for row in SarsSourceCode.objects.all():
         assert len(row.notes) > 40, f"{row.code} carries no reasoning for its flags."
+
+
+# ---------------------------------------------------------------------- banks
+
+BANKS_FIXTURE = FIXTURE.parent / "ref-2026.03.01-banks.json"
+
+
+@pytest.fixture
+def banks_loaded(db):
+    document = json.loads(BANKS_FIXTURE.read_text(encoding="utf-8"))
+    return load_reference_data(document)
+
+
+@pytest.mark.statutory
+def test_the_bank_fixture_loads_with_valid_branch_codes(banks_loaded):
+    from statutory.models import Bank
+
+    assert banks_loaded.created["bank"] > 20
+    assert not [issue for issue in checks.check_banks() if issue.blocking]
+
+    for bank in Bank.objects.all():
+        assert len(bank.universal_branch_code) == 6, f"{bank.name} has a malformed code."
+
+
+@pytest.mark.statutory
+def test_the_big_five_are_present_with_the_codes_employees_will_recognise(banks_loaded):
+    from statutory.models import Bank
+
+    expected = {
+        "Absa Bank Limited": "632005",
+        "FirstRand Bank Limited (FNB)": "250655",
+        "Standard Bank of South Africa": "051001",
+        "Nedbank Limited": "198765",
+        "Capitec Bank Limited": "470010",
+    }
+    for name, code in expected.items():
+        assert Bank.objects.get(name=name).universal_branch_code == code
+
+
+@pytest.mark.statutory
+def test_no_account_length_was_invented(banks_loaded):
+    """NULL means nobody has confirmed the bank's rule. A guessed bound rejects valid
+    account numbers, which ends with an employee not being paid."""
+    from statutory.models import Bank
+
+    assert not Bank.objects.exclude(account_number_min_length=None).exists()
+    for bank in Bank.objects.all():
+        assert "not loaded" in bank.notes

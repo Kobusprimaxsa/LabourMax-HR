@@ -1,0 +1,134 @@
+{
+  "version_label": "REF-2026.03.01-BANKS",
+  "applies_from": "2026-03-01",
+  "description": "South African banks and their universal branch codes, for payslip display and EFT file validation. Account number lengths deliberately not loaded. Compiled 13 September 2026. NOT verified.",
+  "tables": {
+    "bank": [
+      {
+        "name": "Absa Bank Limited",
+        "universal_branch_code": "632005",
+        "notes": "Cross-checked against two independent published lists. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "African Bank Limited",
+        "universal_branch_code": "430000",
+        "notes": "Cross-checked against two independent published lists. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "Access Bank (South Africa) Limited",
+        "universal_branch_code": "410105",
+        "notes": "Single source - VERIFY. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "Albaraka Bank Limited",
+        "universal_branch_code": "800000",
+        "notes": "Single source - VERIFY. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "Bank Zero Mutual Bank",
+        "universal_branch_code": "888000",
+        "notes": "Cross-checked against two independent published lists. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "Bidvest Bank Limited",
+        "universal_branch_code": "462005",
+        "notes": "Cross-checked against two independent published lists. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "Capitec Bank Limited",
+        "universal_branch_code": "470010",
+        "notes": "Cross-checked against two independent published lists. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "Capitec Business",
+        "universal_branch_code": "450105",
+        "notes": "Formerly Mercantile Bank. Single source - VERIFY. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "Discovery Bank Limited",
+        "universal_branch_code": "679000",
+        "notes": "Cross-checked against two independent published lists. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "Finbond Mutual Bank",
+        "universal_branch_code": "589000",
+        "notes": "Single source - VERIFY. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "FirstRand Bank Limited (FNB)",
+        "universal_branch_code": "250655",
+        "notes": "Cross-checked against two independent published lists. FNB is a division of FirstRand Bank; employees will say 'FNB'. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "GoTyme Bank Limited",
+        "universal_branch_code": "678910",
+        "notes": "Rebranded from TymeBank in January 2026. Code unchanged. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "Grindrod Bank Limited",
+        "universal_branch_code": "584000",
+        "notes": "Single source - VERIFY. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "Investec Bank Limited",
+        "universal_branch_code": "580105",
+        "notes": "Cross-checked against two independent published lists. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "Nedbank Limited",
+        "universal_branch_code": "198765",
+        "notes": "Cross-checked against two independent published lists. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "Sasfin Bank Limited",
+        "universal_branch_code": "683000",
+        "notes": "Single source - VERIFY. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "South African Postbank",
+        "universal_branch_code": "460005",
+        "notes": "Single source - VERIFY. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "Standard Bank of South Africa",
+        "universal_branch_code": "051001",
+        "notes": "Cross-checked against two independent published lists. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "Bank of China",
+        "universal_branch_code": "686000",
+        "notes": "Corporate or foreign branch. Present so an employee banking there can be paid, not because either sector's employees commonly do. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "China Construction Bank",
+        "universal_branch_code": "586666",
+        "notes": "Corporate or foreign branch. Present so an employee banking there can be paid, not because either sector's employees commonly do. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "HSBC Bank",
+        "universal_branch_code": "587000",
+        "notes": "Corporate or foreign branch. Present so an employee banking there can be paid, not because either sector's employees commonly do. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "ICICI Bank Limited",
+        "universal_branch_code": "362000",
+        "notes": "Corporate or foreign branch. Present so an employee banking there can be paid, not because either sector's employees commonly do. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "JP Morgan Chase Bank N.A.",
+        "universal_branch_code": "432000",
+        "notes": "Corporate or foreign branch. Present so an employee banking there can be paid, not because either sector's employees commonly do. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "Societe Generale",
+        "universal_branch_code": "351005",
+        "notes": "Corporate or foreign branch. Present so an employee banking there can be paid, not because either sector's employees commonly do. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      },
+      {
+        "name": "State Bank of India",
+        "universal_branch_code": "801000",
+        "notes": "Corporate or foreign branch. Present so an employee banking there can be paid, not because either sector's employees commonly do. Universal branch codes as published by the banks, cross-checked 13 September 2026. Account number length not loaded: NULL means nobody has confirmed this bank's rule. Validation falls back to the general nine-to-eleven digit range."
+      }
+    ]
+  }
+}

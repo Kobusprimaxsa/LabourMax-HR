@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from statutory.models import MinimumWageRate, PayeRebate, SarsSourceCode, TaxYear
+from statutory.models import Bank, MinimumWageRate, PayeRebate, SarsSourceCode, TaxYear
 
 HUNDRED = Decimal(100)
 
@@ -234,6 +234,29 @@ def check_source_codes() -> list[Issue]:
     return issues
 
 
+def check_banks() -> list[Issue]:
+    """A branch code that is not six digits will be rejected by the EFT file.
+
+    A **warning**, because a corporate or foreign branch may legitimately differ and
+    because this is operational rather than statutory data. What it catches is the
+    transposition - a five or seven digit code pasted from a web page - which would
+    otherwise surface as a returned payment on the 25th.
+    """
+    issues = []
+    for bank in Bank.objects.exclude(universal_branch_code=""):
+        code = bank.universal_branch_code.strip()
+        if not code.isdigit() or len(code) != 6:
+            issues.append(
+                Issue(
+                    False,
+                    bank.name,
+                    f"has branch code {bank.universal_branch_code!r}, which is not six "
+                    f"digits. Check it before an EFT file is generated against it.",
+                )
+            )
+    return issues
+
+
 def check_citations() -> list[Issue]:
     """Nothing cited to a placeholder.
 
@@ -262,5 +285,6 @@ def run_all(year: TaxYear | None = None) -> list[Issue]:
         issues.extend(check_paye_rebates(one))
     issues.extend(check_gazetted_wage_derivations())
     issues.extend(check_source_codes())
+    issues.extend(check_banks())
     issues.extend(check_citations())
     return issues

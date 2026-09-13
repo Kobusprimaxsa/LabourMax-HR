@@ -1273,8 +1273,20 @@ class Bank(models.Model):
     name = models.CharField(max_length=120, unique=True)
     universal_branch_code = models.CharField(max_length=10, blank=True)
     bic_swift = models.CharField(max_length=11, blank=True)
-    account_number_min_length = models.SmallIntegerField()
-    account_number_max_length = models.SmallIntegerField()
+
+    # Nullable, and the NULL is meaningful: it says nobody has confirmed this bank's
+    # rule. Per-bank account number lengths are operational data from the banks and
+    # the ACB specification, not something published in one authoritative place, and
+    # a guessed bound is worse than none - it rejects valid account numbers, which
+    # looks like a system fault to the employer and stops an employee being paid.
+    # Validation falls back to the general nine-to-eleven digit range when NULL.
+    account_number_min_length = models.SmallIntegerField(null=True, blank=True)
+    account_number_max_length = models.SmallIntegerField(null=True, blank=True)
+
+    notes = models.TextField(
+        blank=True,
+        help_text="Where the branch code came from, and anything odd about this bank.",
+    )
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -1282,10 +1294,21 @@ class Bank(models.Model):
         ordering = ["name"]
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(
-                    account_number_max_length__gte=models.F("account_number_min_length")
-                ),
+                condition=models.Q(account_number_min_length__isnull=True)
+                | models.Q(account_number_max_length__isnull=True)
+                | models.Q(account_number_max_length__gte=models.F("account_number_min_length")),
                 name="bank_account_length_bounds_ordered",
+            ),
+            # One bound without the other is a half-loaded rule, and it validates
+            # nothing while looking as though it does.
+            models.CheckConstraint(
+                condition=models.Q(
+                    account_number_min_length__isnull=True, account_number_max_length__isnull=True
+                )
+                | models.Q(
+                    account_number_min_length__isnull=False, account_number_max_length__isnull=False
+                ),
+                name="bank_account_length_bounds_together",
             ),
         ]
 

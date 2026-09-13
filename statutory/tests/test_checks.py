@@ -250,3 +250,49 @@ def test_commission_is_a_valid_shape(db):
         is_coida_remuneration=True,
     )
     assert checks.check_source_codes() == []
+
+
+# ----------------------------------------------------------------------- banks
+
+
+@pytest.mark.statutory
+def test_a_six_digit_branch_code_reports_nothing(db):
+    from statutory.models import Bank
+
+    Bank.objects.create(name="Test Bank", universal_branch_code="632005")
+    assert checks.check_banks() == []
+
+
+@pytest.mark.statutory
+def test_a_transposed_branch_code_is_reported_as_a_warning(db):
+    """Five digits instead of six. Surfaces as a returned payment otherwise."""
+    from statutory.models import Bank
+
+    Bank.objects.create(name="Typo Bank", universal_branch_code="63205")
+    issues = checks.check_banks()
+    assert issues and not issues[0].blocking
+
+
+@pytest.mark.statutory
+def test_a_bank_with_no_known_account_length_is_allowed(db):
+    """NULL means nobody has confirmed the rule, and that is a legitimate state."""
+    from statutory.models import Bank
+
+    bank = Bank.objects.create(name="Unknown Length Bank", universal_branch_code="470010")
+    assert bank.account_number_min_length is None
+    assert bank.account_number_max_length is None
+
+
+@pytest.mark.statutory
+def test_one_account_length_bound_without_the_other_is_refused(db):
+    """A half-loaded rule validates nothing while looking as though it does."""
+    from django.db import IntegrityError, transaction
+
+    from statutory.models import Bank
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        Bank.objects.create(
+            name="Half Loaded Bank",
+            universal_branch_code="198765",
+            account_number_min_length=9,
+        )

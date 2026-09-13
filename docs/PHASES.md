@@ -111,7 +111,7 @@ The most important phase in the build. Can overlap P1.
 - [x] Contract cleaning rule sets from SD1: `reference/ref-2026.03.01-sd1.json` (D-67)
 - [ ] Contract cleaning Area C (KwaZulu-Natal): the BCCCI collective agreement (D-63)
 - [x] `sars_source_code` — 19 codes with cited base flags (D-69, D-70, D-71)
-- [ ] The bank list and branch codes
+- [x] The bank list and branch codes — 25 banks, lengths deliberately unloaded (D-72, D-73)
 - [ ] Golden tests reproducing the published SARS and DEL worked examples
 
 `source_url` is deliberately optional rather than mandatory as this plan originally
