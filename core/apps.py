@@ -14,3 +14,8 @@ class CoreConfig(AppConfig):
         from core.audit import connect_signals
 
         connect_signals()
+
+        # Importing the module is what registers the checks. Here rather than at
+        # module level for the same reason as the signals: ready() is the one
+        # place Django guarantees the settings and the registry are both final.
+        from core import checks  # noqa: F401

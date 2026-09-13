@@ -307,7 +307,7 @@ falling back to superseded rates.
 | Soft delete | Employees, employers, files — statutory retention outlasts the customer relationship |
 | Ledger rows | Never deleted at all. Corrections insert reversals |
 | Timestamps | `TIMESTAMPTZ`, stored UTC, rendered `Africa/Johannesburg` |
-| Encrypted fields | ID numbers and bank account numbers, with `_last4` in a separate plain column |
+| Encrypted fields | ID numbers and bank account numbers, with `_last4` in a separate plain column. Needs `FIELD_ENCRYPTION_KEY` — without it every write refuses (D-77), and `manage.py check` says so in one line (D-94) |
 | Booleans | Positive assertions: `is_active`, never `is_not_active` |
 | Enumerations | `TextChoices` + a `CHECK` constraint. Not integer codes — raw SQL against production should read |
 
@@ -392,7 +392,7 @@ CI. Tenant isolation proven at all three layers, field-level audit trail with se
 masking, the administrative seat limit enforced by trigger, and file storage behind a
 virus-scan gate.
 
-**P3 — Employer Setup: started** (13 September 2026). 482 tests green. `employer`,
+**P3 — Employer Setup: tables complete** (13 September 2026). 486 tests green. `employer`,
 `employer_statutory_registration` and `employer_bank_account` exist, tenant-scoped and picked
 up automatically by the generated isolation suite. `core/db/fields.py` brings the first
 encrypted column in the schema, unsearchable by design (D-77). Two structural findings came
