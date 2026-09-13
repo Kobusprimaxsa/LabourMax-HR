@@ -82,16 +82,30 @@ def normalise(value: str) -> str:
     return NON_ALPHANUMERIC.sub("", value or "").upper()
 
 
-def keyed_hash(value: str) -> str:
+def keyed_hash(value: str, *, scope: str = "") -> str:
     """A keyed digest of the normalised value, for equality without decryption.
 
     HMAC rather than a bare hash: the space of ten-digit account numbers and of
     South African ID numbers is small enough to enumerate, so an unkeyed digest is
     reversible by anyone holding the column.
+
+    ``scope`` narrows what equality *means*, and on a multi-tenant table it is not
+    optional. Without it the same ID number produces the same digest in every
+    tenant, so anybody holding this column — a support engineer, a read replica, a
+    backup — can tell that an employee of one employer is the same person as an
+    employee of another. Nothing decrypts, no policy is bypassed, and a fact that
+    crosses the tenant boundary has still escaped.
+
+    That is the quietest kind of leak this schema can have: the isolation suite
+    cannot see it, because no row was read that should not have been. So the scope
+    is passed at the call site, where the question being asked is visible — pass
+    ``f"tenant:{tenant_id}"`` for "has this person been captured twice for this
+    subscriber" (D-95).
     """
     if not value:
         return ""
-    return hmac.new(_key(), normalise(value).encode(), hashlib.sha256).hexdigest()
+    payload = f"{scope}\x00{normalise(value)}" if scope else normalise(value)
+    return hmac.new(_key(), payload.encode(), hashlib.sha256).hexdigest()
 
 
 def last4(value: str) -> str:

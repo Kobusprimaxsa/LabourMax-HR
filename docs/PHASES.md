@@ -145,9 +145,11 @@ constraint refuses a blank one on every cited table.
 
 ## P4 — Employee Master File · 5 weeks · 15 tables
 
-- [ ] `employee` with encrypted ID number, hash-based duplicate prevention, sort columns
-- [ ] ICU collation set in the creating migration
-- [ ] `employee_address`, `employee_contact`
+- [x] `employee` with encrypted ID number, hash-based duplicate prevention, sort columns
+      (D-95 the hash is scoped per tenant, D-96 checksum + date cross-check, D-97 the
+      unique is per tenant, D-98 email is not CITEXT)
+- [x] ICU collation set in the creating migration
+- [x] `employee_address`, `employee_contact`
 - [ ] `employee_engagement` — start, termination, fixed-term end; re-hire support
 - [ ] `employee_position` with site assignment (single or multi)
 - [ ] `employee_remuneration` — five pay bases, derived rates computed once and stored

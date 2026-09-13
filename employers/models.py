@@ -299,7 +299,14 @@ class EmployerBankAccount(AuditedModel, TenantScopedModel):
         """
         if self.account_number:
             self.account_number_last4 = last4(self.account_number)
-            self.account_number_hash = keyed_hash(self.account_number)
+            # Scoped to the tenant for the same reason employee.id_number_hash is
+            # (D-95): an unscoped digest is equal across tenants, so the column
+            # itself would say that two subscribers bank into the same account.
+            # Nothing decrypts and no policy is bypassed, and a fact has still
+            # crossed the boundary.
+            self.account_number_hash = keyed_hash(
+                self.account_number, scope=f"tenant:{self.tenant_id}"
+            )
         else:
             self.account_number_last4 = ""
             self.account_number_hash = ""

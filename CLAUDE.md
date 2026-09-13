@@ -89,10 +89,12 @@ keeps happening is that the failure mode depends on how you asked:
 |---|---|
 | `count()` / `filter()` | returns 0 rows — reads as "none", not "not allowed" |
 | `save(update_fields=[...])` | raises "Save with update_fields did not affect any rows" |
-| plain `save()` | **silently writes nothing and reports success** |
+| plain `save()` on a NEW row | **silently writes nothing and reports success** |
+| plain `save()` on an EXISTING row | "new row violates row-level security policy" — on an **INSERT**. The UPDATE matched zero rows, Django read that as "not in the table yet" and fell back to inserting with the pk set. The message names neither the update nor the missing context |
+| `refresh_from_db()` | `DoesNotExist`, for a row you are holding in your hand |
 | `INSERT` | "new row violates row-level security policy" |
 
-Only two of those four tell you what is actually wrong. `all_tenants` does not help —
+Only two of those six tell you what is actually wrong. `all_tenants` does not help —
 it bypasses the manager, not the policy. A seat-limit check bitten by this returned
 0 seats in use and waved through every request. When a count comes back suspiciously
 zero, or a save appears to do nothing, check the context before you check the data.
@@ -392,7 +394,7 @@ CI. Tenant isolation proven at all three layers, field-level audit trail with se
 masking, the administrative seat limit enforced by trigger, and file storage behind a
 virus-scan gate.
 
-**P3 — Employer Setup: tables complete** (13 September 2026). 486 tests green. `employer`,
+**P3 — Employer Setup: tables complete** (13 September 2026). `employer`,
 `employer_statutory_registration` and `employer_bank_account` exist, tenant-scoped and picked
 up automatically by the generated isolation suite. `core/db/fields.py` brings the first
 encrypted column in the schema, unsearchable by design (D-77). Two structural findings came
@@ -425,6 +427,27 @@ python manage.py seedcomponents --list   # the catalogue, without touching the d
 ```
 
 Still open in P3: the municipality-to-area data.
+
+**P4 — Employee Master File: started** (13 September 2026). 553 tests green. `employee`,
+`employee_address` and `employee_contact` are in. Two things on the employee table are
+worth knowing before touching it.
+
+`id_number_hash` is a keyed HMAC **scoped to the tenant** (D-95). Unscoped, the same
+person hashes identically everywhere, so anyone holding the column can join two
+subscribers' employee tables and learn that one household's domestic worker also works
+for another. Nothing decrypts and no row is read that should not be — which is why the
+isolation suite cannot catch it, and why `employer_bank_account` was retrofitted with the
+same scope in the same commit.
+
+The ID number is verified by checksum **and** by cross-checking the date of birth against
+the number's own first six digits (D-96). The checksum catches a mistyped digit; only the
+cross-check catches a number that is internally perfect and belongs to somebody else. The
+century is never guessed — `employees/identity.py` returns both readings and lets the
+captured date decide.
+
+The two sort columns are generated, lower-cased in the expression, and carry
+`en-ZA-x-icu` **set in the creating migration** (D-17) — changing a collation later
+rewrites the table and every index on it.
 
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting
 verification** (13 September 2026). 351 tests green. All twenty tables exist with their
