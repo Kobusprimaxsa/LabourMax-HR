@@ -14,7 +14,7 @@ per tenant while statutory submission is per employer — merging the two means 
 future question about "how many employers" is really a question about how many people
 are paying, which is a different number.
 
-The three tables here are the ones an employer cannot be onboarded without: who they
+The tables here are the ones an employer cannot be onboarded without: who they
 are, how they are registered with the revenue and compensation authorities, and where
 their salary payments come from.
 """
@@ -25,10 +25,12 @@ import uuid
 
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Value
+from django.db.models.functions import Coalesce
 
 from core.audit import AuditedModel
 from core.db.fields import EncryptedCharField, keyed_hash, last4
-from core.models import TenantScopedModel
+from core.models import TenantScopedModel, TenantSharedModel
 
 PROVINCE_CODES = [
     ("EC", "Eastern Cape"),
@@ -663,4 +665,220 @@ class PayGroup(AuditedModel, TenantScopedModel):
                         f"a pay group cannot treat them as ordinary."
                     )
                 }
+            )
+
+
+# -------------------------------------------------------------- payroll components
+
+
+class PayrollComponent(AuditedModel, TenantSharedModel):
+    """Every line that can appear on a payslip, and how it is treated.
+
+    This is the catalogue the payslip is assembled from. The platform stocks
+    sixteen system components — the ones sheet 02 names — and an employer adds its
+    own on top: a transport allowance, a loan repayment, a shift premium above the
+    statutory minimum.
+
+    **The NULL tenant means shared, not orphaned.** A tenant reads its own rows and
+    the platform's together; it writes only its own. That is ``TenantSharedModel``
+    and ``enable_rls_shared()``, and it is a third tenancy shape rather than a flag
+    on the second because ``TenantOptionalModel`` means the exact opposite by the
+    same NULL (D-87).
+
+    **A system component carries no rate.** ``default_rate_multiplier`` and
+    ``percentage_value`` are NULL on all sixteen, and every one of them is
+    ``calculation_method='statutory'``. The overtime multiplier, the two Sunday
+    multipliers, the public holiday multiplier and the SD1 night allowance
+    percentage are gazetted figures — they live in ``working_time_rule_set`` with a
+    citation and an effective date, and are read through ``statutory.resolve`` when
+    the payslip is calculated. Writing 1.5 into this table would be a hard-coded
+    statutory rate wearing a data row as a disguise, and a March gazette would
+    silently not reach it (D-88).
+
+    The two rate columns are therefore for **employer-defined** components only,
+    where the number is the employer's own choice and nobody gazetted it.
+
+    **The four base flags must agree with the SARS source code.** They are the same
+    four booleans that ``sars_source_code`` already carries with the reasoning
+    written next to them, and duplicating a compliance decision is how the two
+    copies come to disagree. Where a component has a source code, ``clean()``
+    refuses any other combination; where it has none — a deduction from net pay
+    like an advance repayment — the flags stand alone and are all false (D-89).
+    """
+
+    class ComponentType(models.TextChoices):
+        EARNING = "earning", "Earning"
+        DEDUCTION = "deduction", "Deduction"
+        EMPLOYER_CONTRIBUTION = "employer_contribution", "Employer contribution"
+        INFORMATIONAL = "informational", "Informational"
+
+    class CalculationMethod(models.TextChoices):
+        FIXED = "fixed", "Fixed amount"
+        RATE_X_UNITS = "rate_x_units", "Rate × units"
+        PERCENTAGE_OF_BASE = "percentage_of_base", "Percentage of a base"
+        FORMULA = "formula", "Formula"
+        STATUTORY = "statutory", "Statutory — the figure comes from reference data"
+
+    code = models.CharField(max_length=40, help_text="BASIC, OT_1_5, UIF_EE, PAYE …")
+    name = models.CharField(max_length=120)
+
+    component_type = models.CharField(max_length=30, choices=ComponentType.choices, db_index=True)
+    calculation_method = models.CharField(
+        max_length=30, choices=CalculationMethod.choices, default=CalculationMethod.FIXED
+    )
+
+    default_rate_multiplier = models.DecimalField(
+        max_digits=8,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text=(
+            "Employer-defined components only. A statutory multiplier belongs in "
+            "working_time_rule_set with its gazette citation, never here."
+        ),
+    )
+    percentage_value = models.DecimalField(
+        max_digits=8,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="Employer-defined components only. Same reason as the multiplier.",
+    )
+
+    sars_source_code = models.ForeignKey(
+        "statutory.SarsSourceCode",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="payroll_components",
+        help_text="Decides the IRP5 line. The four base flags below must match it.",
+    )
+
+    is_taxable = models.BooleanField(default=True)
+    is_uif_base = models.BooleanField(default=True)
+    is_sdl_base = models.BooleanField(default=True)
+    is_coida_base = models.BooleanField(default=True)
+
+    affects_leave_pay_average = models.BooleanField(
+        default=False,
+        help_text=(
+            "Part of remuneration when leave, notice and severance are calculated. "
+            "BCEA s35(5) determination, GN 691 in Government Gazette 24889."
+        ),
+    )
+
+    is_system = models.BooleanField(
+        default=False, help_text="System components cannot be edited or deleted."
+    )
+    is_active = models.BooleanField(default=True)
+    display_order = models.SmallIntegerField(default=0, help_text="Payslip ordering.")
+
+    class Meta:
+        db_table = "payroll_component"
+        ordering = ["display_order", "code"]
+        indexes = [models.Index(fields=["component_type", "is_active"])]
+        constraints = [
+            # Sheet 03: UNIQUE (COALESCE(tenant_id, 0), code).
+            #
+            # A plain UniqueConstraint over (tenant, code) would permit duplicate
+            # system components, because NULL = NULL is unknown in PostgreSQL and
+            # every system row has a NULL tenant. That is the same trap that
+            # minimum_wage_rate hit, and there it would have duplicated the National
+            # Minimum Wage - the row most likely to be loaded twice.
+            models.UniqueConstraint(
+                Coalesce("tenant_id", Value(0)),
+                "code",
+                name="uniq_component_code_per_tenant",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    component_type__in=[
+                        "earning",
+                        "deduction",
+                        "employer_contribution",
+                        "informational",
+                    ]
+                ),
+                name="payroll_component_type_is_known",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    calculation_method__in=[
+                        "fixed",
+                        "rate_x_units",
+                        "percentage_of_base",
+                        "formula",
+                        "statutory",
+                    ]
+                ),
+                name="payroll_component_calculation_method_is_known",
+            ),
+            # Beyond the workbook, and the thing that makes the system-row lock
+            # complete: a shared row IS a system row. Without this, a shared row with
+            # is_system false would be readable by every tenant, editable by none of
+            # the checks, and deletable by any of them - because a DELETE is tested
+            # against the policy's USING clause only.
+            models.CheckConstraint(
+                condition=models.Q(tenant__isnull=False) | models.Q(is_system=True),
+                name="payroll_component_shared_rows_are_system_rows",
+            ),
+            # The converse: a tenant cannot mint its own system component and thereby
+            # make one of its own rows permanently uneditable by itself.
+            models.CheckConstraint(
+                condition=models.Q(tenant__isnull=True) | models.Q(is_system=False),
+                name="payroll_component_system_rows_are_shared_rows",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(percentage_value__isnull=True)
+                | models.Q(percentage_value__gte=0),
+                name="payroll_component_percentage_not_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(default_rate_multiplier__isnull=True)
+                | models.Q(default_rate_multiplier__gte=0),
+                name="payroll_component_multiplier_not_negative",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.code} — {self.name}"
+
+    def clean(self):
+        """Refuse a component whose tax treatment contradicts its source code.
+
+        ``sars_source_code`` already carries these four booleans with the reasoning
+        written beside them, because whether an amount enters the UIF, SDL or COIDA
+        base is a reading of three statutes rather than a description. Sheet 02 puts
+        the same four on this table, so the two can disagree — and the way that shows
+        up is an EMP201 that does not reconcile to the payslips behind it.
+
+        The code is the single source of truth; this is the copy. So the copy is not
+        allowed to differ.
+        """
+        super().clean()
+
+        if self.sars_source_code_id is None:
+            return
+
+        code = self.sars_source_code
+        mismatched = {
+            name: (mine, theirs)
+            for name, mine, theirs in (
+                ("is_taxable", self.is_taxable, code.is_taxable),
+                ("is_uif_base", self.is_uif_base, code.is_uif_remuneration),
+                ("is_sdl_base", self.is_sdl_base, code.is_sdl_remuneration),
+                ("is_coida_base", self.is_coida_base, code.is_coida_remuneration),
+            )
+            if mine != theirs
+        }
+        if mismatched:
+            detail = ", ".join(
+                f"{name} is {mine} here and {theirs} on {code.code}"
+                for name, (mine, theirs) in sorted(mismatched.items())
+            )
+            raise ValidationError(
+                f"The tax treatment of {self.code} contradicts SARS source code "
+                f"{code.code}: {detail}. The source code carries the reasoning and is "
+                f"the single source of truth — change it there, with a citation, or "
+                f"point this component at a different code."
             )

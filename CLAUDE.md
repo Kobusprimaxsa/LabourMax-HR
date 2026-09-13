@@ -34,20 +34,32 @@ No table holding employer or employee data may be merged without **all three**:
 One employer seeing another employer's employees is the failure that ends this product.
 It is the only defect that cannot be apologised for. A single ORM filter is not enough.
 
-**Two bases, and the choice is deliberate** (decisions D-52, D-53):
+**Three bases, and the choice is deliberate** (decisions D-52, D-53, D-87):
 
-| | `TenantScopedModel` | `TenantOptionalModel` |
-|---|---|---|
-| `tenant_id` | NOT NULL | nullable |
-| For | employer and employee data | security and operations records that predate the tenant being known |
-| Tenant session sees | its own rows | its own rows, **never** the NULL-tenant ones |
-| Session with no tenant pinned sees | nothing | the NULL-tenant rows |
-| Platform console sees | nothing — it reads through a tenant context, not around it | everything, inside `platform_context()` only |
-| Migration calls | `enable_rls(table)` | `enable_rls_optional(table)` |
+| | `TenantScopedModel` | `TenantOptionalModel` | `TenantSharedModel` |
+|---|---|---|---|
+| `tenant_id` | NOT NULL | nullable | nullable |
+| A NULL means | — | belongs to the platform, **no tenant may see it** | **available to all** |
+| For | employer and employee data | security and operations records that predate the tenant being known | a catalogue the platform stocks and tenants extend |
+| Tenant session reads | its own rows | its own rows, **never** the NULL-tenant ones | its own rows **and** the shared ones |
+| Tenant session writes | its own rows | its own rows | its own rows only — shared rows are read-only to it |
+| Session with no tenant pinned sees | nothing | the NULL-tenant rows | the shared rows |
+| Platform console sees | nothing — it reads through a tenant context, not around it | everything, inside `platform_context()` only | everything, inside `platform_context()` only |
+| Migration calls | `enable_rls(table)` | `enable_rls_optional(table)` | `enable_rls_shared(table)` |
 
-A model that grows a `tenant` field while inheriting **neither** base is caught by
+**The two nullable bases mean opposite things by the same NULL.** Reusing the optional
+base for `payroll_component` would have made the sixteen system components invisible to
+every employer; flipping its clause instead would have opened every platform audit row to
+every tenant. `test_no_model_inherits_two_tenant_bases` keeps them apart.
+
+A model that grows a `tenant` field while inheriting **none** of them is caught by
 `test_no_model_carries_a_tenant_column_without_a_base`. Do not work around that test
 by deleting it; pick a base.
+
+**The shared base is only for data that is not employer or employee data.** The test is
+whether a row with no tenant would be safe on a competitor's screen — a component
+definition is; anything with a person or an amount in it is not. A leak there is one no
+policy would report, because the policy would be doing exactly what it was asked to.
 
 `platform_context()` is the **only** way to read across tenants. It lifts the manager
 filter and the RLS policy together, logs every entry, and is named so it is obvious in
@@ -87,6 +99,23 @@ zero, or a save appears to do nothing, check the context before you check the da
 
 A scanner callback, a Celery task and a retention job all arrive with no request and
 therefore no tenant context, so this is the ordinary path, not an edge case.
+
+**And a context block that WRITES outside a request must open a transaction first**
+(D-92). `set_config(..., true)` is transaction-local, deliberately — a pooled connection
+must not carry one request's tenant into the next. Under autocommit, which is where every
+management command, Celery task and shell session runs, each statement is its own
+transaction: the flag is set, the next statement commits, and the flag is gone before the
+write, which then fails with "new row violates row-level security policy". A request never
+hits this because `ATOMIC_REQUESTS` holds one transaction open; a test never hits it
+because pytest-django wraps each one. So a whole green suite can sit on top of a command
+that cannot run — which is exactly what happened to `seedcomponents`.
+
+```python
+with transaction.atomic(), platform_context():  # atomic FIRST
+    ...
+```
+
+Test it with `@pytest.mark.django_db(transaction=True)`, or the wrapper hides it again.
 
 **An abstract base's `Meta.constraints` is NOT inherited** by a child that declares its
 own `Meta` — and every model here declares one, for `db_table`. Put a CHECK on an abstract
@@ -222,6 +251,7 @@ empty database (D-74) — every check iterates rows, so over no rows they all pa
 
 ```powershell
 python manage.py loadstatutory --all
+python manage.py seedcomponents
 ```
 
 **Never load them with a shell glob.** Alphabetical order puts the rule set fixtures before
@@ -335,6 +365,7 @@ python manage.py loadstatutory --all        # dependency order; never a shell gl
 python manage.py loadstatutory reference/ref-2026.03.01.json --loaded-by you@example.com
 python manage.py verifystatutory REF-2026.03.01 --verified-by someone-else@example.com `
     --current-through 2027-02-28 --golden-tests-passed
+python manage.py seedcomponents             # the shared payroll component catalogue
 
 pytest                              # everything
 pytest core/tests/test_tenant_isolation.py -v   # the one that must never fail
@@ -361,7 +392,7 @@ CI. Tenant isolation proven at all three layers, field-level audit trail with se
 masking, the administrative seat limit enforced by trigger, and file storage behind a
 virus-scan gate.
 
-**P3 — Employer Setup: started** (13 September 2026). 439 tests green. `employer`,
+**P3 — Employer Setup: started** (13 September 2026). 482 tests green. `employer`,
 `employer_statutory_registration` and `employer_bank_account` exist, tenant-scoped and picked
 up automatically by the generated isolation suite. `core/db/fields.py` brings the first
 encrypted column in the schema, unsearchable by design (D-77). Two structural findings came
@@ -377,7 +408,23 @@ job, and until it is done onboarding a contract cleaning employer stops at the a
 design question against Claude's proposal — the workbook wins). A period belongs to the tax year
 its **payment date** falls in, not its period end (D-83).
 
-Still to come in P3: the `payroll_component` catalogue.
+`payroll_component` closes the phase, and it brought two structural things with it. It is the
+first **shared** table — a NULL tenant means *available to all*, which no existing base could
+express, so `TenantSharedModel` and `enable_rls_shared()` are the third tenancy shape (D-87).
+And none of its sixteen system components carries a rate: `OT_1_5` is a label, and the 1.5
+lives in `working_time_rule_set` with its citation (D-88). The four base flags are copied from
+the SARS source code and `clean()` refuses any other combination, so "is this taxable" is still
+decided in one place (D-89).
+
+`SEVERANCE` ships **inactive** — source code 3901 is not loaded and severance is taxed on a
+directive, so pointing it at 3601 would be wrong on the IRP5 and wrong on the rate (D-90).
+
+```powershell
+python manage.py seedcomponents          # after loadstatutory --all; idempotent
+python manage.py seedcomponents --list   # the catalogue, without touching the database
+```
+
+Still open in P3: the municipality-to-area data.
 
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting
 verification** (13 September 2026). 351 tests green. All twenty tables exist with their

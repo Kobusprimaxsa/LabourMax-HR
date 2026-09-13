@@ -5,7 +5,7 @@ a bypassed manager, a management command, and any future bug in layer 1.
 
 Emitted by migrations via ``RunSQL(enable_rls(table), disable_rls(table))``.
 
-Two policies, matching the two model bases in ``core/managers.py``:
+Three policies, matching the three model bases in ``core/managers.py``:
 
 ``enable_rls``
     For ``TenantScopedModel`` tables. ``tenant_id`` is NOT NULL and a row is
@@ -16,6 +16,12 @@ Two policies, matching the two model bases in ``core/managers.py``:
     For ``TenantOptionalModel`` tables, where ``tenant_id`` is nullable because
     the row may predate the tenant being known. Adds exactly two carve-outs, and
     both are visible in the SQL rather than implied by application code.
+
+``enable_rls_shared``
+    For ``TenantSharedModel`` tables — a catalogue the platform stocks and every
+    tenant extends. ``tenant_id`` is nullable here too, and means the **opposite**
+    of what it means above: a NULL row is readable by everybody rather than by
+    nobody. Read and write differ, which they do not in the other two.
 
 If you change a policy here, change the matching manager in ``core/managers.py``
 in the same commit.
@@ -104,8 +110,50 @@ CREATE POLICY {POLICY_NAME} ON {table}
 """
 
 
+def enable_rls_shared(table: str) -> str:
+    """Isolation for a catalogue whose NULL ``tenant_id`` means *shared*.
+
+    ``enable_rls_optional`` and this one both allow a NULL ``tenant_id`` and mean
+    opposite things by it. There, NULL is the platform's own row and **no tenant
+    may see it**. Here, NULL is a row the platform stocks for **everybody** —
+    sheet 02's "Null = system component available to all". One policy cannot
+    express both, which is the whole argument for the third base (D-87).
+
+    Read and write differ, and that asymmetry is the point:
+
+    ``USING``   platform, OR the row is shared, OR it is this tenant's own.
+    ``WITH CHECK``  platform, OR it is this tenant's own — **never** a shared row.
+
+    So a tenant reads the catalogue and writes only its own additions. An UPDATE
+    is checked against both clauses, so a tenant cannot edit a shared row: it
+    passes USING, and then the new row still has a NULL tenant and fails WITH
+    CHECK. A DELETE is checked against USING **only**, which is the hole — and
+    ``lock_system_rows()`` below is what closes it, because no policy can.
+
+    Writing a shared row therefore needs ``platform_context()``, which is logged
+    and greppable. Seeding the catalogue is exactly that and nothing else.
+
+    ``TenantSharedManager`` mirrors the USING clause. Change one, change the other.
+    """
+    readable = (
+        f"({_PLATFORM}"
+        f"\n        OR tenant_id IS NULL"
+        f"\n        OR ({_TENANT_PINNED} AND {_TENANT_MATCHES}))"
+    )
+    writable = f"({_PLATFORM}\n        OR ({_TENANT_PINNED} AND {_TENANT_MATCHES}))"
+    return f"""
+ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;
+ALTER TABLE {table} FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS {POLICY_NAME} ON {table};
+CREATE POLICY {POLICY_NAME} ON {table}
+    USING {readable}
+    WITH CHECK {writable};
+"""
+
+
 def disable_rls(table: str) -> str:
-    """Reverse operation for both policy variants."""
+    """Reverse operation for all three policy variants."""
     return f"""
 DROP POLICY IF EXISTS {POLICY_NAME} ON {table};
 ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY;
@@ -223,3 +271,59 @@ CREATE TRIGGER {table}_no_delete
 
 def drop_no_delete(table: str) -> str:
     return f"DROP TRIGGER IF EXISTS {table}_no_delete ON {table};"
+
+
+# --------------------------------------------------------- system row lock
+
+SYSTEM_ROW_LOCK_FUNCTION = f"""
+CREATE OR REPLACE FUNCTION labourmax_system_row_locked() RETURNS trigger AS $$
+BEGIN
+    IF NOT OLD.is_system THEN
+        RETURN COALESCE(NEW, OLD);
+    END IF;
+    IF coalesce(current_setting('{REFERENCE_MAINTENANCE_VAR}', true), 'off') = 'on' THEN
+        RETURN COALESCE(NEW, OLD);
+    END IF;
+    RAISE EXCEPTION 'This is a system row and cannot be edited or deleted. Every '
+        'tenant reads it, so a change here is a change to every employer''s payslips. '
+        'Add your own row instead. Deliberate platform maintenance sets '
+        '{REFERENCE_MAINTENANCE_VAR}.';
+END;
+$$ LANGUAGE plpgsql;
+"""  # noqa: S608
+
+DROP_SYSTEM_ROW_LOCK_FUNCTION = "DROP FUNCTION IF EXISTS labourmax_system_row_locked();"
+
+
+def lock_system_rows(table: str) -> str:
+    """Make ``is_system`` rows read-only, on a table that also holds tenant rows.
+
+    **This closes the one hole in ``enable_rls_shared()``, and the hole is
+    PostgreSQL's rather than ours.** An UPDATE is checked against a policy's
+    USING clause *and* its WITH CHECK clause, so a tenant editing a shared row is
+    refused by the second. A DELETE is checked against USING **only** — there is
+    no WITH CHECK for DELETE, because there is no new row to check. A tenant can
+    therefore see a shared row and delete it, and the catalogue every other
+    employer's payslips point at loses a line.
+
+    Writing a restrictive DELETE policy would work for shared rows specifically,
+    but the rule sheet 02 actually states is broader — "system components cannot
+    be edited or deleted" — and that is a property of the row, not of its tenant.
+    A trigger states it once and covers both verbs. It also binds the table owner,
+    which a policy without FORCE and a REVOKE against PUBLIC both fail to do; that
+    lesson is written up twice already in this module.
+
+    Requires the table to carry a NOT NULL ``is_system`` boolean, and
+    ``SYSTEM_ROW_LOCK_FUNCTION`` to have been run once in an earlier operation of
+    the same migration.
+    """
+    return f"""
+DROP TRIGGER IF EXISTS {table}_system_row_lock ON {table};
+CREATE TRIGGER {table}_system_row_lock
+    BEFORE UPDATE OR DELETE ON {table}
+    FOR EACH ROW EXECUTE FUNCTION labourmax_system_row_locked();
+"""
+
+
+def drop_lock_system_rows(table: str) -> str:
+    return f"DROP TRIGGER IF EXISTS {table}_system_row_lock ON {table};"

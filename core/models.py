@@ -18,6 +18,7 @@ from core.managers import (
     AllTenantsManager,
     TenantOptionalManager,
     TenantScopedManager,
+    TenantSharedManager,
 )
 
 # ---------------------------------------------------------------- base classes
@@ -103,6 +104,55 @@ class TenantOptionalModel(models.Model):
 
     class Meta:
         abstract = True
+
+
+class TenantSharedModel(AuditMixin):
+    """A catalogue the platform stocks and every tenant may extend.
+
+    ``tenant_id`` is nullable and NULL means **available to all** — the opposite
+    of what NULL means on ``TenantOptionalModel``, where it means *belongs to the
+    platform and no tenant may see it*. Two opposite meanings for the same NULL
+    cannot share one policy, so this is a third base rather than a flag on the
+    second (D-87).
+
+    ``payroll_component`` is the first: sheet 02 annotates its ``tenant_id`` with
+    "Null = system component available to all", and an employer that defines its
+    own transport allowance writes a row alongside the platform's sixteen.
+
+    The rules, mirrored clause for clause by ``enable_rls_shared()``:
+
+    - a tenant session reads the shared rows **and** its own
+    - a tenant session writes only its own — the shared rows are read-only to it,
+      enforced by the policy's WITH CHECK rather than by application code
+    - a session with no tenant pinned reads the shared rows, which is how seeding
+      and the catalogue loader see them
+    - writing a shared row requires ``platform_context()``
+
+    **Only for data that is not employer or employee data.** A shared row is
+    visible to every tenant on the platform, so the test of whether a table
+    belongs here is whether a row with no tenant would be safe on a competitor's
+    screen. A component definition is; anything with a person or an amount in it
+    is not.
+
+    ``on_delete=PROTECT`` rather than ``SET_NULL``: on ``TenantOptionalModel``
+    nulling the tenant demotes a row to the platform's, which is harmless there.
+    Here it would silently promote a departing tenant's private component into
+    the catalogue every other tenant reads.
+    """
+
+    tenant = models.ForeignKey(
+        "core.Tenant", null=True, blank=True, on_delete=models.PROTECT, related_name="+"
+    )
+
+    objects = TenantSharedManager()
+    all_tenants = AllTenantsManager()
+
+    class Meta:
+        abstract = True
+
+    @property
+    def is_shared(self) -> bool:
+        return self.tenant_id is None
 
 
 # ---------------------------------------------------------------- platform

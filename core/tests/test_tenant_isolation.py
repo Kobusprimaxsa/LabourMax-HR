@@ -1,15 +1,21 @@
 """Tenant isolation — layer 3 of three.
 
 This suite is GENERATED from the Django model registry. Every model inheriting
-``TenantScopedModel`` or ``TenantOptionalModel`` is discovered and tested
-automatically, so a model added next year is covered the day it is written
-rather than the day someone remembers to write a test for it.
+``TenantScopedModel``, ``TenantOptionalModel`` or ``TenantSharedModel`` is
+discovered and tested automatically, so a model added next year is covered the
+day it is written rather than the day someone remembers to write a test for it.
 
-The two bases are tested differently on purpose:
+The three bases are tested differently on purpose:
 
 ``TenantScopedModel``  tenant_id NOT NULL, strict policy, no platform override.
 ``TenantOptionalModel``  tenant_id nullable, and a tenant must still never see
                          the NULL-tenant rows.
+``TenantSharedModel``  tenant_id nullable, and a tenant SHOULD see the NULL-tenant
+                       rows — they are the shared catalogue — but must still never
+                       see another tenant's, and must never write a shared one.
+
+The one guarantee that holds across all three, and the only one that ends this
+product if it breaks: no tenant ever sees another tenant's rows.
 
 If this file fails, nothing merges. See CLAUDE.md, non-negotiable 1.
 """
@@ -23,11 +29,12 @@ from django.db import connection
 from core.managers import (
     TenantOptionalManager,
     TenantScopedManager,
+    TenantSharedManager,
     get_current_tenant_id,
     platform_context,
     tenant_context,
 )
-from core.models import Tenant, TenantOptionalModel, TenantScopedModel
+from core.models import Tenant, TenantOptionalModel, TenantScopedModel, TenantSharedModel
 
 
 def _concrete(base):
@@ -40,7 +47,9 @@ def model_ids(models_):
 
 SCOPED = _concrete(TenantScopedModel)
 OPTIONAL = _concrete(TenantOptionalModel)
-ALL_TENANT_TABLES = SCOPED + OPTIONAL
+SHARED = _concrete(TenantSharedModel)
+NULLABLE_TENANT = OPTIONAL + SHARED
+ALL_TENANT_TABLES = SCOPED + OPTIONAL + SHARED
 
 
 # --------------------------------------------------------------- fixtures
@@ -64,6 +73,7 @@ def test_discovery_found_both_kinds_of_model():
     """Guards against the suite silently passing because discovery broke."""
     assert SCOPED, "No TenantScopedModel subclasses found - discovery is broken."
     assert OPTIONAL, "No TenantOptionalModel subclasses found - discovery is broken."
+    assert SHARED, "No TenantSharedModel subclasses found - discovery is broken."
 
 
 @pytest.mark.isolation
@@ -80,15 +90,15 @@ def test_no_model_carries_a_tenant_column_without_a_base():
     for model in apps.get_models():
         if model._meta.app_label in {"auth", "contenttypes", "sessions", "admin"}:
             continue
-        if issubclass(model, (TenantScopedModel, TenantOptionalModel)):
+        if issubclass(model, (TenantScopedModel, TenantOptionalModel, TenantSharedModel)):
             continue
         if any(f.name == "tenant" for f in model._meta.fields):
             offenders.append(f"{model._meta.app_label}.{model.__name__}")
 
     assert not offenders, (
-        "These models have a tenant column but inherit neither TenantScopedModel "
-        "nor TenantOptionalModel, so they have no scoped manager, no row-level "
-        f"security policy and no isolation test: {offenders}"
+        "These models have a tenant column but inherit none of TenantScopedModel, "
+        "TenantOptionalModel or TenantSharedModel, so they have no scoped manager, "
+        f"no row-level security policy and no isolation test: {offenders}"
     )
 
 
@@ -112,12 +122,59 @@ def test_scoped_tenant_column_is_not_nullable(model):
 
 
 @pytest.mark.isolation
-@pytest.mark.parametrize("model", OPTIONAL, ids=model_ids(OPTIONAL))
-def test_optional_tenant_column_is_nullable(model):
+@pytest.mark.parametrize("model", NULLABLE_TENANT, ids=model_ids(NULLABLE_TENANT))
+def test_nullable_tenant_column_is_actually_nullable(model):
     field = model._meta.get_field("tenant")
     assert field.null, (
         f"{model.__name__}.tenant is NOT NULL, so it should inherit "
         f"TenantScopedModel and get the strict policy."
+    )
+
+
+@pytest.mark.isolation
+def test_no_model_inherits_two_tenant_bases():
+    """The two nullable bases mean OPPOSITE things by a NULL tenant_id.
+
+    On ``TenantOptionalModel`` a NULL row is the platform's and no tenant may see
+    it. On ``TenantSharedModel`` a NULL row is everybody's. A model inheriting
+    both would get whichever manager the MRO happened to pick and a policy chosen
+    by whichever helper its migration called - and the two disagreeing is exactly
+    the shape of bug that leaks rows quietly.
+    """
+    bases = (TenantScopedModel, TenantOptionalModel, TenantSharedModel)
+    offenders = [
+        f"{m._meta.app_label}.{m.__name__}"
+        for m in apps.get_models()
+        if sum(issubclass(m, base) for base in bases) > 1
+    ]
+    assert not offenders, f"These models inherit more than one tenant base: {offenders}"
+
+
+@pytest.mark.isolation
+@pytest.mark.parametrize("model", SHARED, ids=model_ids(SHARED))
+def test_shared_default_manager(model):
+    assert isinstance(model._default_manager, TenantSharedManager), (
+        f"{model.__name__}.objects is {type(model._default_manager).__name__}, not a "
+        f"TenantSharedManager."
+    )
+
+
+@pytest.mark.isolation
+@pytest.mark.parametrize("model", SHARED, ids=model_ids(SHARED))
+def test_shared_tables_hold_no_employer_or_employee_data(model):
+    """The standing test of whether a table belongs on the shared base.
+
+    A shared row is visible to every tenant on the platform, so the question is
+    whether a row with no tenant would be safe on a competitor's screen. A
+    component definition is. Anything naming a person, or carrying an amount
+    somebody was actually paid, is not - and would be a leak that no policy here
+    would report, because the policy is doing exactly what it was asked to.
+    """
+    forbidden = {"employee", "employer", "payslip", "pay_period", "amount", "id_number"}
+    names = {f.name for f in model._meta.fields}
+    assert not (names & forbidden), (
+        f"{model.__name__} inherits TenantSharedModel but carries {sorted(names & forbidden)}. "
+        f"A shared row is readable by every tenant. Use TenantScopedModel."
     )
 
 
@@ -391,3 +448,69 @@ def test_membership_can_be_revoked_then_regranted(db, tenant_a, django_user_mode
         )
         assert second.pk != first.pk
         assert TenantMembership.all_tenants.filter(tenant=tenant_a, user=user).count() == 2
+
+
+@pytest.mark.isolation
+def test_a_tenant_sees_shared_rows_but_not_another_tenants(db, tenant_a, tenant_b):
+    """The shared base's whole reason to exist, and its whole risk.
+
+    ``TenantOptionalModel`` and ``TenantSharedModel`` both allow a NULL tenant_id
+    and mean opposite things by it. This is the assertion that tells them apart, and
+    it sits next to ``test_tenant_cannot_see_platform_rows_on_optional_tables`` so
+    that the two opposite expectations are read together rather than one at a time.
+
+    What does NOT change between them: tenant A never sees tenant B's rows.
+    """
+    from employers.models import PayrollComponent
+
+    with platform_context():
+        PayrollComponent.objects.create(
+            tenant=None,
+            code="ISOLATION_PROBE_SHARED",
+            name="Shared probe",
+            component_type=PayrollComponent.ComponentType.INFORMATIONAL,
+            is_system=True,
+        )
+    with tenant_context(tenant_b.id):
+        PayrollComponent.objects.create(
+            tenant=tenant_b,
+            code="ISOLATION_PROBE_B",
+            name="B's probe",
+            component_type=PayrollComponent.ComponentType.INFORMATIONAL,
+        )
+
+    with tenant_context(tenant_a.id):
+        codes = set(PayrollComponent.objects.values_list("code", flat=True))
+        assert "ISOLATION_PROBE_SHARED" in codes, (
+            "A shared row is readable by every tenant - that is what the base is for."
+        )
+        assert "ISOLATION_PROBE_B" not in codes
+        assert not PayrollComponent.all_tenants.filter(code="ISOLATION_PROBE_B").exists(), (
+            "all_tenants bypasses the manager, not the policy. Layer 2 is not working."
+        )
+
+
+@pytest.mark.isolation
+def test_a_tenant_cannot_write_a_shared_row(db, tenant_a):
+    """Read and write differ on the shared base, and only the policy can say so.
+
+    A manager filters reads. It cannot stop a write, so if the WITH CHECK clause
+    ever loses its second half, one tenant can add a row to the catalogue every
+    other tenant reads.
+    """
+    from django.db import DatabaseError, transaction
+
+    from employers.models import PayrollComponent
+
+    with (
+        tenant_context(tenant_a.id),
+        pytest.raises(DatabaseError),
+        transaction.atomic(),
+    ):
+        PayrollComponent.objects.create(
+            tenant=None,
+            code="ISOLATION_PROBE_SNEAK",
+            name="Into everyone's catalogue",
+            component_type=PayrollComponent.ComponentType.INFORMATIONAL,
+            is_system=True,
+        )

@@ -20,8 +20,24 @@ Two scoping patterns exist, and the difference is deliberate:
     - an anonymous session (no tenant pinned) sees only the NULL-tenant rows
     - the platform console sees everything, and only inside ``platform_context()``
 
+``TenantSharedModel``
+    A catalogue every tenant reads from and adds to. ``tenant_id`` is nullable
+    and a NULL means **available to all** rather than *belonging to nobody* —
+    the exact opposite of what it means on ``TenantOptionalModel``, which is why
+    this is a third base rather than a flag on the second (D-87).
+
+    - a tenant session sees the platform's rows **and** its own
+    - a tenant session may write only its own; the shared rows are read-only to it
+    - a session with no tenant pinned sees the shared rows, which is how seeding
+      and the loader read them
+    - writing a shared row needs ``platform_context()``
+
 There is exactly one way to read across tenants deliberately, and it is named so
 that it shows up in review and in ``grep``.
+
+Note what the shared base does **not** loosen: a tenant still cannot see another
+tenant's rows. The only thing it adds is a row belonging to nobody that everybody
+may read, and that row holds no employer or employee data by construction.
 """
 
 from __future__ import annotations
@@ -81,6 +97,28 @@ def apply_session_variables(tenant_id: int | None, platform_access: bool = False
 
     Best-effort by design: called from ``tenant_context()``, which is used in
     tests and management commands that may have no database at all.
+
+    **Transaction-local means a context block that writes needs a transaction.**
+    Under autocommit — which is where every management command, Celery task and
+    shell session runs — each statement is its own transaction. Entering a context
+    block sets the flag, the next statement commits, and the flag is gone before
+    the write. The write then fails with "new row violates row-level security
+    policy", which names the policy and says nothing about the missing context.
+
+    A request does not hit this, because ``ATOMIC_REQUESTS`` holds one transaction
+    open for its duration. Neither does a test, because pytest-django wraps each
+    one — which is why a whole green suite can sit on top of a command that fails
+    on its first real run. It did, in P3, on ``seedcomponents``.
+
+    So: anything that writes inside ``tenant_context()`` or ``platform_context()``
+    outside a request opens a transaction first, and opens it FIRST — the
+    ``set_config`` has to happen inside the transaction it is scoped to::
+
+        with transaction.atomic(), platform_context():
+            ...
+
+    A test for such code runs with ``@pytest.mark.django_db(transaction=True)``,
+    or the wrapper hides the bug again.
     """
     try:
         with connection.cursor() as cursor:
@@ -220,6 +258,46 @@ class TenantOptionalManager(models.Manager.from_queryset(TenantScopedQuerySet)):
             return qs.filter(tenant_id__isnull=True)
         # A tenant never sees the platform's rows, only its own.
         return qs.filter(tenant_id=tenant_id)
+
+
+class TenantSharedManager(models.Manager.from_queryset(TenantScopedQuerySet)):
+    """Default manager for a catalogue whose NULL ``tenant_id`` means *shared*.
+
+    Mirrors ``enable_rls_shared()`` exactly. Same standing warning as
+    ``TenantOptionalManager``: change one and you must change the other, or the
+    disagreement surfaces as a baffling empty result rather than a test failure.
+
+    The reading rule and the writing rule differ here, which they do not on the
+    other two bases. A tenant reads the shared rows and its own; it writes only
+    its own. The policy carries that asymmetry in its WITH CHECK clause, because
+    a manager cannot stop a write — only a policy can.
+    """
+
+    def get_queryset(self) -> TenantScopedQuerySet:
+        qs = super().get_queryset()
+        if platform_access_enabled():
+            return qs
+        tenant_id = get_current_tenant_id()
+        if tenant_id is None:
+            # No tenant pinned: the shared catalogue only. Seeding and the
+            # component loader read through here.
+            return qs.filter(tenant_id__isnull=True)
+        return qs.filter(models.Q(tenant_id=tenant_id) | models.Q(tenant_id__isnull=True))
+
+    def own(self) -> TenantScopedQuerySet:
+        """This tenant's own rows, without the shared ones.
+
+        For "which components has this employer defined", where including the
+        platform's sixteen would be the wrong answer.
+        """
+        tenant_id = get_current_tenant_id()
+        if tenant_id is None:
+            return super().get_queryset().none()
+        return super().get_queryset().filter(tenant_id=tenant_id)
+
+    def shared(self) -> TenantScopedQuerySet:
+        """The platform's rows, without this tenant's."""
+        return super().get_queryset().filter(tenant_id__isnull=True)
 
 
 class AllTenantsManager(models.Manager.from_queryset(TenantScopedQuerySet)):
