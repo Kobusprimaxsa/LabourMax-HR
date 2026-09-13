@@ -25,21 +25,107 @@
       {
         "sector": "CONTRACT_CLEANING",
         "code": "AREA_A",
-        "name": "Area A - Metropolitan Councils",
-        "description": "City of Cape Town, Greater East Rand Metro, City of Johannesburg, City of Tshwane, Nelson Mandela Metro."
+        "name": "Area A - listed Metropolitan and Local Councils",
+        "description": "Metropolitan Councils: City of Cape Town, Greater East Rand Metro, City of Johannesburg, Tshwane and Nelson Mandela. Local Council: Emfuleni, Merafong, Mogale City, Metsimaholo, Randfontein, Stellenbosch, Westonaria. The gazette prints the metros and the local councils in ONE column, not two - see municipality_area_map for the list as loaded."
       },
       {
         "sector": "CONTRACT_CLEANING",
         "code": "AREA_B",
-        "name": "Area B - named Local Councils",
-        "description": "Emfuleni, Merafong, Mogale City, Metsimaholo, Randfontein, Stellenbosch and Westonaria Local Councils."
+        "name": "Area B - KwaZulu-Natal",
+        "description": "All Areas in KwaZulu-Natal. The gazette states no figure: conditions of employment and minimum wage rates for KwaZulu-Natal areas are subject to the collective agreement concluded in the Bargaining Council for the Contract Cleaning Service Industry (BCCCI).",
+        "uses_bargaining_council_rates": true
       },
       {
         "sector": "CONTRACT_CLEANING",
-        "code": "AREA_C_KZN",
-        "name": "Area C - KwaZulu-Natal",
-        "description": "All KwaZulu-Natal areas. The gazette states no figure: wages and conditions follow the collective agreement of the Bargaining Council for the Contract Cleaning Service Industry.",
-        "uses_bargaining_council_rates": true
+        "code": "AREA_C",
+        "name": "Area C - the rest of the RSA",
+        "description": "In the rest of the RSA. This is a RESIDUAL, not a list: anywhere that is neither one of the Area A councils nor in KwaZulu-Natal. It is therefore the area most contract cleaning workplaces fall into, and it has no municipality_area_map rows by design."
+      }
+    ],
+    "municipality_area_map": [
+      {
+        "sector_area": "AREA_A",
+        "province_code": "WC",
+        "municipality_name": "City of Cape Town",
+        "municipality_type": "metro",
+        "effective_from": "2026-03-01"
+      },
+      {
+        "sector_area": "AREA_A",
+        "province_code": "GP",
+        "municipality_name": "Greater East Rand Metro",
+        "municipality_type": "metro",
+        "effective_from": "2026-03-01"
+      },
+      {
+        "sector_area": "AREA_A",
+        "province_code": "GP",
+        "municipality_name": "City of Johannesburg",
+        "municipality_type": "metro",
+        "effective_from": "2026-03-01"
+      },
+      {
+        "sector_area": "AREA_A",
+        "province_code": "GP",
+        "municipality_name": "Tshwane",
+        "municipality_type": "metro",
+        "effective_from": "2026-03-01"
+      },
+      {
+        "sector_area": "AREA_A",
+        "province_code": "EC",
+        "municipality_name": "Nelson Mandela",
+        "municipality_type": "metro",
+        "effective_from": "2026-03-01"
+      },
+      {
+        "sector_area": "AREA_A",
+        "province_code": "GP",
+        "municipality_name": "Emfuleni",
+        "municipality_type": "local",
+        "effective_from": "2026-03-01"
+      },
+      {
+        "sector_area": "AREA_A",
+        "province_code": "GP",
+        "municipality_name": "Merafong",
+        "municipality_type": "local",
+        "effective_from": "2026-03-01"
+      },
+      {
+        "sector_area": "AREA_A",
+        "province_code": "GP",
+        "municipality_name": "Mogale City",
+        "municipality_type": "local",
+        "effective_from": "2026-03-01"
+      },
+      {
+        "sector_area": "AREA_A",
+        "province_code": "FS",
+        "municipality_name": "Metsimaholo",
+        "municipality_type": "local",
+        "effective_from": "2026-03-01"
+      },
+      {
+        "sector_area": "AREA_A",
+        "province_code": "GP",
+        "municipality_name": "Randfontein",
+        "municipality_type": "local",
+        "effective_from": "2026-03-01"
+      },
+      {
+        "sector_area": "AREA_A",
+        "province_code": "WC",
+        "municipality_name": "Stellenbosch",
+        "municipality_type": "local",
+        "effective_from": "2026-03-01"
+      },
+      {
+        "sector_area": "AREA_A",
+        "province_code": "GP",
+        "municipality_name": "Westonaria",
+        "municipality_type": "local",
+        "effective_from": "2026-03-01"
       }
     ],
     "minimum_wage_rate": [
@@ -67,18 +153,18 @@
         "effective_from": "2026-03-01",
         "source_reference": "GN R.7083, GG 54075, 3 February 2026 (National Minimum Wage Act 9 of 2018)",
         "source_url": "https://www.gov.za/sites/default/files/gcis_document/202602/54075rg11941gon7083.pdf",
-        "notes": "Weekly and monthly figures stored as gazetted, not recomputed."
+        "notes": "Weekly and monthly figures stored as gazetted, not recomputed. Weekly is on a 45-hour week and monthly on 4.333 weeks, per the gazette's own footnotes. Applies to the listed metros AND the listed local councils - both sit in this one column."
       },
       {
         "sector": "CONTRACT_CLEANING",
-        "sector_area": "AREA_B",
+        "sector_area": "AREA_C",
         "hourly_rate": "30.3300",
         "weekly_rate_45h": "1364.85",
         "monthly_rate_45h": "5913.90",
         "effective_from": "2026-03-01",
         "source_reference": "GN R.7083, GG 54075, 3 February 2026 (National Minimum Wage Act 9 of 2018)",
         "source_url": "https://www.gov.za/sites/default/files/gcis_document/202602/54075rg11941gon7083.pdf",
-        "notes": "Weekly and monthly figures stored as gazetted, not recomputed."
+        "notes": "Weekly and monthly figures stored as gazetted, not recomputed. THIS IS THE RESIDUAL RATE - the rest of the RSA, which is most of the country. Area B (KwaZulu-Natal) deliberately has no row: the gazette gives it no figure and points at the BCCCI agreement."
       }
     ],
     "tax_year": [

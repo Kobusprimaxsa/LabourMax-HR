@@ -400,19 +400,32 @@ class Sector(AuditedModel, AuditMixin):
 class SectorArea(AuditedModel, AuditMixin):
     """A geographic wage area within a sector.
 
-    Contract cleaning has three, and the gazette's lettering is not the one people
-    assume: **Area A is the metropolitan councils, Area B is a named list of local
-    councils, and Area C is the whole of KwaZulu-Natal** (GN R.7083, GG 54075,
-    3 February 2026). KwaZulu-Natal is the awkward one: the gazette gives it no
-    figure at all and points instead at the collective agreement concluded in the
-    Bargaining Council for the Contract Cleaning Service Industry. That is why
-    ``uses_bargaining_council_rates`` exists as data — the loader needs to know a
-    different source applies, and the citation on those rows is a clause of an
-    agreement rather than a gazette number.
+    Contract cleaning has three, and the gazette's own table (GN R.7083, GG 54075,
+    3 February 2026) prints them as three columns:
+
+    * **Area A** — the five listed Metropolitan Councils **and** the seven listed
+      Local Councils, in ONE column, at the high rate. They are not two areas.
+    * **Area B** — all areas in KwaZulu-Natal. No gazetted figure at all: rates and
+      conditions follow the collective agreement of the Bargaining Council for the
+      Contract Cleaning Service Industry. That is what
+      ``uses_bargaining_council_rates`` records — the loader needs to know a
+      different source applies, and the citation on those rows is an agreement
+      clause rather than a gazette number.
+    * **Area C** — "in the rest of the RSA", at the low rate. A **residual**, not a
+      list, and therefore where most workplaces land.
+
+    D-61 recorded this the other way round — B as the local councils, C as
+    KwaZulu-Natal — and overrode this docstring to do it. D-61 was wrong and is
+    superseded by D-118; re-read the gazette table before changing any of it back.
+    The cost of getting it wrong is not cosmetic: it underpaid every Area A local
+    council by R2,94 an hour and left the rest of the country with no rate at all.
     """
 
     sector = models.ForeignKey(Sector, on_delete=models.PROTECT, related_name="areas")
-    code = models.CharField(max_length=20, help_text="AREA_A | AREA_B | AREA_C_KZN")
+    code = models.CharField(
+        max_length=20,
+        help_text="AREA_A (listed councils) | AREA_B (KwaZulu-Natal, BCCCI) | AREA_C (rest of the RSA)",
+    )
     name = models.CharField(max_length=120)
     description = models.TextField(blank=True, help_text="Which councils and metros are included.")
     uses_bargaining_council_rates = models.BooleanField(
@@ -441,6 +454,21 @@ class MunicipalityAreaMap(AuditedModel, AuditMixin, EffectiveDatedModel):
     Asking an employer "are you in Area A or Area C?" produces a wrong answer
     confidently. Deriving it from the workplace address produces a wrong answer
     visibly, which can be corrected.
+
+    **This table holds ONLY the municipalities the determination itself names**
+    (D-118) — the twelve in the contract cleaning Area A column, under the gazette's
+    own spelling. It is not a gazetteer of South African municipalities and must not
+    become one. Area B is the whole of KwaZulu-Natal and Area C is "the rest of the
+    RSA", so neither is a list and neither has rows here: they are resolved by
+    province and by residual respectively.
+
+    A consequence worth knowing before reading these rows: the gazette still names
+    entities that no longer exist under those names — Randfontein and Westonaria
+    merged into Rand West City after the August 2016 elections, and Greater East Rand
+    Metro has been Ekurhuleni since 2000. The names are stored **as gazetted**,
+    because that is what the determination says and what a verifier checks against.
+    Mapping today's municipal names onto them is a presentation problem, not a
+    reference-data one.
     """
 
     class MunicipalityType(models.TextChoices):
