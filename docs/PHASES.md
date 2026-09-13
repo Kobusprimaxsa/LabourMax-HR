@@ -87,18 +87,28 @@ manual step, and a cancellation at 23:58 on the cancel-by date is never charged.
 
 The most important phase in the build. Can overlap P1.
 
-- [ ] `sector`, `sector_area`, `municipality_area_map`, `job_grade`
-- [ ] `minimum_wage_rate` with exclusion constraints on overlapping ranges
-- [ ] `tax_year`, `paye_tax_bracket`, `paye_rebate`, `medical_tax_credit_rate`
-- [ ] `statutory_parameter` — UIF, SDL, COIDA, BCEA threshold, VAT
-- [ ] `leave_rule_set`, `working_time_rule_set`, `termination_rule_set` per sector
-- [ ] `public_holiday` with the Sunday-shift rule
-- [ ] `sars_source_code`, `bank`, `bank_branch`
-- [ ] `reference_data_version` with verification, golden-test flag, `data_current_through`
-- [ ] `statutory_watch_item` seeded with the maintenance calendar
-- [ ] Loader: staged import, gazette reference and source URL **mandatory** on every row
-- [ ] Staleness guard blocking payroll runs beyond `data_current_through`
-- [ ] Seed all values from workbook sheet 05
+- [x] `sector`, `sector_area`, `municipality_area_map`, `job_grade`
+- [x] `minimum_wage_rate` with exclusion constraints on overlapping ranges
+- [x] `tax_year`, `paye_tax_bracket`, `paye_rebate`, `medical_tax_credit_rate`
+- [x] `statutory_parameter` — UIF, SDL, COIDA, BCEA threshold, VAT
+- [x] `leave_rule_set`, `working_time_rule_set`, `termination_rule_set` per sector
+- [x] `public_holiday` with the Sunday-shift rule
+- [x] `sars_source_code`, `bank`, `bank_branch`
+- [x] `reference_data_version` with verification, golden-test flag, `data_current_through`
+- [x] `statutory_watch_item` seeded with the maintenance calendar
+- [x] `statutory/resolve.py` — every effective-date lookup, in one place (D-58)
+- [x] Loader: staged import, citation **mandatory** on every row, nothing ever updated (D-56, D-57)
+- [x] `manage.py loadstatutory` and `manage.py verifystatutory` — two commands, two people
+- [x] Staleness guard blocking payroll runs beyond `data_current_through`
+- [x] The no-hard-coded-rate rule as a test rather than a grep (D-59)
+- [ ] Seed all values from workbook sheet 05 — **the phase's remaining work**
+- [ ] Golden tests reproducing the published SARS and DEL worked examples
+
+`source_url` is deliberately optional rather than mandatory as this plan originally
+specified. Not every gazette is online, older determinations are not, and a required
+URL field is a field people fill with something plausible. A citation you can find in
+a library beats a URL that 404s. `source_reference` is what is mandatory, and a CHECK
+constraint refuses a blank one on every cited table.
 
 **Done when:** every statutory number lives in a table with a gazette citation, and
 `grep -r` finds no hard-coded rate anywhere in the codebase.

@@ -288,6 +288,11 @@ python manage.py runserver
 python manage.py makemigrations
 python manage.py migrate
 python manage.py createsuperuser
+python manage.py dbcheck            # connection, extensions, and the superuser refusal
+
+python manage.py loadstatutory reference/ref-2026.03.01.json --loaded-by you@example.com
+python manage.py verifystatutory REF-2026.03.01 --verified-by someone-else@example.com `
+    --current-through 2027-02-28 --golden-tests-passed
 
 pytest                              # everything
 pytest core/tests/test_tenant_isolation.py -v   # the one that must never fail
@@ -314,10 +319,26 @@ CI. Tenant isolation proven at all three layers, field-level audit trail with se
 masking, the administrative seat limit enforced by trigger, and file storage behind a
 virus-scan gate.
 
-**Next: P2 — Statutory Reference Data.** Not P1. Nothing in the payroll engine can be tested
-against a SARS worked example until the reference tables exist, and a wrong UIF ceiling
-blocks a pilot employer in a way billing does not. P1 also carries the most open decisions
-(O-03 rand amounts, O-04 payment gateway), so starting it means stopping to ask.
+**P2 — Statutory Reference Data: the structure is complete, the data is not** (13 September
+2026). 291 tests green. All twenty tables exist with their constraints; `statutory/resolve.py`
+is the only place that answers "what applied on this date"; the loader refuses any file with an
+uncited row and never updates an existing one; `loadstatutory` and `verifystatutory` are two
+commands because loading and verifying are two people; and the no-hard-coded-rate rule runs as a
+test on every commit rather than as a grep somebody remembers.
+
+**What remains in P2 is the data itself** — every figure on workbook sheet 05, loaded with its
+citation and verified against the source document, then the golden tests that reproduce the
+published SARS and DEL worked examples. Until that is done the tables are empty and every
+`resolve` call raises, which is the correct behaviour for a system that does not yet know the
+rates.
+
+Chosen ahead of P1 because nothing in the payroll engine can be tested against a SARS worked
+example until the reference tables exist, and a wrong UIF ceiling blocks a pilot employer in a
+way billing does not. P1 also carries the most open decisions (O-03 rand amounts, O-04 payment
+gateway), so starting it means stopping to ask.
+
+**Statutory figures are never invented.** If a rate is needed and cannot be cited, say so and
+stop. That applies to filling in a fixture as much as to writing code.
 
 See `docs/PHASES.md` for the task breakdown.
 
