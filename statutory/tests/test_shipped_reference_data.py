@@ -164,6 +164,15 @@ def rules_loaded(loaded):
     return load_reference_data(document)
 
 
+SD1_FIXTURE = FIXTURE.parent / "ref-2026.03.01-sd1.json"
+
+
+@pytest.fixture
+def sd1_loaded(rules_loaded):
+    document = json.loads(SD1_FIXTURE.read_text(encoding="utf-8"))
+    return load_reference_data(document)
+
+
 @pytest.mark.statutory
 def test_the_rule_set_fixture_loads(rules_loaded):
     assert rules_loaded.created["leave_rule_set"] == 2
@@ -189,23 +198,62 @@ def test_the_domestic_sector_overrides_the_bcea_where_sd7_differs(rules_loaded):
 
 
 @pytest.mark.statutory
-def test_contract_cleaning_falls_back_to_the_bcea_because_sd1_is_not_loaded(rules_loaded):
-    """Visibly wrong for that sector, and visible is the point.
+def test_contract_cleaning_carries_its_own_rules_from_sd1(sd1_loaded):
+    """The three places SD1 is its own creature, and each is a real money difference."""
+    cleaning = Sector.objects.get(code=Sector.Code.CONTRACT_CLEANING)
+    on = datetime.date(2026, 6, 1)
 
-    SD1 has not been read. A contract cleaning employer therefore resolves to the
-    BCEA default, which understates their notice periods and knows nothing of the
-    statutory annual bonus. Loading a contract cleaning row that merely copied the
-    BCEA values would hide exactly this, under a citation claiming SD1.
+    working_time = resolve.working_time_rules(cleaning, on)
+    assert working_time.sector == cleaning
+    assert working_time.night_allowance_type == "percentage"
+    assert working_time.night_allowance_value == Decimal("10.0000")
+    assert working_time.min_paid_hours_per_day == Decimal("6.00")
+
+    termination = resolve.termination_rules(cleaning, on)
+    assert termination.annual_bonus_weeks == Decimal("4.333")
+    assert termination.annual_bonus_month == 12
+    assert termination.annual_bonus_pro_rata_on_termination is True
+
+
+@pytest.mark.statutory
+def test_the_short_day_minimum_differs_by_sector(sd1_loaded):
+    """Six hours under SD1 clause 3(2), four under BCEA s9A and SD7. Paying four to a
+    contract cleaner who worked two hours underpays them by two hours."""
+    cleaning = Sector.objects.get(code=Sector.Code.CONTRACT_CLEANING)
+    domestic = Sector.objects.get(code=Sector.Code.DOMESTIC)
+    on = datetime.date(2026, 6, 1)
+
+    assert resolve.working_time_rules(cleaning, on).min_paid_hours_per_day == Decimal("6.00")
+    assert resolve.working_time_rules(domestic, on).min_paid_hours_per_day == Decimal("4.00")
+
+
+@pytest.mark.statutory
+def test_the_night_allowance_is_a_real_figure_only_in_contract_cleaning(sd1_loaded):
+    """SD1 clause 16 gazettes 10 percent of the hourly wage. The BCEA sets no amount
+    at all, and the zero on that row means exactly that."""
+    cleaning = Sector.objects.get(code=Sector.Code.CONTRACT_CLEANING)
+    on = datetime.date(2026, 6, 1)
+
+    assert resolve.working_time_rules(cleaning, on).night_allowance_value == Decimal("10.0000")
+
+    bcea = resolve.working_time_rules(None, on)
+    assert bcea.night_allowance_value == Decimal("0.0000")
+    assert "NO STATUTORY FIGURE" in bcea.notes
+
+
+@pytest.mark.statutory
+def test_the_sd1_notice_gap_is_recorded_rather_than_papered_over(sd1_loaded):
+    """SD1 splits notice at four weeks of service; this table's buckets cannot.
+
+    All three buckets carry four weeks, which over-pays an employee in their first
+    four weeks rather than under-paying one at three months. The note says so, and
+    this test keeps the note attached to the row.
     """
     cleaning = Sector.objects.get(code=Sector.Code.CONTRACT_CLEANING)
     rules = resolve.termination_rules(cleaning, datetime.date(2026, 6, 1))
 
-    assert rules.sector is None
-    assert rules.annual_bonus_weeks == Decimal("0.000")
-    assert cleaning.has_statutory_annual_bonus is True, (
-        "The sector flag says a bonus exists while no rule set carries its terms - "
-        "which is the gap this test is here to keep visible."
-    )
+    assert rules.notice_weeks_under_6_months == Decimal("4.00")
+    assert "MODEL GAP" in rules.notes
 
 
 @pytest.mark.statutory

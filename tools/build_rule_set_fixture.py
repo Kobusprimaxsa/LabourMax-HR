@@ -81,6 +81,25 @@ NO_STATUTORY_BONUS = (
     "month is NULL. Contract cleaning is the sector that has one."
 )
 
+HAS_STATUTORY_BONUS = (
+    "SD1 clause 3(3): 4,333 weeks of the weekly wage, paid in December or on "
+    "termination. Under twelve months' service it is pro-rated as full calendar "
+    "months divided by twelve, times 4,333, times the weekly wage - so a single full "
+    "month earns a share, which is why the minimum service is zero."
+)
+
+SD1_NOTICE_GAP = (
+    "MODEL GAP, and it over-pays rather than under-pays. SD1 clause 23 splits notice "
+    "at FOUR WEEKS of service, not at six months: one working day in the first four "
+    "weeks, four weeks after that. This table's buckets are under-6-months, "
+    "6-months-and-over and over-1-year, which cannot express a boundary at four "
+    "weeks. All three are therefore loaded at four weeks, so an employee in their "
+    "first four weeks is given more notice than SD1 requires. The alternative - "
+    "loading one working day in the under-6-months bucket - would under-pay every "
+    "employee between one month and six months, which is a compliance breach rather "
+    "than a cost. Needs a notice band table or a fourth column before P6."
+)
+
 
 def leave_rules(*, sector, source, family_days, extra_notes=""):
     notes = [EFFECTIVE_NOTE, DERIVED_LEAVE_DAYS]
@@ -127,9 +146,14 @@ def working_time_rules(
     standby_end,
     standby_hours,
     accommodation_pct,
+    night_allowance_type="by_agreement",
+    night_allowance_value="0.0000",
+    min_paid_hours="4.00",
     extra_notes="",
 ):
-    notes = [EFFECTIVE_NOTE, DERIVED_DAILY_OVERTIME, NO_STATUTORY_FIGURE]
+    notes = [EFFECTIVE_NOTE, DERIVED_DAILY_OVERTIME]
+    if night_allowance_type == "by_agreement":
+        notes.append(NO_STATUTORY_FIGURE)
     if not standby_allowance or standby_allowance == "0.00":
         notes.append(NO_BCEA_STANDBY)
     if accommodation_pct == "0.00":
@@ -153,13 +177,13 @@ def working_time_rules(
         "public_holiday_not_worked_paid": True,
         "night_work_start_time": "18:00:00",
         "night_work_end_time": "06:00:00",
-        "night_allowance_type": "by_agreement",
-        "night_allowance_value": "0.0000",
+        "night_allowance_type": night_allowance_type,
+        "night_allowance_value": night_allowance_value,
         "standby_allowance_per_shift": standby_allowance,
         "standby_window_start": standby_start,
         "standby_window_end": standby_end,
         "standby_hours_before_overtime": standby_hours,
-        "min_paid_hours_per_day": "4.00",
+        "min_paid_hours_per_day": min_paid_hours,
         "meal_interval_after_hours": "5.00",
         "meal_interval_minutes": 60,
         "daily_rest_hours": 12,
@@ -171,19 +195,34 @@ def working_time_rules(
     return row
 
 
-def termination_rules(*, sector, source, notice_6_months, notice_over_year):
+def termination_rules(
+    *,
+    sector,
+    source,
+    notice_under_6_months="1.00",
+    notice_6_months,
+    notice_over_year,
+    bonus_weeks="0.000",
+    bonus_month=None,
+    bonus_pro_rata=False,
+    extra_notes="",
+):
+    notes = [EFFECTIVE_NOTE]
+    notes.append(NO_STATUTORY_BONUS if bonus_month is None else HAS_STATUTORY_BONUS)
+    if extra_notes:
+        notes.append(extra_notes)
     row = {
         "effective_from": EFFECTIVE_FROM,
         "source_reference": source,
-        "notes": f"{EFFECTIVE_NOTE} {NO_STATUTORY_BONUS}",
-        "notice_weeks_under_6_months": "1.00",
+        "notes": " ".join(notes),
+        "notice_weeks_under_6_months": notice_under_6_months,
         "notice_weeks_6_months_and_over": notice_6_months,
         "notice_weeks_over_1_year": notice_over_year,
         "severance_weeks_per_completed_year": "1.00",
         "severance_requires_operational_reason": True,
-        "annual_bonus_weeks": "0.000",
-        "annual_bonus_month": None,
-        "annual_bonus_pro_rata_on_termination": False,
+        "annual_bonus_weeks": bonus_weeks,
+        "annual_bonus_month": bonus_month,
+        "annual_bonus_pro_rata_on_termination": bonus_pro_rata,
         "annual_bonus_min_service_months": 0,
     }
     if sector:
@@ -281,5 +320,83 @@ DOCUMENT = {
 }
 
 
+SD1 = (
+    "Sectoral Determination 1: Contract Cleaning Sector, current consolidated text "
+    "(clauses 3, 8-24)"
+)
+SD1_URL = "https://www.acts.co.za/basic/sd1_nr622_3__remuneration.php"
+
+DOCUMENT_SD1 = {
+    "version_label": "REF-2026.03.01-SD1",
+    "applies_from": "2026-03-01",
+    "description": (
+        "Contract cleaning sector rule sets from Sectoral Determination 1, clauses 3 "
+        "and 8 to 24. Researched 13 September 2026 from two independent transcriptions "
+        "of the consolidated determination. NOT verified."
+    ),
+    "tables": {
+        "leave_rule_set": [
+            leave_rules(
+                sector="CONTRACT_CLEANING",
+                source=f"{SD1}, clauses 18, 19 and 22",
+                family_days=3,
+                extra_notes=(
+                    f"Annual leave, sick leave and family responsibility leave all match "
+                    f"the BCEA - SD1 adds nothing here, unlike SD7 which gives five "
+                    f"family responsibility days. Parental leave is the same interim "
+                    f"position: {ZACC}"
+                ),
+            )
+        ],
+        "working_time_rule_set": [
+            working_time_rules(
+                sector="CONTRACT_CLEANING",
+                source=f"{SD1}, clauses 3(2), 8 to 17",
+                max_overtime_week="10.00",
+                standby_allowance="0.00",
+                standby_start="00:00:00",
+                standby_end="00:00:00",
+                standby_hours="0.00",
+                accommodation_pct="0.00",
+                night_allowance_type="percentage",
+                night_allowance_value="10.0000",
+                min_paid_hours="6.00",
+                extra_notes=(
+                    "Two figures here are SD1's own and differ from every other row. "
+                    "Clause 16 sets a REAL night allowance - not less than 10 percent of "
+                    "the hourly wage for each hour worked between 18:00 and 06:00 - so "
+                    "this is the one sector where the column carries a gazetted "
+                    "percentage rather than a zero meaning 'no statutory figure'. And "
+                    "clause 3(2) sets the short-day minimum at SIX hours, not the four "
+                    "of BCEA s9A and SD7. "
+                    "Overtime: clause 9 caps it at 3 hours a day and 10 a week for an "
+                    "employer with ten or more employees, and allows 15 a week by "
+                    "agreement for a smaller employer. The stricter general rule is "
+                    "loaded; the small-employer variant is an agreement-level fact this "
+                    "table has no column for. "
+                    "Standby and accommodation are SD7 concepts; SD1 has neither."
+                ),
+            )
+        ],
+        "termination_rule_set": [
+            termination_rules(
+                sector="CONTRACT_CLEANING",
+                source=f"{SD1}, clauses 3(3), 23 and 24",
+                notice_under_6_months="4.00",
+                notice_6_months="4.00",
+                notice_over_year="4.00",
+                bonus_weeks="4.333",
+                bonus_month=12,
+                bonus_pro_rata=True,
+                extra_notes=SD1_NOTICE_GAP,
+            )
+        ],
+    },
+}
+
+
 if __name__ == "__main__":
-    print(json.dumps(DOCUMENT, indent=2, ensure_ascii=False))
+    import sys
+
+    which = sys.argv[1] if len(sys.argv) > 1 else "bcea"
+    print(json.dumps(DOCUMENT_SD1 if which == "sd1" else DOCUMENT, indent=2, ensure_ascii=False))

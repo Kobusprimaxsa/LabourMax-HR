@@ -233,6 +233,10 @@ Things that are easy to get wrong, and have been got wrong before:
 - **Domestic workers depart from the BCEA in three places** (SD7): five days' family
   responsibility leave rather than three, fifteen hours' overtime a week rather than ten, and
   four weeks' notice from six months' service rather than two.
+- **Contract cleaning departs in three others** (SD1): a gazetted night allowance of 10% of the
+  hourly wage between 18:00 and 06:00 — the only sector with a real figure in that column; a
+  short-day minimum of **six** hours rather than four; and the 4,333-week December bonus,
+  pro-rated as full calendar months over twelve on termination.
 
 `reference_data_version.data_current_through` is the **staleness guard**: a payroll run
 whose period ends beyond it raises a *blocking* validation issue rather than silently
@@ -336,7 +340,7 @@ masking, the administrative seat limit enforced by trigger, and file storage beh
 virus-scan gate.
 
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting
-verification** (13 September 2026). 323 tests green. All twenty tables exist with their
+verification** (13 September 2026). 326 tests green. All twenty tables exist with their
 constraints; `statutory/resolve.py` is the only place that answers "what applied on this date";
 the loader refuses any file with an uncited row and never updates an existing one;
 `loadstatutory` and `verifystatutory` are two commands because loading and verifying are two
@@ -345,15 +349,15 @@ somebody remembers.
 
 `reference/ref-2026.03.01.json` holds 61 rows and `reference/ref-2026.03.01-rules.json` six more, researched from primary sources: the 1 March 2026
 wage floors, the SARS 2027 tax year tables, the contribution parameters, public holidays for
-2026 and 2027, the maintenance calendar, and the BCEA and domestic-sector rule sets. It is loaded and reconciles, and it is **not
+2026 and 2027, the maintenance calendar, and the BCEA, domestic and contract cleaning rule sets. It is loaded and reconciles, and it is **not
 verified** — `in_force_on()` cannot see it, so every payroll run is still blocked. That is
 correct and deliberate.
 
 **What remains in P2:**
 
 - Kobus verifies every figure against its source document, then `verifystatutory`
-- Contract cleaning rule sets. SD1 has not been read, so contract cleaning falls back to the
-  BCEA default — visibly wrong for that sector, which is the point (D-66)
+- The notice band gap (D-68): SD1 splits notice at four weeks of service and the rule set
+  table cannot express it. Fix before P6 builds the termination engine
 - Contract cleaning **Area C (KwaZulu-Natal)** has no rate: the gazette states none and points
   at the BCCCI collective agreement, which nobody has. A KwaZulu-Natal contract cleaning
   employer cannot be onboarded until it is loaded
