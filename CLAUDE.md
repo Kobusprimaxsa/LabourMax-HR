@@ -140,10 +140,17 @@ column is NULL — which in `minimum_wage_rate` is the general National Minimum 
 most likely to be loaded twice. Use `nulls_distinct=False` and `Coalesce(col, 0)`.
 
 **Extensions belong in migrations, not in a setup script.** `BtreeGistExtension()`,
-`CITextExtension()`, `CryptoExtension()`. pytest rebuilds the test database from `template1`
-on every run, so an extension installed by hand into one database is how a constraint comes
-to exist in development and be missing in production. All three are trusted in PostgreSQL
-13+, so the non-superuser application role can create them.
+installed by `statutory/0002` and backing every `ExclusionConstraint` in this schema — the
+only extension this codebase actually uses. pytest rebuilds the test database from
+`template1` on every run, so an extension installed by hand into one database is how a
+constraint comes to exist in development and be missing in production. It is trusted in
+PostgreSQL 13+, so the non-superuser application role can create it. `manage.py dbcheck`'s
+`REQUIRED_EXTENSIONS` names only what a migration has installed (D-137) — it is not a
+wishlist. `CITextExtension()` and `CryptoExtension()` are not required: hashing and
+encryption are Python-side (`hashlib`, `hmac`, `Fernet`) because D-77 keeps the key out of
+the database, and D-98 abandoned `CITEXT`. Something needing either later adds the
+`Extension()` operation to the migration that needs it, and `REQUIRED_EXTENSIONS` grows
+with it — not ahead of it.
 
 **FORCE RLS subjects the FOREIGN KEY check to the policy.** This is the worst one, because
 three layers fail together and none raises. Deleting a `sector` row from a session with no
@@ -579,6 +586,36 @@ could add a leave type and then never rename it. A green suite hid it because th
 one test covering the area asserted `DatabaseError`, and `record "old" has no field
 "is_system"` is one. **Assert on the message, not only the exception class**, and
 the same goes for every `IntegrityError` test in this codebase.
+
+**`document_category` is the THIRD shared table** (D-138), same shape as
+`payroll_component` (D-87) and `leave_type` (D-127). It carries `is_system` from its
+first migration rather than retrofitting it the way `leave_type` had to — sheet 02
+gives the table no such column, and D-134 is exactly why one is needed anyway:
+`lock_system_rows()` keys on it, and installing that trigger on a table without the
+column fails every UPDATE and DELETE on the table, a tenant renaming its own category
+included. `documents/tests/test_document_category.py` proves a tenant can rename and
+delete its own row the moment the table exists, rather than after a second migration.
+
+**`document`'s exclusive arc is implemented VERBATIM from sheet 03, and it is
+asymmetric on purpose** (D-139). An employee- or workplace-attached document may also
+name the employer — the last two arms of the CHECK deliberately leave `employer_id`
+free rather than forcing it null, because an employee belongs to an employer and a
+workplace belongs to an employer. Four real foreign keys rather than a generic
+`owner_type`/`owner_id` pair, because a generic pair produces orphans the first time a
+referenced row is deleted and nothing in the schema stops it (D-41). No EXCLUDE here:
+two documents about the same thing coexisting is normal — a renewal chain
+(`supersedes_document`, cycle-checked in `clean()` with a depth cap) is the model for
+that, not an overlap the schema should forbid.
+
+**The seeded "tenant/employer" categories attach to the employer, not the tenant**
+(D-140), and this is flagged rather than asserted as the workbook's own answer. Sheet
+03 groups CIPC registration, VAT registration and the rest under one label,
+"tenant/employer", but `applies_to` holds exactly one value and there is no combined
+arm to hold it. `employers.Employer` already carries `registration_number` and
+`income_tax_reference` — this schema's CIPC number and tax reference already live
+there — and a tenant can run several employing entities, each needing its own
+registration documents. `documents/categories.py` is the seed list; if this reading is
+wrong the fix is a data update to the seeded rows, not a schema change.
 
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting
 verification** (13 September 2026). 351 tests green. All twenty tables exist with their

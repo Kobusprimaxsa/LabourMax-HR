@@ -12,7 +12,15 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand
 from django.db import connection
 
-REQUIRED_EXTENSIONS = ("btree_gist", "citext", "pgcrypto")
+# D-137: btree_gist only. It backs every ExclusionConstraint in this schema and is
+# installed by statutory/0002. citext and pgcrypto are not: hashing and encryption
+# are Python-side (hashlib, hmac, Fernet) because D-77 keeps the key out of the
+# database, and D-98 abandoned citext. The migration that needs an extension is the
+# enforcement point — this list is not a wishlist, so it names only what a
+# migration has actually installed. Anything needing citext or pgcrypto later adds
+# the Extension() operation to the migration that needs it, and this tuple grows
+# with it.
+REQUIRED_EXTENSIONS = ("btree_gist",)
 
 
 class Command(BaseCommand):

@@ -161,7 +161,14 @@ constraint refuses a blank one on every cited table.
 - [x] `employee_tax_profile`, `work_schedule`, `work_schedule_day` (D-109, D-110)
 - [x] `employee_leave_entitlement`, `employee_recurring_component`, `employee_note`
       (D-127 brings `leave_type` forward from P6; D-128 derives the BCEA s34 consent rule)
-- [ ] `document`, `document_category` — four-way attachment arc, visibility whitelist
+- [x] `document`, `document_category` — four-way attachment arc, visibility whitelist
+      (D-138 the third shared table plus `is_system`, D-139 the arc implemented verbatim
+      and asymmetric, D-140 the seeded tenant/employer categories attach to the employer).
+      Out of scope and not built: the 20MB upload cap, server-side image downscaling and
+      the per-plan storage quota (need P1's `plan_feature`), and the 60/30/7-day expiry
+      alert job (P9). `document_category.is_confidential_by_default` is left FALSE on
+      every seeded row — which categories should hide from the read_only role is a policy
+      call sheet 03 does not make, and nothing here fabricates one.
 - [x] Current-state cache columns, maintained on write **and** by a nightly job —
       `employees/currentstate.py` + `manage.py refreshemployeecache`. D-132 moved the
       whole as-at set onto the date it belongs to: a termination captured in advance
