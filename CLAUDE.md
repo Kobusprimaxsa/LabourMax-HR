@@ -431,10 +431,11 @@ python manage.py seedcomponents --list   # the catalogue, without touching the d
 
 Still open in P3: the municipality-to-area data.
 
-**P4 — Employee Master File: started** (13 September 2026). 665 tests green. `employee`,
+**P4 — Employee Master File: started** (13 September 2026). 726 tests green. `employee`,
 `employee_address`, `employee_contact`, `employee_engagement`, `employee_position` and
-`employee_remuneration`, `work_schedule`, `work_schedule_day`, `employee_tax_profile` and
-`employee_bank_account` are in, and P4's definition of done is met: a rate below the
+`employee_remuneration`, `work_schedule`, `work_schedule_day`, `employee_tax_profile`,
+`employee_bank_account`, `employee_leave_entitlement`, `employee_recurring_component` and
+`employee_note` are in, and P4's definition of done is met: a rate below the
 sectoral minimum raises with both figures and the gazette citation. Two things on the employee table are
 worth knowing before touching it.
 
@@ -489,6 +490,39 @@ decides something a human already knows the answer to, capture the answer. The p
 at **today**, never as at the new row's effective date — that mistake moves a July rate
 onto the employee list in March, and it is the bug D-18's nightly job exists to catch
 (D-107).
+
+`leave_type` is built here rather than in P6, because `employee_leave_entitlement` points
+at it and an employer granting twenty-one days instead of fifteen has to say *which* leave
+that is (D-127). It is the **second shared table**, and it gains an `is_system` column the
+workbook does not have — `lock_system_rows()` keys on it, and without it the first employer
+to tidy their leave list takes `ANNUAL` out of everybody's, because a DELETE is checked
+against the policy's USING clause only (D-93). The table ships **empty**: seeding the two
+annual variants and the four sick-leave evidence types is a compliance reading and belongs
+with the P6 engine that has to honour it.
+
+`employee_recurring_component` departs from sheet 02 in two places, and both are invariants
+rather than preferences. **There is no `balance_outstanding`** (D-128): a loan balance
+decremented each run stops the row being effective-dated, makes a balance an editable number
+with no source rows behind it, and means a 2029 re-run of March 2026 reads today's figure —
+invariants 2, 3 and 4 together. The balance comes from an append-only ledger, like leave and
+year-to-date; the ledger itself is O-17, needed before P7 and not before. **There is no
+`total_deduction_cap_pct`** (D-129): the BCEA s34 / SD7 ten per cent is gazetted and already
+lives in `working_time_rule_set.accommodation_deduction_max_pct` with its citation, so a
+per-employee copy is a second copy of a compliance decision (D-89) that no gazette can reach.
+
+**What may carry a standing figure is decided by the component's calculation method**
+(D-130). Only `fixed` and `percentage_of_base` — a `statutory` component is computed from
+reference data, and `rate_x_units` is BASIC, whose figure is the employee's wage and lives on
+`employee_remuneration`. Written against the method rather than a list of codes, so it keeps
+holding as the catalogue grows.
+
+`employee_leave_entitlement` carries an **EXCLUDE over its date range per leave type**, and
+`employee_recurring_component` deliberately carries none (D-131). The workbook's unique on
+the start date stops two grants beginning on one day and does nothing about a grant
+back-dated into an open period — the D-103 trap again. The recurring component is the
+opposite case: two advances running at once is ordinary, and forbidding it would be worked
+around by inventing a second component, at which point the deduction stops being
+recognisable as an advance in the s34 total.
 
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting
 verification** (13 September 2026). 351 tests green. All twenty tables exist with their

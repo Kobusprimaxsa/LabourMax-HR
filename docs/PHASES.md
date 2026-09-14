@@ -159,7 +159,8 @@ constraint refuses a blank one on every cited table.
 - [x] Pay cache maintained on write; the nightly job is the remaining half (D-107)
 - [x] `employee_bank_account` with active and end dates, plus the ghost-employee hash (D-111)
 - [x] `employee_tax_profile`, `work_schedule`, `work_schedule_day` (D-109, D-110)
-- [ ] `employee_leave_entitlement`, `employee_recurring_component`, `employee_note`
+- [x] `employee_leave_entitlement`, `employee_recurring_component`, `employee_note`
+      (D-127 brings `leave_type` forward from P6; D-128 derives the BCEA s34 consent rule)
 - [ ] `document`, `document_category` — four-way attachment arc, visibility whitelist
 - [ ] Current-state cache columns, maintained on write **and** by a nightly job
 - [ ] Employee list: grouped by pay group, sector-derived default sort, remembered per user
@@ -190,7 +191,8 @@ uncaptured attendance-driven day blocks the payroll run.
 
 ## P6 — Leave Management · 5 weeks · 8 tables
 
-- [ ] `leave_type` seeded with both annual variants and all four sick-leave evidence types
+- [ ] `leave_type` **table built in P4** (D-127) — P6 seeds it with both annual variants
+      and all four sick-leave evidence types
 - [ ] `leave_evidence_type`
 - [ ] `leave_cycle` — 12-month annual, 36-month sick, anchored to engagement anniversary
 - [ ] `leave_transaction` append-only ledger

@@ -1434,3 +1434,418 @@ class EmployeeBankAccount(AuditedModel, TenantScopedModel):
                     )
                 }
             )
+
+
+# ------------------------------------------------------- leave, deductions, notes
+
+
+class EmployeeLeaveEntitlement(AuditedModel, TenantScopedModel):
+    """Where an employee's leave departs from the statutory minimum.
+
+    Most employees have no row here at all, and that is the point: absence means
+    the sectoral rule set applies untouched. A row exists only where this employer
+    gives this person something different — 21 days instead of 15, an upfront
+    annual grant instead of monthly accrual, a carry-over the statute would forfeit.
+
+    **Additive by default, replacing only when told.** ``additional_days_per_cycle``
+    sits *on top of* the statutory figure, so a rule set change in March still
+    reaches an employee who was given three extra days. ``replaces_statutory``
+    flips that: the total is then ``total_days_per_cycle_override`` and the rule set
+    is ignored, which is what a contract stating a flat entitlement needs. The two
+    must not be confused — an additive 21 on top of a statutory 15 is 36 days, and
+    that is how an employer accidentally triples its leave liability. The CHECK
+    makes the replacing form state its total.
+
+    **Nothing here may go below the statute.** The BCEA is a floor and a contract
+    cannot contract out of it, so a replacing total under the rule set figure is
+    refused at ``clean()`` rather than stored — unlike a below-minimum wage, which
+    is stored with an acknowledgement (D-108) because an employer correcting a typo
+    must be able to see the bad value on screen. Leave has no such workflow: there
+    is no partial capture to protect, and a stored under-entitlement silently
+    underpays every leave day for years.
+
+    **Effective-dated like everything else** (invariant 2). Raising someone's leave
+    in July must not retrospectively change what accrued in March.
+    """
+
+    class AccrualMethod(models.TextChoices):
+        MONTHLY = "monthly", "Monthly, straight line"
+        PER_DAYS_WORKED = "per_days_worked", "One day per 17 days worked"
+        PER_HOURS_WORKED = "per_hours_worked", "One hour per 17 hours worked"
+        UPFRONT_ANNUAL = "upfront_annual", "Granted in full at the start of the cycle"
+
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name="leave_entitlements"
+    )
+    leave_type = models.ForeignKey(
+        "leave.LeaveType", on_delete=models.PROTECT, related_name="entitlements"
+    )
+
+    additional_days_per_cycle = models.DecimalField(
+        max_digits=6,
+        decimal_places=3,
+        default=0,
+        help_text="Over and above the statutory figure. Additive.",
+    )
+    replaces_statutory = models.BooleanField(
+        default=False,
+        help_text="TRUE means the override IS the total, not an addition to it.",
+    )
+    total_days_per_cycle_override = models.DecimalField(
+        max_digits=6,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text="The whole entitlement. Required when replaces_statutory is TRUE.",
+    )
+
+    accrual_method = models.CharField(
+        max_length=30, choices=AccrualMethod.choices, default=AccrualMethod.MONTHLY
+    )
+    carry_over_max_days = models.DecimalField(
+        max_digits=6,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text="NULL means the statutory forfeiture rule applies.",
+    )
+
+    effective_from = models.DateField(db_index=True)
+    effective_to = models.DateField(
+        null=True, blank=True, help_text="Exclusive. NULL means current."
+    )
+
+    class Meta:
+        db_table = "employee_leave_entitlement"
+        ordering = ["employee_id", "leave_type_id", "-effective_from"]
+        indexes = [models.Index(fields=["employee", "leave_type", "-effective_from"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee", "leave_type", "effective_from"],
+                name="uniq_entitlement_start_per_employee_type",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(replaces_statutory=False)
+                | models.Q(total_days_per_cycle_override__isnull=False),
+                name="entitlement_replacement_states_its_total",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(additional_days_per_cycle__gte=0),
+                name="entitlement_addition_is_not_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(total_days_per_cycle_override__isnull=True)
+                | models.Q(total_days_per_cycle_override__gte=0),
+                name="entitlement_total_is_not_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(carry_over_max_days__isnull=True)
+                | models.Q(carry_over_max_days__gte=0),
+                name="entitlement_carry_over_is_not_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    accrual_method__in=[
+                        "monthly",
+                        "per_days_worked",
+                        "per_hours_worked",
+                        "upfront_annual",
+                    ]
+                ),
+                name="entitlement_accrual_method_is_known",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(effective_to__isnull=True)
+                | models.Q(effective_to__gt=models.F("effective_from")),
+                name="entitlement_period_ordered",
+            ),
+            # Two entitlements in force for one leave type means two answers to
+            # "how many days does this person get", decided by row order. The unique
+            # on the start date only stops two rows BEGINNING on one day.
+            ExclusionConstraint(
+                name="employee_leave_entitlement_no_overlapping_periods",
+                expressions=[
+                    (
+                        DateRange("effective_from", "effective_to", RangeBoundary()),
+                        RangeOperators.OVERLAPS,
+                    ),
+                    ("employee", RangeOperators.EQUAL),
+                    ("leave_type", RangeOperators.EQUAL),
+                ],
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.leave_type_id} for {self.employee_id} from {self.effective_from}"
+
+    def clean(self):
+        super().clean()
+
+        if not self.replaces_statutory and self.total_days_per_cycle_override is not None:
+            raise ValidationError(
+                {
+                    "total_days_per_cycle_override": (
+                        "An additive entitlement has no total of its own — the total is "
+                        "the statutory figure plus additional_days_per_cycle. Set "
+                        "replaces_statutory if this figure is meant to BE the whole "
+                        "entitlement."
+                    )
+                }
+            )
+
+        if self.replaces_statutory and self.additional_days_per_cycle:
+            raise ValidationError(
+                {
+                    "additional_days_per_cycle": (
+                        "A replacing entitlement states the whole figure, so there is "
+                        "nothing to add it to. One or the other, never both."
+                    )
+                }
+            )
+
+
+class EmployeeRecurringComponent(AuditedModel, TenantScopedModel):
+    """A payslip line that repeats every period without being re-entered.
+
+    A transport allowance, a loan repayment, an accommodation deduction, a union
+    subscription. It points at a ``payroll_component`` for *what* it is — and how it
+    is taxed, and which SARS code it lands on — and carries only *how much* and
+    *for whom*.
+
+    **Amount or percentage, never neither.** A fixed rand figure or a percentage of
+    basic, enforced by CHECK. Both together is permitted by the constraint and
+    refused by ``clean()``: the constraint can only see the row, and two figures on
+    one line is an ambiguity rather than a contradiction, so it belongs where the
+    message can explain itself.
+
+    **``balance_outstanding`` is the loan half and it is a running figure, not a
+    ledger.** It is decremented as each run finalises. It is a cache in the sense of
+    invariant 3 — rebuildable from the payslip lines that paid it down — and the
+    ledger is those lines, not this column. Never "fix" a loan by editing it.
+
+    **BCEA s34 is why ``written_consent_file_id`` exists.** An employer may not
+    deduct from wages without the employee's written consent except where a statute
+    or court order says so, and "he agreed" is what every one of these disputes
+    turns out to have been. The consent is a file on record, and ``clean()``
+    requires it for a deduction that is not statutory. The section also caps what
+    may be deducted, which is ``total_deduction_cap_pct`` — a *per-component* limit,
+    such as the ten percent an accommodation deduction may not exceed. The
+    across-all-components s34 limit is a payroll-run check and not this row's job:
+    no single row can see the total, which is exactly how an employer ends up with
+    four individually legal deductions that together take three quarters of a wage.
+    """
+
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name="recurring_components"
+    )
+    payroll_component = models.ForeignKey(
+        "employers.PayrollComponent", on_delete=models.PROTECT, related_name="employee_lines"
+    )
+
+    amount = models.DecimalField(
+        max_digits=14, decimal_places=4, null=True, blank=True, help_text="Fixed per period."
+    )
+    percentage_of_basic = models.DecimalField(
+        max_digits=8, decimal_places=4, null=True, blank=True, help_text="Alternative to amount."
+    )
+
+    balance_outstanding = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Loans and advances. Decremented as each run finalises.",
+    )
+    total_deduction_cap_pct = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="BCEA s34 per-component ceiling, e.g. 10% for accommodation.",
+    )
+
+    effective_from = models.DateField(db_index=True)
+    effective_to = models.DateField(
+        null=True, blank=True, help_text="Exclusive. NULL means current."
+    )
+
+    written_consent_file = models.ForeignKey(
+        "core.FileObject",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="+",
+        help_text="BCEA s34 requires written consent for most deductions.",
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "employee_recurring_component"
+        ordering = ["employee_id", "-effective_from"]
+        indexes = [
+            models.Index(fields=["employee", "is_active"]),
+            models.Index(fields=["tenant", "payroll_component"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(amount__isnull=False)
+                | models.Q(percentage_of_basic__isnull=False),
+                name="recurring_component_states_an_amount",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(amount__isnull=True) | models.Q(amount__gte=0),
+                name="recurring_component_amount_is_not_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(percentage_of_basic__isnull=True)
+                | models.Q(percentage_of_basic__gte=0),
+                name="recurring_component_percentage_is_not_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(balance_outstanding__isnull=True)
+                | models.Q(balance_outstanding__gte=0),
+                name="recurring_component_balance_is_not_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(total_deduction_cap_pct__isnull=True)
+                | models.Q(total_deduction_cap_pct__gt=0, total_deduction_cap_pct__lte=100),
+                name="recurring_component_cap_is_a_percentage",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(effective_to__isnull=True)
+                | models.Q(effective_to__gt=models.F("effective_from")),
+                name="recurring_component_period_ordered",
+            ),
+            # Two live rows for the same component means the line is applied twice —
+            # the employee is charged the deduction, or paid the allowance, double.
+            ExclusionConstraint(
+                name="employee_recurring_component_no_overlapping_periods",
+                expressions=[
+                    (
+                        DateRange("effective_from", "effective_to", RangeBoundary()),
+                        RangeOperators.OVERLAPS,
+                    ),
+                    ("employee", RangeOperators.EQUAL),
+                    ("payroll_component", RangeOperators.EQUAL),
+                ],
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.payroll_component_id} for {self.employee_id} from {self.effective_from}"
+
+    def clean(self):
+        super().clean()
+
+        if self.amount is not None and self.percentage_of_basic is not None:
+            raise ValidationError(
+                {
+                    "percentage_of_basic": (
+                        "A line is a fixed amount or a percentage of basic, not both. "
+                        "Two figures on one line means the payslip picks one and "
+                        "nobody can tell which."
+                    )
+                }
+            )
+
+        component = self.payroll_component if self.payroll_component_id else None
+        if component is None:
+            return
+
+        is_deduction = component.component_type == component.ComponentType.DEDUCTION
+
+        # BCEA s34(1) permits a deduction without consent only where a law, court
+        # order, arbitration award or collective agreement requires it. There is no
+        # column for that and sheet 02 does not add one, so it is DERIVED from the
+        # calculation method: a deduction computed from reference data by a statute
+        # is a statutory one — PAYE and UIF_EE. ACCOM_DED and ADVANCE_DED are both
+        # FIXED and both need consent, which is exactly the distinction s34 draws.
+        # `is_system` is the wrong signal and worth naming: all four are system
+        # components, and two of them still require the employee's signature.
+        requires_consent = (
+            is_deduction and component.calculation_method != component.CalculationMethod.STATUTORY
+        )
+
+        if requires_consent and self.written_consent_file_id is None:
+            raise ValidationError(
+                {
+                    "written_consent_file": (
+                        f"Deducting {component.code} needs the employee's written "
+                        "consent on file. BCEA s34(1) permits a deduction without it "
+                        "only where a statute, court order or collective agreement "
+                        "requires one."
+                    )
+                }
+            )
+
+        if self.balance_outstanding is not None and not is_deduction:
+            raise ValidationError(
+                {
+                    "balance_outstanding": (
+                        "Only a deduction runs a balance down. An earning with a "
+                        "balance is a loan recorded the wrong way round."
+                    )
+                }
+            )
+
+
+class EmployeeNote(AuditedModel, TenantScopedModel):
+    """A dated note on the employee's file. Not discipline, and not a payroll input.
+
+    Training attended, a conversation held, a commendation, a pattern of lateness
+    worth recording before it becomes a case. Formal discipline is its own domain
+    with its own evidence and appeal trail (P9); this is the file note that often
+    precedes it, and keeping them apart matters — a note is not a warning, and
+    treating it as one at the CCMA fails.
+
+    **``is_confidential`` hides the note from self-service, and from nothing else.**
+    It is a visibility flag, not a security boundary: the employer's own staff can
+    read it, and a subject access request under POPIA s23 reaches it like any other
+    personal information. Anyone writing one should assume the employee will
+    eventually read it, because they are entitled to.
+
+    Append-only in spirit rather than by trigger: the audit trail records edits, and
+    the note is evidence of what was thought at the time.
+    """
+
+    class Category(models.TextChoices):
+        GENERAL = "general", "General"
+        PERFORMANCE = "performance", "Performance"
+        TRAINING = "training", "Training"
+        CONVERSATION = "conversation", "Conversation"
+        ATTENDANCE = "attendance", "Attendance"
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="notes")
+
+    note_date = models.DateField(default=datetime.date.today, db_index=True)
+    category = models.CharField(max_length=40, choices=Category.choices, default=Category.GENERAL)
+    subject = models.CharField(max_length=150, blank=True)
+    body = models.TextField()
+    is_confidential = models.BooleanField(
+        default=False, help_text="Hidden from employee self-service. Not a security boundary."
+    )
+
+    class Meta:
+        db_table = "employee_note"
+        ordering = ["-note_date", "-id"]
+        indexes = [models.Index(fields=["employee", "-note_date"])]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    category__in=[
+                        "general",
+                        "performance",
+                        "training",
+                        "conversation",
+                        "attendance",
+                    ]
+                ),
+                name="employee_note_category_is_known",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(body=""), name="employee_note_body_is_not_empty"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.note_date} {self.category} for {self.employee_id}"
