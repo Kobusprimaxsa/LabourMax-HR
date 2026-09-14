@@ -211,6 +211,9 @@ def assert_downloadable(file_object) -> None:
     if file_object.deleted_at is not None:
         raise DownloadRefusedError("That file is no longer available.")
 
+    if file_object.content_purged_at is not None:
+        raise DownloadRefusedError("That file's content has been removed; only its record remains.")
+
     if file_object.scan_status != FileObject.ScanStatus.CLEAN:
         if file_object.scan_status == FileObject.ScanStatus.INFECTED:
             raise DownloadRefusedError("That file failed a virus scan and cannot be downloaded.")
@@ -231,6 +234,24 @@ def open_for_download(file_object, *, business_event: str = "file_downloaded"):
     with tenant_context_of(file_object):
         _write_read_event(file_object, business_event=business_event)
     return default_storage.open(file_object.storage_key, "rb")
+
+
+def purge_content(file_object):
+    """Delete the bytes; keep the row as the trail. Never downloadable again (D-141).
+
+    Idempotent — a batch that reaches ``applied`` and is later ``reversed`` calls
+    this twice, and the second call is a no-op rather than a missing-file error.
+    """
+    if file_object.content_purged_at is not None:
+        return file_object
+
+    from core.managers import tenant_context_of
+
+    default_storage.delete(file_object.storage_key)
+    file_object.content_purged_at = timezone.now()
+    with tenant_context_of(file_object):
+        file_object.save(update_fields=["content_purged_at", "updated_at"])
+    return file_object
 
 
 def soft_delete(file_object, *, at=None):

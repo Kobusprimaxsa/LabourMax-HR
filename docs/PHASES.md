@@ -178,14 +178,21 @@ constraint refuses a blank one on every cited table.
       user — `employees/listing.py`. The per-user memory is D-133,
       `tenant_membership.ui_preferences`, a registry-checked bag. Service layer and
       tests; the screen itself belongs with the UI phase
-- [ ] `employee_import_batch` — bulk import from a generated .xlsx template, on the
+- [x] `employee_import_batch` — bulk import from a generated .xlsx template, on the
       preview-validate-apply-reverse pattern, running every validation the single-capture
-      path runs (D-122, closes O-11). ADDED to P4 scope, +1 week
+      path runs (D-122, closes O-11). ADDED to P4 scope, +1 week. NOT in the workbook
+      (D-144), modelled on `attendance_import_batch`. `employees/importing.py` is preview
+      IS apply, rolled back (D-145); a below-minimum row is a batch-wide warning needing
+      a named acknowledger (D-146); the template reads the same column spec the importer
+      parses against (D-147); the source file's content is purged once applied or
+      reversed (D-141) and `employee.created_by_import_batch` is the provenance column
+      (D-142)
 
 **Done when:** capturing an employee below the sectoral minimum raises a visible, logged
 exception, and a future-dated increase flips the cache on its own effective date. Both
 halves passed on 14 September 2026. Forty employees
-import from a spreadsheet with every one of those checks applied, and the batch reverses as a unit.
+import from a spreadsheet with every one of those checks applied, and the batch reverses
+as a unit. **All three passed on 14 September 2026 — P4 COMPLETE**, 824 tests green.
 
 ---
 

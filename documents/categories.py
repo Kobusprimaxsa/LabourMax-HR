@@ -33,9 +33,23 @@ and both are shared rows with a NULL tenant, so ``BANK_CONFIRMATION_EMPLOYER``/
 ``BANK_CONFIRMATION_EMPLOYEE`` and their proof-of-address counterparts are
 this module's own naming, not the workbook's literal codes.
 
-``is_confidential_by_default`` is left FALSE throughout. Which of these
-documents should be hidden from the read_only role is a policy call sheet 03
-does not make, and is not fabricated here — see docs/PHASES.md.
+**``is_confidential_by_default`` is TRUE for exactly seven** — ID copy,
+passport, work permit, asylum permit, police clearance, the employee's own
+bank confirmation and the next-of-kin form (D-143). Sheet 03 does not make this
+call either, but D-143 is not the same kind of silence as the expiry and
+sector questions above: those ask the workbook to decide something it never
+addresses, this asks whether a category the workbook already seeds happens to
+carry POPIA special personal information or a third party's details, which is
+a question this codebase can answer on its own facts. Police clearance is s26
+special personal information (criminal behaviour); the identity documents
+carry the ID number D-77 already encrypts at rest; the bank confirmation is
+the ghost-employee fraud surface D-111 exists for — the EMPLOYEE's copy
+(``BANK_CONFIRMATION_EMPLOYEE``), not the employer's own banking letter used
+for CIPC and VAT filings, which is a company detail rather than personal
+information; next-of-kin exposes a third party who never dealt with the
+employer at all. CVs, qualifications, contracts and the registration letters
+stay visible to read_only — none of them carry information a read_only user
+should not see in the ordinary course of administering payroll.
 """
 
 from __future__ import annotations
@@ -65,6 +79,7 @@ class SystemCategory:
     requires_expiry_date: bool = False
     visible_to_employee: bool = False
     is_required_for_onboarding: bool = False
+    is_confidential_by_default: bool = False
     sector_code: str | None = None
 
 
@@ -96,21 +111,48 @@ SYSTEM_CATEGORIES: tuple[SystemCategory, ...] = (
     SystemCategory(
         "BEE_CERTIFICATE", "BEE certificate", EMPLOYER, 70, sector_code=CONTRACT_CLEANING_ONLY
     ),
-    SystemCategory("BANK_CONFIRMATION_EMPLOYER", "Bank confirmation", EMPLOYER, 80),
+    SystemCategory(
+        "BANK_CONFIRMATION_EMPLOYER", "Bank confirmation", EMPLOYER, 80
+    ),  # the company's own banking letter, not personal information
     SystemCategory("PROOF_OF_ADDRESS_EMPLOYER", "Proof of address", EMPLOYER, 90),
     SystemCategory("DIRECTOR_ID", "Director ID", EMPLOYER, 100),
     # ------------------------------------------------------------- employee
-    SystemCategory("ID_COPY", "ID copy", EMPLOYEE, 200),
-    SystemCategory("PASSPORT", "Passport", EMPLOYEE, 210),
-    SystemCategory("WORK_PERMIT", "Work permit", EMPLOYEE, 220, requires_expiry_date=True),
-    SystemCategory("ASYLUM_PERMIT", "Asylum permit", EMPLOYEE, 230, requires_expiry_date=True),
+    SystemCategory("ID_COPY", "ID copy", EMPLOYEE, 200, is_confidential_by_default=True),
+    SystemCategory("PASSPORT", "Passport", EMPLOYEE, 210, is_confidential_by_default=True),
+    SystemCategory(
+        "WORK_PERMIT",
+        "Work permit",
+        EMPLOYEE,
+        220,
+        requires_expiry_date=True,
+        is_confidential_by_default=True,
+    ),
+    SystemCategory(
+        "ASYLUM_PERMIT",
+        "Asylum permit",
+        EMPLOYEE,
+        230,
+        requires_expiry_date=True,
+        is_confidential_by_default=True,
+    ),
     SystemCategory("CV", "CV", EMPLOYEE, 240),
     SystemCategory("QUALIFICATIONS", "Qualifications", EMPLOYEE, 250),
     SystemCategory("DRIVERS_LICENCE", "Driver's licence", EMPLOYEE, 260, requires_expiry_date=True),
     SystemCategory(
-        "POLICE_CLEARANCE", "Police clearance", EMPLOYEE, 270, requires_expiry_date=True
+        "POLICE_CLEARANCE",
+        "Police clearance",
+        EMPLOYEE,
+        270,
+        requires_expiry_date=True,
+        is_confidential_by_default=True,
     ),
-    SystemCategory("BANK_CONFIRMATION_EMPLOYEE", "Bank confirmation", EMPLOYEE, 280),
+    SystemCategory(
+        "BANK_CONFIRMATION_EMPLOYEE",
+        "Bank confirmation",
+        EMPLOYEE,
+        280,
+        is_confidential_by_default=True,
+    ),  # D-111's ghost-employee fraud surface
     SystemCategory(
         "EMPLOYMENT_CONTRACT",
         "Signed employment contract",
@@ -121,7 +163,13 @@ SYSTEM_CATEGORIES: tuple[SystemCategory, ...] = (
     ),
     SystemCategory("TRAINING_CERTIFICATE", "Training certificates", EMPLOYEE, 300),
     SystemCategory("PROOF_OF_ADDRESS_EMPLOYEE", "Proof of address", EMPLOYEE, 310),
-    SystemCategory("NEXT_OF_KIN_FORM", "Next-of-kin form", EMPLOYEE, 320),
+    SystemCategory(
+        "NEXT_OF_KIN_FORM",
+        "Next-of-kin form",
+        EMPLOYEE,
+        320,
+        is_confidential_by_default=True,
+    ),
     SystemCategory(
         "POPIA_CONSENT", "POPIA consent", EMPLOYEE, 330, is_required_for_onboarding=True
     ),
@@ -182,6 +230,7 @@ def seed_system_categories() -> list[DocumentCategory]:
                 requires_expiry_date=spec.requires_expiry_date,
                 is_required_for_onboarding=spec.is_required_for_onboarding,
                 visible_to_employee=spec.visible_to_employee,
+                is_confidential_by_default=spec.is_confidential_by_default,
                 sort_order=spec.sort_order,
                 is_system=True,
             )

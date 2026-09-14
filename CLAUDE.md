@@ -455,13 +455,15 @@ python manage.py seedcomponents --list   # the catalogue, without touching the d
 
 Still open in P3: the municipality-to-area data.
 
-**P4 — Employee Master File: started** (14 September 2026). 770 tests green. `employee`,
+**P4 — Employee Master File: COMPLETE** (14 September 2026). 824 tests green. `employee`,
 `employee_address`, `employee_contact`, `employee_engagement`, `employee_position` and
 `employee_remuneration`, `work_schedule`, `work_schedule_day`, `employee_tax_profile`,
 `employee_bank_account`, `employee_leave_entitlement`, `employee_recurring_component` and
-`employee_note` are in, and P4's definition of done is met: a rate below the
-sectoral minimum raises with both figures and the gazette citation. Two things on the employee table are
-worth knowing before touching it.
+`employee_note` are in, and P4's definition of done is met in full: a rate below the
+sectoral minimum raises with both figures and the gazette citation, a future-dated
+increase flips the pay cache on its own effective date, and forty employees import
+from a spreadsheet with every one of those checks applied — the batch reverses as a
+unit. Two things on the employee table are worth knowing before touching it.
 
 `id_number_hash` is a keyed HMAC **scoped to the tenant** (D-95). Unscoped, the same
 person hashes identically everywhere, so anyone holding the column can join two
@@ -616,6 +618,72 @@ arm to hold it. `employers.Employer` already carries `registration_number` and
 there — and a tenant can run several employing entities, each needing its own
 registration documents. `documents/categories.py` is the seed list; if this reading is
 wrong the fix is a data update to the seeded rows, not a schema change.
+
+**`is_confidential_by_default` is TRUE for seven seeded categories** (D-143): ID copy,
+passport, work permit, asylum permit, police clearance, the employee's own bank
+confirmation and the next-of-kin form. Unlike the expiry and sector questions above,
+this one is not the workbook staying silent on something it should decide — it is a
+question this codebase can answer on its own facts about what a category already
+seeded happens to contain: police clearance is POPIA s26 special personal information,
+the identity documents carry the ID number D-77 already encrypts, the bank
+confirmation is D-111's ghost-employee fraud surface (the employee's copy, not the
+employer's own banking letter), and next-of-kin exposes a third party who never dealt
+with the employer. Because seeding never updates an existing row, an environment that
+had already run `seeddocumentcategories` needed a real fix rather than a note — see
+`documents/0002_backfill_confidential_categories`, which travels with `migrate` rather
+than needing a second manual step. **The `tenant` arm of `applies_to` stays
+deliberately unseeded** — a tenant-level document is the subscriber's own (the service
+agreement, the POPIA operator agreement, the debit order mandate), while every
+registration document belongs to the employing entity (D-140).
+
+**`employee_import_batch` closes P4, and it is NOT in the workbook** (D-144). Sheet 02
+has only `attendance_import_batch` (P5); this table is modelled on it, minus
+`period_start`/`period_end` — a one-off employee upload has no period the way a month
+of attendance does. An ordinary `TenantScopedModel` table with the plain `enable_rls`;
+no shared rows, no system-row lock, nothing beyond what every employer- and
+employee-data table already carries.
+
+**`employees/importing.py`'s central rule: preview IS apply, rolled back** (D-145).
+Both run the identical per-row code — the same `Employee` creation with its identity
+checks, the same `engage()`, the same `capture()` — each inside its own savepoint, and
+differ only in whether the outer transaction commits. There is no `validate_only` flag
+anywhere in the chain: a second validation path by another name is exactly what D-122
+exists to prevent, since a shortcut that exists only for previewing is a shortcut
+somebody eventually reaches for apply too. Rolling back a preview burns primary key
+sequence values — that is a fact about sequences, not a defect. Apply refuses outright,
+writing nothing, while any row carries a blocking error; `accepted_count` and
+`rejected_count` describe what was found, not a licence to write half a batch. Legal
+status transitions are enforced in `transition()`, not only by the CHECK on the column
+— the CHECK proves the value is a known one, never that the move from the row's
+previous value was legal.
+
+**A below-minimum-wage row is a warning, batch-wide, exactly as D-108 already treats
+one row** (D-146). `apply_batch()` refuses — nothing written — when any row is below
+the floor and no `acknowledged_by` was named; applying with one stores that user's id
+on every affected `employee_remuneration` row, the same column the single-capture path
+already uses. No default, no batch-level bypass: an importer that silently dropped
+those rows would be indistinguishable on the surface from one that captured them
+correctly, and the gap would only surface when someone reconciles pay months later.
+
+**The uploaded spreadsheet's content is purged once the batch reaches applied or
+reversed** (D-141), through `core/files.py`'s `purge_content()` — `file_object`'s row
+survives as the trail, `content_purged_at` records that the bytes are gone.
+`employee.id_number` is encrypted precisely because a spreadsheet holds it in the
+clear; a source file left sitting in storage after the import completes puts that
+protection right back. `employee.created_by_import_batch` (D-142) is the one column
+answering both what a reversal must remove and where an employee came from,
+permanently — every child row already cascades from the employee, so the batch's
+footprint is exactly its employees.
+
+**The template is generated from one column spec, read by both sides** (D-147).
+`EXPECTED_COLUMNS` in `employees/importing.py` is what `manage.py
+generateemployeeimporttemplate` writes and what `parse_workbook()` reads — D-122's own
+reasoning restated for this table: a hand-maintained sheet that drifts from what the
+importer expects produces failures the employer cannot diagnose, and one spec cannot
+drift from itself. The one number in the generated file — the example row's rate — is
+a plain `int`, not a `Decimal` literal: it is a plausible salary for a demo cell, not a
+statutory figure, and `test_no_hardcoded_rates` scans this file exactly like every
+other module in `employees/`.
 
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting
 verification** (13 September 2026). 351 tests green. All twenty tables exist with their

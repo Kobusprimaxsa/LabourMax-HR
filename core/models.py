@@ -675,6 +675,16 @@ class FileObject(AuditedModel, TenantScopedModel):
     is_encrypted = models.BooleanField(default=True)
     retention_until = models.DateField(null=True, blank=True, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
+    # D-141. Distinct from deleted_at: the ROW survives as the audit trail (who
+    # uploaded what, when, its checksum) while the BYTES are gone. An employee
+    # import spreadsheet holds ID numbers in the clear, which is exactly what
+    # D-77's column encryption exists to protect once the row is loaded — an
+    # untouched source file left sitting in storage puts it straight back.
+    content_purged_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Bytes deleted, row kept for the trail. Never downloadable again.",
+    )
 
     class Meta:
         db_table = "file_object"

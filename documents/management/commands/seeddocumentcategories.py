@@ -7,6 +7,17 @@ sector that has to exist first. A data migration would run at the wrong moment.
 Idempotent. A category already in the catalogue is left exactly as it is — the
 system-row lock would refuse the write in any case, and a tenant may already
 have documents filed against it.
+
+**The 'tenant' arm of ``applies_to`` is deliberately unseeded.** Every
+category here is EMPLOYER, EMPLOYEE or WORKPLACE (D-140) — nothing is seeded
+against 'tenant'. That is not an oversight to "fix" by moving the
+tenant/employer registration documents onto it: a tenant-level document is the
+SUBSCRIBER's own — the service agreement (P1), the POPIA operator agreement
+(O-12), the debit order mandate — while the registration documents belong to
+the employing entity, because a bookkeeper running three households under one
+subscription has three sets of them, not one. If this arm stays empty for
+good reason, leave it empty; do not seed a category onto it just to make the
+enum look used.
 """
 
 from __future__ import annotations

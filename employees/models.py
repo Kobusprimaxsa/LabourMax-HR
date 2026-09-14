@@ -177,6 +177,20 @@ class Employee(AuditedModel, TenantScopedModel):
         max_length=20, blank=True, db_index=True, editable=False, help_text="CACHE (D-18)."
     )
 
+    # D-142. One column answers two questions: what a reversal must remove, and
+    # where this employee came from, permanently. Every child row already
+    # cascades from the employee, so the batch's footprint is exactly its
+    # employees — nothing else needs to know it was ever a bulk import.
+    created_by_import_batch = models.ForeignKey(
+        "employees.EmployeeImportBatch",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="employees_created",
+        editable=False,
+        help_text="Set only by the bulk importer. NULL for a single-capture employee.",
+    )
+
     # Generated and stored, with the collation fixed here in the creating migration.
     # Lower-cased in the EXPRESSION rather than by a case-insensitive collation, so
     # the collation stays deterministic and LIKE keeps using the index (D-17).
@@ -1874,3 +1888,75 @@ class EmployeeNote(AuditedModel, TenantScopedModel):
 
     def __str__(self):
         return f"{self.note_date} {self.category} for {self.employee_id}"
+
+
+class EmployeeImportBatch(AuditedModel, TenantScopedModel):
+    """One bulk employee upload, previewed then applied as a unit (D-122).
+
+    NOT IN THE WORKBOOK — sheet 02 has only ``attendance_import_batch`` (P5).
+    This table is a deliberate addition, modelled on that one, minus its
+    ``period_start``/``period_end``: an employee import has no period the way a
+    month of attendance does, so those two columns are simply not carried over.
+
+    ``employees/importing.py`` is where the behaviour lives — this table only
+    records the outcome. Preview and apply run the identical code path calling
+    the identical single-capture service functions; the difference is whether
+    the transaction that ran it commits.
+    """
+
+    class Status(models.TextChoices):
+        UPLOADED = "uploaded", "Uploaded"
+        VALIDATING = "validating", "Validating"
+        PREVIEW = "preview", "Preview"
+        APPLIED = "applied", "Applied"
+        REVERSED = "reversed", "Reversed"
+        FAILED = "failed", "Failed"
+
+    employer = models.ForeignKey(
+        "employers.Employer", on_delete=models.PROTECT, related_name="employee_import_batches"
+    )
+    source_file = models.ForeignKey(
+        "core.FileObject",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="+",
+        help_text="The uploaded spreadsheet. Content is purged once applied or reversed (D-141).",
+    )
+
+    row_count = models.IntegerField(default=0)
+    accepted_count = models.IntegerField(default=0)
+    rejected_count = models.IntegerField(default=0)
+
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.UPLOADED, db_index=True
+    )
+    validation_report = models.JSONField(
+        default=list, help_text="Per-row errors and warnings. Never a full ID or bank number."
+    )
+
+    applied_at = models.DateTimeField(null=True, blank=True)
+    reversed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "employee_import_batch"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["tenant", "status"])]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    status__in=[
+                        "uploaded",
+                        "validating",
+                        "preview",
+                        "applied",
+                        "reversed",
+                        "failed",
+                    ]
+                ),
+                name="employee_import_batch_status_is_known",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Import batch {self.pk} ({self.status})"
