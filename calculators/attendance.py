@@ -200,6 +200,14 @@ class AttendanceDayInput:
     #: From work_schedule.days_per_week > 5 — selects which of the rule set's
     #: two per-day ordinary-hours columns is the statutory ceiling for today.
     works_more_than_5_days_per_week: bool = False
+    #: A raw total, captured instead of a clock in/out pair — the bulk import's
+    #: "hours worked" column (D-156). Used only when time_in or time_out is
+    #: None; a shift with both a time span and this set is bucketed from the
+    #: time span, this figure ignored. Night hours cannot be computed from a
+    #: bare total — there is no span to test against the night window — so a
+    #: day captured this way always reads zero night hours, honestly: nothing
+    #: recorded when in the shift the work happened.
+    hours_worked: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -256,6 +264,8 @@ def _overlap_minutes(
 def _hours_worked(day: AttendanceDayInput) -> tuple[Decimal, tuple[str, ...]]:
     """Net hours worked, and any warnings about how they were derived."""
     if day.time_in is None or day.time_out is None:
+        if day.hours_worked is not None:
+            return day.hours_worked, ()
         return ZERO, ()
 
     raw_minutes = _span_minutes(day.time_in, day.time_out)

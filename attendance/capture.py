@@ -94,6 +94,8 @@ def capture(
     leave_application_id_ref: int | None = None,
     source: str = AttendanceDay.Source.MANUAL,
     comment: str = "",
+    import_batch=None,
+    hours_worked: Decimal | None = None,
 ) -> AttendanceDay:
     """Create or update the day for this employee and date. Atomic.
 
@@ -101,6 +103,11 @@ def capture(
     the result — it is never recomputed later. Refuses, naming the payroll
     run, if the existing day is locked; refuses if the reference data needed
     to bucket it is not loaded. Writes nothing in either case.
+
+    ``hours_worked`` is a raw total, an alternative to ``time_in``/``time_out``
+    for a caller that captured a plain figure rather than clock times (the
+    bulk import's "hours worked" column, D-156). Ignored when both time_in and
+    time_out are given — a captured time span always wins.
     """
     with transaction.atomic(), tenant_context_of(employee):
         existing = AttendanceDay.objects.filter(employee=employee, work_date=work_date).first()
@@ -129,6 +136,7 @@ def capture(
             works_more_than_5_days_per_week=(
                 schedule.days_per_week > 5 if schedule is not None else False
             ),
+            hours_worked=hours_worked,
         )
         result = bucket_day(day_input, rules)
 
@@ -153,6 +161,7 @@ def capture(
             "standby_hours_worked": result.standby_hours_worked,
             "source": source,
             "comment": comment,
+            "import_batch": import_batch,
         }
 
         if existing is not None:

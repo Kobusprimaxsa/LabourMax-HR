@@ -16,10 +16,12 @@ rather than a new one.
   system cannot yet say what leave was taken, so it should not let a day
   claim to be one.
 - ``locked_by_payroll_run_id_ref`` becomes a real FK to ``payroll_run`` in P7,
-  same treatment. ``import_batch_id`` (FK to ``attendance_import_batch``) is
-  left out entirely rather than shipped as a third placeholder — that table
-  is P5 chunk 3, a week away, and a column nothing populates yet is not a
-  forward reference, it is a placeholder to remember to come back to.
+  same treatment.
+
+``import_batch`` (FK to ``attendance_import_batch``) arrives in chunk 3, once
+that table exists. Unlike the two forward references above, this one is a real
+FK from day one — the table it points at is built in the same chunk, so there
+is no placeholder period to bridge.
 
 **Locking is a trigger, not an application check** (invariant 4). Once a
 payroll run finalises, the days it paid freeze — ``core/db/rls.py``'s
@@ -141,6 +143,20 @@ class AttendanceDay(AuditedModel, TenantScopedModel):
     )
 
     comment = models.CharField(max_length=255, blank=True)
+
+    import_batch = models.ForeignKey(
+        "attendance.AttendanceImportBatch",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="days",
+        editable=False,
+        help_text=(
+            "Set only by the bulk importer, and only for as long as that batch's "
+            "write stands. Reverse restores a replaced day to what it held before "
+            "and clears this back to whatever it named then (D-155)."
+        ),
+    )
 
     class Meta:
         db_table = "attendance_day"
@@ -276,3 +292,99 @@ class TimesheetSummary(AuditedModel, TenantScopedModel):
 
     def __str__(self):
         return f"{self.employee_id} for period {self.pay_period_id}"
+
+
+class AttendanceImportBatch(AuditedModel, TenantScopedModel):
+    """One bulk attendance upload for one period, previewed then applied as a
+    unit — sheet 02 and sheet 03, P5 chunk 3.
+
+    **The employee import only ever creates; this one routinely replaces.**
+    Re-importing a corrected file is the ordinary case, not an edge case, so
+    ``attendance/importing.py`` distinguishes a day it is CREATING from one it
+    is REPLACING, and refuses a locked day by name in the preview and an
+    approved day unless the caller explicitly allows it (D-156).
+
+    ``prior_state`` is NOT in sheet 02 (D-156). Reverse for the employee
+    import deletes, because every row it touched was new. This import
+    replaces days that already held the employer's own earlier, legitimate
+    capture — a reverse that only deleted would throw that away, which is not
+    the batch's to discard. So every REPLACE snapshots the day's own prior
+    values here before writing over them, and reverse restores each one
+    exactly rather than merely removing it.
+    """
+
+    class Status(models.TextChoices):
+        UPLOADED = "uploaded", "Uploaded"
+        VALIDATING = "validating", "Validating"
+        PREVIEW = "preview", "Preview"
+        APPLIED = "applied", "Applied"
+        REVERSED = "reversed", "Reversed"
+        FAILED = "failed", "Failed"
+
+    employer = models.ForeignKey(
+        "employers.Employer", on_delete=models.PROTECT, related_name="attendance_import_batches"
+    )
+    source_file = models.ForeignKey(
+        "core.FileObject",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="+",
+        help_text="The uploaded spreadsheet. Content is purged once applied or reversed (D-141).",
+    )
+
+    period_start = models.DateField()
+    period_end = models.DateField()
+
+    row_count = models.IntegerField(default=0)
+    accepted_count = models.IntegerField(default=0)
+    rejected_count = models.IntegerField(default=0)
+
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.UPLOADED, db_index=True
+    )
+    validation_report = models.JSONField(
+        default=list, help_text="Per-row errors and warnings. Never a full ID or bank number."
+    )
+    prior_state = models.JSONField(
+        default=list,
+        help_text=(
+            "D-156. One entry per day this batch REPLACED: the employee id, the work "
+            "date, and every mutable attendance_day column's value before the "
+            "replace. Empty for a day the batch created outright — reverse deletes "
+            "those instead of restoring them."
+        ),
+    )
+
+    applied_at = models.DateTimeField(null=True, blank=True)
+    reversed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "attendance_import_batch"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["tenant", "status"]),
+            models.Index(fields=["period_start", "period_end"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    status__in=[
+                        "uploaded",
+                        "validating",
+                        "preview",
+                        "applied",
+                        "reversed",
+                        "failed",
+                    ]
+                ),
+                name="attendance_import_batch_status_is_known",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(period_end__gte=models.F("period_start")),
+                name="attendance_import_batch_period_end_after_start",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Attendance import batch {self.pk} ({self.status})"

@@ -112,6 +112,18 @@ it bypasses the manager, not the policy. A seat-limit check bitten by this retur
 0 seats in use and waved through every request. When a count comes back suspiciously
 zero, or a save appears to do nothing, check the context before you check the data.
 
+**The line that actually triggers this is the one that looks like nothing at all.**
+`row.employee` reads as plain attribute access on a row you are already holding — it
+is a database query. A lazy foreign key not yet loaded hits the manager and the policy
+exactly like any other query, and with no tenant pinned it returns nothing, on a row
+in your hand. `update_or_create()` has the equivalent trap on the write side: the
+manager does not inject `tenant` into it, so it needs `tenant=` passed explicitly in
+the lookup or defaults, or it looks for, and fails to find, a row that is right there.
+Three bugs of exactly this shape were found in one P5 chunk, and all three were found
+by writing the failing case first, not by reading the code — the line reads as
+harmless attribute access, so review does not catch it; a test that pins no context
+and asserts on the result does.
+
 A scanner callback, a Celery task and a retention job all arrive with no request and
 therefore no tenant context, so this is the ordinary path, not an edge case.
 
@@ -698,8 +710,8 @@ a plain `int`, not a `Decimal` literal: it is a plausible salary for a demo cell
 statutory figure, and `test_no_hardcoded_rates` scans this file exactly like every
 other module in `employees/`.
 
-**P5 — Attendance & Time: chunk 2 of three** (14 September 2026). 907 tests
-green. `attendance_day` exists, tenant-scoped, and `calculators/attendance.py` is **the first
+**P5 — Attendance & Time: build complete, chunk 3 of three** (14 September 2026). 928
+tests green. `attendance_day` exists, tenant-scoped, and `calculators/attendance.py` is **the first
 real calculator** — the calculators rule stops being aspirational from here. Pure
 functions only: no ORM import, no database access, no file I/O, no `datetime.now()`.
 Every multiplier, cap, window and minimum it uses is a field the caller reads from
@@ -711,8 +723,9 @@ ahead of P4: `leave_application_id_ref` and `locked_by_payroll_run_id_ref` are n
 `(day_type='leave') = (leave_application_id IS NOT NULL)` — is kept against the
 placeholder exactly, which makes a leave day impossible to create until P6 exists. That
 is honest rather than an oversight: this system cannot yet say what leave was taken.
-`import_batch_id` is left out entirely rather than shipped as a third placeholder —
-chunk 3 is a week away, and a column nothing populates is not a forward reference.
+`import_batch_id` was deliberately left out of chunk 1 rather than shipped as a third
+placeholder a week away from being replaced; chunk 3 adds it as a real FK from day one,
+alongside the table it points at.
 
 **Locking is a trigger, not an application check** (invariant 4), and it is a THIRD
 shape of frozen row after `append_only()` and `lock_system_rows()` — see
@@ -805,8 +818,58 @@ row means an ordinary day worked, so the function returns nothing rather than fl
 every uncaptured day of a month nobody was ever going to capture one by one. P7's
 validation gate will call this; it is not built here.
 
-**Still open in P5:** the screens themselves (the capture grid, the exception panel),
-`timesheet_summary`'s own display, and `attendance_import_batch` (chunk 3). Consecutive
+**Chunk 3 closes the phase's build: `attendance_import_batch`, and a reverse that
+restores rather than only deletes** (D-155, D-156). Unlike the employee import, which
+only ever creates, re-importing a corrected attendance file is the ORDINARY case — it
+routinely REPLACES a day that already exists. A LOCKED day is refused by name in the
+row loop before `capture()` is ever called, so preview reports it rather than a trigger
+dying at apply time; an APPROVED day is refused the same way unless the caller passes
+`allow_replacing_approved=True`, because approval is a human judgement call an import
+must not silently override; a CAPTURED day is freely replaced, and the preview counts
+REPLACED separately from CREATED. Reverse restores every replaced day to its exact
+prior values — a new `prior_state` JSONB column on the batch, not in sheet 02, snapshots
+each replaced day before `capture()` overwrites it — and deletes only the days the batch
+created outright. **The importer supplies raw capture only**: the template carries none
+of `ordinary_hours`/`overtime_hours`/`sunday_hours`/`public_holiday_hours`/`night_hours`,
+proven by a test that asserts on `EXPECTED_COLUMNS` itself. It also, deliberately,
+carries no `standby_hours_worked` column despite the brief that specified it naming
+one — chunk 1's calculator computes that figure from the same worked-hours span every
+other bucket comes from, and there is no input slot for a caller to hand it in directly;
+adding one only for the importer to write straight into a bucket would be exactly the
+drift the "raw capture only" rule exists to stop. A bare `hours_worked` total (the
+alternative to time_in/time_out) is a small, genuine extension to
+`calculators/attendance.py`'s `AttendanceDayInput` and to `capture()` itself, not an
+importer-only shortcut — a day captured this way honestly reads zero night hours, since
+there is no time span to test against the night window.
+
+**The shared bulk-import mechanics now live in `core/importing.py`** (D-155), used by
+both this importer and the employee import (D-122). The extraction held cleanly rather
+than fighting the two shapes: the status machine, the savepoint-based preview/apply/
+reverse skeleton, the column-spec and report dataclasses, the template builder and the
+source-file purge are identical between the two; what differs — what a row means, and
+what "apply" and "reverse" actually write — stays in each app, reached through two
+small hooks (`extra_refusal` for a second whole-batch refusal reason, `on_success` for
+extra fields a domain needs saved once a batch commits) rather than forcing the
+difference into a single function. The employee import's twelve tests pass unmodified
+against the extracted code, which is the evidence, not just the intent.
+
+**On P5's own definition of done — read literally, it does not yet pass, and that is
+stated here rather than ticked.** "A month for twenty employees is captured in under ten
+minutes" needs the capture screen this phase never built; every capture path
+(`attendance/capture.py`, the grid, the importer) is a service with no UI in front of it,
+so the ten-minute claim has nothing to be measured against yet. "An uncaptured
+attendance-driven day blocks the payroll run" needs P7's validation gate reading
+`attendance/completeness.py::missing_attendance_days()` — that function exists and is
+correct for exactly this purpose, but nothing calls it yet, because there is no payroll
+run to block. What chunk 3 closes is real: every table and service the phase specified
+is built, tested and RLS-isolated, including the one the workbook didn't carry
+(`prior_state`) and the one built ahead of schedule in chunk 1
+(`calculators/attendance.py`, with its own coverage gate). Both halves of the phase's
+own success criterion are demonstrable only once P5's screens and P7's gate exist — this
+is a prerequisite completed, not the outcome itself.
+
+**Still open in P5:** the screens themselves (the capture grid, the exception panel) and
+`timesheet_summary`'s own display — UI work this codebase has not started. Consecutive
 sick days needing a leave application are P6 and are not stubbed.
 
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting

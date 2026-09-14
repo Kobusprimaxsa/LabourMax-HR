@@ -213,7 +213,16 @@ as a unit. **All three passed on 14 September 2026 — P4 COMPLETE**, 824 tests 
       saved row
 - [x] Bulk actions filling empty cells only (chunk 2, `attendance/grid.py::bulk_fill`) —
       through `attendance.capture.capture()` for every date, never a second write path
-- [ ] `attendance_import_batch` — preview, validate, apply, reverse (chunk 3)
+- [x] `attendance_import_batch` — preview, validate, apply, reverse (chunk 3). Unlike the
+      employee import, this one routinely REPLACES a day that already exists — re-importing
+      a corrected file is the ordinary case. A locked day is refused by name in the row
+      loop, so preview reports it rather than a trigger dying at apply; an approved day is
+      refused unless `allow_replacing_approved=True` is passed. Reverse restores a replaced
+      day to its exact prior values (a new `prior_state` JSONB column, not in sheet 02 —
+      D-156) and deletes only the days it created. Raw capture only: the template carries
+      none of the five hour buckets, proven against `EXPECTED_COLUMNS` itself. The bulk-
+      import mechanics shared with the employee import now live in `core/importing.py`
+      (D-155)
 - [x] `timesheet_summary` aggregation with staleness flag (chunk 2). A cache and nothing
       more (invariant 3) — recomputation always rebuilds from `attendance_day`, no
       incremental path. Staleness is two layers, deliberately independent: a signal
@@ -230,6 +239,14 @@ as a unit. **All three passed on 14 September 2026 — P4 COMPLETE**, 824 tests 
 
 **Done when:** a month for twenty employees is captured in under ten minutes, and an
 uncaptured attendance-driven day blocks the payroll run.
+
+**Not yet demonstrated, and not ticked as met.** Every table and service the phase specified
+is built and tested (chunk 3 closes the build), but both halves of this criterion need
+things that do not exist yet: the ten-minute claim needs the capture screen (no views, no
+templates, anywhere in this phase), and the payroll-blocking claim needs P7's validation
+gate calling `attendance/completeness.py::missing_attendance_days()` — the function is
+correct and ready, but nothing calls it because there is no payroll run yet. This is a
+completed prerequisite, not the outcome the "Done when" clause actually asks for.
 
 ---
 

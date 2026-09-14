@@ -1,16 +1,25 @@
 """Bulk employee import — D-122. Preview IS apply, rolled back.
 
-**THE CENTRAL RULE.** Preview and apply run the exact same code, calling the
-exact same service functions the single-capture path calls: ``Employee``
-creation with its identity checks, ``engage()``, ``capture()``. There is no
-``validate_only`` flag anywhere in this call chain — that would be a second
-validation path by another name, and D-122 exists precisely because an import
-that bypasses the ID check, the minimum age check or the minimum wage check
-puts forty unchecked employees on file with nobody's name against the
-exception. The only difference between preview and apply is whether the
-transaction that ran it commits or rolls back at the end. Rolling back burns
-primary key sequence values — the next real employee gets a higher id than the
-row count would suggest. That is fine; sequences are not a report.
+The shared mechanics — the status machine, the savepoint-based preview/apply/
+reverse skeleton, the column-spec/report shapes, the template builder, the
+source-file purge — live in ``core/importing.py`` (D-155), shared with the
+attendance import. What stays here is what is specific to an employee row:
+``EXPECTED_COLUMNS``, the per-row validation and the calls into ``engage()``
+and ``capture()``, the duplicate-ID and minimum-age checks, and what "apply"
+and "reverse" actually mean for this table.
+
+**THE CENTRAL RULE**, unchanged by the extraction. Preview and apply run the
+exact same code, calling the exact same service functions the single-capture
+path calls: ``Employee`` creation with its identity checks, ``engage()``,
+``capture()``. There is no ``validate_only`` flag anywhere in this call
+chain — that would be a second validation path by another name, and D-122
+exists precisely because an import that bypasses the ID check, the minimum
+age check or the minimum wage check puts forty unchecked employees on file
+with nobody's name against the exception. The only difference between
+preview and apply is whether the transaction that ran it commits or rolls
+back at the end. Rolling back burns primary key sequence values — the next
+real employee gets a higher id than the row count would suggest. That is
+fine; sequences are not a report.
 
 **One declared column spec, read by both sides** (task 4's anti-drift
 requirement, and D-122's own reasoning restated for this table): the template
@@ -41,17 +50,29 @@ applies to the column itself.
 from __future__ import annotations
 
 import datetime
-from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
+from dataclasses import dataclass
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
-from django.utils import timezone
 
 from core.db.fields import keyed_hash
-from core.files import purge_content
-from core.managers import tenant_context_of
+from core.importing import (
+    BatchResult,
+    IllegalTransitionError,
+    ImportColumn,
+    ImportRefusedError,
+    ParsedRow,
+    RowIssue,
+    actor_id,
+    transition,
+    validation_message,
+)
+from core.importing import apply_batch as _apply_batch
+from core.importing import build_template_workbook as _build_template_workbook
+from core.importing import parse_workbook as _parse_workbook
+from core.importing import preview_batch as _preview_batch
+from core.importing import reverse_batch as _reverse_batch
 from employees.engagements import (
     EngagementRefusedError,
     check_minimum_age,
@@ -72,63 +93,20 @@ from employees.remuneration import (
 
 Status = EmployeeImportBatch.Status
 
-
-class ImportRefusedError(Exception):
-    """The batch may not be applied or reversed as asked. Nothing was written."""
-
-
-class IllegalTransitionError(Exception):
-    """The batch cannot move to that status from where it is."""
-
-
-# --------------------------------------------------------------- status machine
-
-#: What each status may legally become. Enforced here, in the service layer —
-#: the CHECK constraint only proves the value is a known one, not that the move
-#: from the row's previous value was legal.
-ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
-    # APPLIED is reachable directly from UPLOADED (and from PREVIEW, and from a
-    # retry after FAILED): apply_batch() re-validates every row itself rather
-    # than trusting an earlier preview's report, so a prior preview call is a
-    # convenience for the employer, never a precondition the state machine
-    # enforces.
-    Status.UPLOADED: frozenset({Status.VALIDATING, Status.PREVIEW, Status.APPLIED, Status.FAILED}),
-    Status.VALIDATING: frozenset({Status.PREVIEW, Status.APPLIED, Status.FAILED}),
-    Status.PREVIEW: frozenset({Status.VALIDATING, Status.PREVIEW, Status.APPLIED, Status.FAILED}),
-    Status.APPLIED: frozenset({Status.REVERSED}),
-    Status.REVERSED: frozenset(),
-    Status.FAILED: frozenset({Status.VALIDATING, Status.PREVIEW, Status.APPLIED}),
-}
-
-
-def transition(batch: EmployeeImportBatch, new_status: str) -> None:
-    """Move ``batch.status`` to ``new_status`` in memory, or refuse. Does not save."""
-    if new_status == batch.status:
-        return
-    allowed = ALLOWED_TRANSITIONS.get(batch.status, frozenset())
-    if new_status not in allowed:
-        raise IllegalTransitionError(
-            f"Batch {batch.pk} cannot move from '{batch.status}' to '{new_status}'. "
-            f"Allowed from '{batch.status}': {sorted(allowed) or 'nothing — this is terminal'}."
-        )
-    batch.status = new_status
+__all__ = [
+    "EXPECTED_COLUMNS",
+    "IllegalTransitionError",
+    "ImportRefusedError",
+    "apply_batch",
+    "build_template_workbook",
+    "parse_workbook",
+    "preview_batch",
+    "reverse_batch",
+    "transition",
+]
 
 
 # ----------------------------------------------------------------- column spec
-
-
-@dataclass(frozen=True)
-class ImportColumn:
-    """One column, in both the generated template and the parser. The one spec."""
-
-    key: str
-    header: str
-    kind: str  # "text" | "date" | "decimal" | "choice" | "boolean"
-    required: bool = True
-    choices: tuple[tuple[str, str], ...] | None = None
-    example: object = ""
-    help_text: str = ""
-
 
 #: A real, checksum-valid example so a curious employer who leaves row 2 in
 #: place does not get refused by the very validation this file exists to run.
@@ -210,176 +188,31 @@ EXPECTED_COLUMNS: tuple[ImportColumn, ...] = (
     ),
 )
 
-_COLUMNS_BY_KEY = {column.key: column for column in EXPECTED_COLUMNS}
+DATA_SHEET_NAME = "Employees"
 
 
-# ------------------------------------------------------------------- row types
+def parse_workbook(file_like, *, sheet_name: str = DATA_SHEET_NAME) -> list[ParsedRow]:
+    return _parse_workbook(file_like, EXPECTED_COLUMNS, sheet_name=sheet_name)
 
 
-@dataclass(frozen=True)
-class RowIssue:
-    row_number: int
-    column: str
-    message: str
-    severity: str  # "error" | "warning"
-
-    def as_dict(self) -> dict:
-        return {
-            "row": self.row_number,
-            "column": self.column,
-            "message": self.message,
-            "severity": self.severity,
-        }
+# ------------------------------------------------------------------ row result
 
 
 @dataclass(frozen=True)
-class ParsedRow:
-    row_number: int
-    values: dict
-    errors: tuple[str, ...] = ()
+class EmployeeBatchResult(BatchResult):
+    below_minimum_count: int = 0
 
 
-@dataclass(frozen=True)
-class BatchResult:
-    row_count: int
-    accepted_count: int
-    rejected_count: int
-    blocking_count: int
-    below_minimum_count: int
-    issues: tuple[RowIssue, ...] = field(default_factory=tuple)
-
-    @property
-    def report(self) -> list[dict]:
-        return [issue.as_dict() for issue in self.issues]
-
-
-# --------------------------------------------------------------------- parsing
-
-
-def _parse_text(raw) -> str:
-    return "" if raw is None else str(raw).strip()
-
-
-def _parse_date(raw) -> datetime.date | None:
-    if raw in (None, ""):
-        return None
-    if isinstance(raw, datetime.datetime):
-        return raw.date()
-    if isinstance(raw, datetime.date):
-        return raw
-    text = str(raw).strip()
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d %B %Y"):
-        try:
-            return datetime.datetime.strptime(text, fmt).date()
-        except ValueError:
-            continue
-    return None
-
-
-def _parse_decimal(raw) -> Decimal | None:
-    if raw in (None, ""):
-        return None
-    try:
-        return Decimal(str(raw))
-    except InvalidOperation:
-        return None
-
-
-def _parse_boolean(raw) -> bool:
-    text = _parse_text(raw).lower()
-    return text in {"true", "yes", "1", "y", "x"}
-
-
-def _parse_choice(raw, column: ImportColumn) -> str | None:
-    text = _parse_text(raw).lower()
-    if not text:
-        return None
-    valid = {value.lower(): value for value, _label in column.choices}
-    return valid.get(text)
-
-
-def _parse_cell(raw, column: ImportColumn) -> tuple[object, str | None]:
-    """The typed value, and an error message if the cell cannot be used."""
-    text = _parse_text(raw)
-    if not text and column.kind != "boolean":
-        if column.required:
-            return None, f"{column.header} is required."
-        return ("" if column.kind == "text" else None), None
-
-    if column.kind == "text":
-        return text, None
-    if column.kind == "date":
-        parsed = _parse_date(raw)
-        if parsed is None:
-            return None, f"{column.header} is not a date: {text!r}."
-        return parsed, None
-    if column.kind == "decimal":
-        parsed = _parse_decimal(raw)
-        if parsed is None:
-            return None, f"{column.header} is not a number: {text!r}."
-        return parsed, None
-    if column.kind == "boolean":
-        return _parse_boolean(raw), None
-    if column.kind == "choice":
-        parsed = _parse_choice(raw, column)
-        if parsed is None:
-            allowed = ", ".join(value for value, _label in column.choices)
-            return None, f"{column.header} must be one of: {allowed}. Got {text!r}."
-        return parsed, None
-    raise AssertionError(f"Unknown column kind: {column.kind}")  # pragma: no cover
-
-
-def parse_workbook(file_like, *, sheet_name: str = "Employees") -> list[ParsedRow]:
-    """Read the data sheet against ``EXPECTED_COLUMNS``. Matches by header text,
-    not by column position, so a re-ordered (but not renamed) sheet still works.
-    """
-    import openpyxl
-
-    workbook = openpyxl.load_workbook(file_like, data_only=True)
-    sheet = workbook[sheet_name] if sheet_name in workbook.sheetnames else workbook.active
-
-    header_row = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True))
-    index_by_key: dict[str, int] = {}
-    for index, header in enumerate(header_row):
-        for column in EXPECTED_COLUMNS:
-            if header is not None and str(header).strip() == column.header:
-                index_by_key[column.key] = index
-
-    rows: list[ParsedRow] = []
-    for row_number, raw_row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
-        if all(cell in (None, "") for cell in raw_row):
-            continue
-
-        values: dict = {}
-        errors: list[str] = []
-        for column in EXPECTED_COLUMNS:
-            index = index_by_key.get(column.key)
-            raw = raw_row[index] if index is not None and index < len(raw_row) else None
-            value, error = _parse_cell(raw, column)
-            if error:
-                errors.append(error)
-            else:
-                values[column.key] = value
-
-        rows.append(ParsedRow(row_number=row_number, values=values, errors=tuple(errors)))
-
-    return rows
+def acknowledged_by_id(acknowledged_by) -> str:
+    return actor_id(acknowledged_by)
 
 
 # ------------------------------------------------------------------ validation
 
 
-def _validation_message(error: ValidationError) -> str:
-    if hasattr(error, "message_dict"):
-        return "; ".join(
-            f"{field_name}: {' '.join(msgs)}" for field_name, msgs in error.message_dict.items()
-        )
-    return " ".join(error.messages)
-
-
 def _run_rows(
     batch: EmployeeImportBatch, rows: list[ParsedRow], *, acknowledged_by=None
-) -> BatchResult:
+) -> EmployeeBatchResult:
     """Run every row through the single-capture path. Returns the outcome.
 
     Every row that gets as far as ``Employee`` creation runs inside its own
@@ -486,7 +319,7 @@ def _run_rows(
         except (ValidationError, EngagementRefusedError, RemunerationRefusedError) as error:
             transaction.savepoint_rollback(savepoint)
             message = (
-                _validation_message(error) if isinstance(error, ValidationError) else str(error)
+                validation_message(error) if isinstance(error, ValidationError) else str(error)
             )
             issues.append(RowIssue(parsed.row_number, "", message, "error"))
             rejected += 1
@@ -507,7 +340,7 @@ def _run_rows(
                 )
                 below_minimum += 1
 
-    return BatchResult(
+    return EmployeeBatchResult(
         row_count=len(rows),
         accepted_count=accepted,
         rejected_count=rejected,
@@ -517,93 +350,39 @@ def _run_rows(
     )
 
 
-def acknowledged_by_id(acknowledged_by) -> str:
-    return str(getattr(acknowledged_by, "pk", acknowledged_by))
-
-
-def _save_report(batch: EmployeeImportBatch, result: BatchResult) -> None:
-    batch.row_count = result.row_count
-    batch.accepted_count = result.accepted_count
-    batch.rejected_count = result.rejected_count
-    batch.validation_report = result.report
-    batch.save(
-        update_fields=[
-            "status",
-            "row_count",
-            "accepted_count",
-            "rejected_count",
-            "validation_report",
-            "updated_at",
-        ]
-    )
-
-
 # --------------------------------------------------------------- orchestration
 
 
-def preview_batch(batch: EmployeeImportBatch, rows: list[ParsedRow]) -> BatchResult:
+def preview_batch(batch: EmployeeImportBatch, rows: list[ParsedRow]) -> EmployeeBatchResult:
     """Run every row, then roll all of it back. The batch's own report persists."""
-    with transaction.atomic(), tenant_context_of(batch):
-        savepoint = transaction.savepoint()
-        result = _run_rows(batch, rows, acknowledged_by=None)
-        transaction.savepoint_rollback(savepoint)
 
-        transition(batch, Status.PREVIEW)
-        _save_report(batch, result)
+    def run_rows(batch, rows):
+        return _run_rows(batch, rows, acknowledged_by=None)
 
-    return result
+    return _preview_batch(batch, rows, run_rows)
 
 
 def apply_batch(
     batch: EmployeeImportBatch, rows: list[ParsedRow], *, acknowledged_by=None
-) -> BatchResult:
+) -> EmployeeBatchResult:
     """Run every row for real. Refuses — and writes nothing — if any row carries
     a blocking error, or if any row is below the minimum wage and nobody has
     acknowledged that.
     """
-    with transaction.atomic(), tenant_context_of(batch):
-        savepoint = transaction.savepoint()
-        result = _run_rows(batch, rows, acknowledged_by=acknowledged_by)
 
-        if result.blocking_count:
-            transaction.savepoint_rollback(savepoint)
-            transition(batch, Status.PREVIEW)
-            _save_report(batch, result)
-            raise ImportRefusedError(
-                f"{result.blocking_count} row(s) carry a blocking error and must be "
-                f"fixed before this batch can be applied. Nothing was written."
-            )
+    def run_rows(batch, rows):
+        return _run_rows(batch, rows, acknowledged_by=acknowledged_by)
+
+    def extra_refusal(result: EmployeeBatchResult):
         if result.below_minimum_count and acknowledged_by is None:
-            transaction.savepoint_rollback(savepoint)
-            transition(batch, Status.PREVIEW)
-            _save_report(batch, result)
-            raise ImportRefusedError(
+            return (
                 f"{result.below_minimum_count} row(s) are below the applicable minimum "
                 f"wage. Apply again with acknowledged_by naming who accepts that — "
                 f"there is no default and no batch-level bypass."
             )
+        return None
 
-        transaction.savepoint_commit(savepoint)
-        transition(batch, Status.APPLIED)
-        batch.applied_at = timezone.now()
-        batch.row_count = result.row_count
-        batch.accepted_count = result.accepted_count
-        batch.rejected_count = result.rejected_count
-        batch.validation_report = result.report
-        batch.save(
-            update_fields=[
-                "status",
-                "applied_at",
-                "row_count",
-                "accepted_count",
-                "rejected_count",
-                "validation_report",
-                "updated_at",
-            ]
-        )
-
-    _purge_source_file(batch)
-    return result
+    return _apply_batch(batch, rows, run_rows, extra_refusal=extra_refusal)
 
 
 def reverse_batch(batch: EmployeeImportBatch) -> None:
@@ -611,9 +390,8 @@ def reverse_batch(batch: EmployeeImportBatch) -> None:
     nothing. Refuses, naming the employee, if anything downstream still
     references one of them.
     """
-    with transaction.atomic(), tenant_context_of(batch):
-        transition(batch, Status.REVERSED)
 
+    def mutate(batch):
         for employee in Employee.objects.filter(created_by_import_batch=batch):
             try:
                 employee.delete()
@@ -623,94 +401,14 @@ def reverse_batch(batch: EmployeeImportBatch) -> None:
                     f"elsewhere and cannot be removed. Nothing was removed. ({error})"
                 ) from error
 
-        batch.reversed_at = timezone.now()
-        batch.save(update_fields=["status", "reversed_at", "updated_at"])
-
-    _purge_source_file(batch)
-
-
-DATA_SHEET_NAME = "Employees"
-INSTRUCTIONS_SHEET_NAME = "Instructions"
-#: How many data rows carry the dropdown validation. Generous rather than exact
-#: — a cleaning company onboarding forty staff should never hit the edge of it.
-TEMPLATE_VALIDATION_ROWS = 500
-
-
-def _example_cell_value(column: ImportColumn):
-    if column.kind == "choice" and column.example != "":
-        # TextChoices values compare equal to their plain string, but openpyxl
-        # writes an actual str rather than a Choices member either way.
-        return str(column.example)
-    if column.kind == "decimal" and isinstance(column.example, Decimal):
-        return float(column.example)
-    return column.example
+    _reverse_batch(batch, mutate)
 
 
 def build_template_workbook():
     """The .xlsx an employer fills in, generated from ``EXPECTED_COLUMNS`` alone.
 
-    D-122's reason restated for this table: a hand-maintained template drifts
-    from the columns the importer expects, and that drift produces failures the
-    employer cannot diagnose. There is exactly one column spec, and both the
-    template and ``parse_workbook`` read it.
-
     No rate, threshold or statutory figure is embedded anywhere in this
     function — ``test_no_hardcoded_rates`` governs this file too, and the one
     number here (the example rate) is a plausible salary, not a gazetted one.
     """
-    import openpyxl
-    from openpyxl.styles import Font
-    from openpyxl.utils import get_column_letter
-    from openpyxl.worksheet.datavalidation import DataValidation
-
-    workbook = openpyxl.Workbook()
-    data_sheet = workbook.active
-    data_sheet.title = DATA_SHEET_NAME
-
-    for col_index, column in enumerate(EXPECTED_COLUMNS, start=1):
-        header_cell = data_sheet.cell(row=1, column=col_index, value=column.header)
-        header_cell.font = Font(bold=True)
-        example_cell = data_sheet.cell(row=2, column=col_index, value=_example_cell_value(column))
-        if column.kind == "date":
-            example_cell.number_format = "YYYY-MM-DD"
-
-    for col_index, column in enumerate(EXPECTED_COLUMNS, start=1):
-        if not column.choices:
-            continue
-        letter = get_column_letter(col_index)
-        allowed = ",".join(value for value, _label in column.choices)
-        validation = DataValidation(
-            type="list",
-            formula1=f'"{allowed}"',
-            allow_blank=not column.required,
-            showErrorMessage=True,
-        )
-        validation.error = f"Choose one of: {allowed}"
-        validation.errorTitle = "Invalid value"
-        data_sheet.add_data_validation(validation)
-        validation.add(f"{letter}2:{letter}{TEMPLATE_VALIDATION_ROWS + 1}")
-
-    instructions_sheet = workbook.create_sheet(INSTRUCTIONS_SHEET_NAME)
-    instructions_sheet.append(["Column", "Mandatory", "Accepts"])
-    for column in EXPECTED_COLUMNS:
-        if column.choices:
-            accepts = ", ".join(value for value, _label in column.choices)
-        else:
-            accepts = column.help_text or column.kind
-        instructions_sheet.append([column.header, "Yes" if column.required else "No", accepts])
-    instructions_sheet.protection.sheet = True
-
-    return workbook
-
-
-def _purge_source_file(batch: EmployeeImportBatch) -> None:
-    """D-141: once applied or reversed, the source spreadsheet's content is gone.
-
-    It held ID numbers in the clear — the whole reason ``employee.id_number`` is
-    encrypted at rest (D-77). Leaving the upload sitting in storage puts that
-    protection right back where it started.
-    """
-    if batch.source_file_id is None:
-        return
-    with tenant_context_of(batch):
-        purge_content(batch.source_file)
+    return _build_template_workbook(EXPECTED_COLUMNS, data_sheet_name=DATA_SHEET_NAME)
