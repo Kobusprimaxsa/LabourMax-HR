@@ -685,6 +685,72 @@ a plain `int`, not a `Decimal` literal: it is a plausible salary for a demo cell
 statutory figure, and `test_no_hardcoded_rates` scans this file exactly like every
 other module in `employees/`.
 
+**P5 — Attendance & Time: chunk 1 of three** (14 September 2026). 882 tests green.
+`attendance_day` exists, tenant-scoped, and `calculators/attendance.py` is **the first
+real calculator** — the calculators rule stops being aspirational from here. Pure
+functions only: no ORM import, no database access, no file I/O, no `datetime.now()`.
+Every multiplier, cap, window and minimum it uses is a field the caller reads from
+`working_time_rule_set` through `statutory.resolve`; none turned out to be missing.
+
+**Two forward references, both following `core.TenantMembership`'s own house pattern**
+ahead of P4: `leave_application_id_ref` and `locked_by_payroll_run_id_ref` are nullable
+`BigIntegerField`s, named for what they become in P6 and P7. Sheet 03's CHECK —
+`(day_type='leave') = (leave_application_id IS NOT NULL)` — is kept against the
+placeholder exactly, which makes a leave day impossible to create until P6 exists. That
+is honest rather than an oversight: this system cannot yet say what leave was taken.
+`import_batch_id` is left out entirely rather than shipped as a third placeholder —
+chunk 3 is a week away, and a column nothing populates is not a forward reference.
+
+**Locking is a trigger, not an application check** (invariant 4), and it is a THIRD
+shape of frozen row after `append_only()` and `lock_system_rows()` — see
+`core/db/rls.py`'s `no_update_when_locked()` (D-151). Unlike a ledger, DELETE stays
+legal: reversing a whole finalised payroll run removes the lock along with everything
+else. `attendance/capture.py` checks first and names the payroll run; the trigger is
+the backstop for every path that does not come through it.
+
+**Three hour-bucketing shapes are modelling choices, not derivations, and neither is
+settled by a published worked example** (D-148): a Sunday splits into ordinary-Sunday-
+plus-overtime only when Sunday is an ordinary working day for that employee, and
+otherwise every hour is Sunday hours with no overtime split at all; a public holiday
+worked never splits into overtime, unlike an ordinary day; and a standby day is its own
+path that replaces rather than adds to the day's ordinary/Sunday/public-holiday
+bucketing. All three are flagged for the labour law review (O-06). One consequence is
+flagged separately (O-19): an employee who works an ordinary shift and then goes onto
+standby the same calendar day has no `attendance_day` row that can represent both, and
+nothing in this chunk builds around that pattern.
+
+**`days_worked_equivalent` is D-149, and it is a choice too.** 1.000 for
+`leave`/`absent_paid`, 0.000 for `absent_unpaid`, and for every day with hours in it the
+ratio of hours actually paid — worked hours plus the SD1 guarantee — to the employee's
+own scheduled hours for that day, capped at 1.000. An equally defensible rule would use
+the rule set's statutory per-day cap as the denominator instead, or count only
+`ordinary_hours`; either would move the number on a short or non-standard day. Flagged
+for O-06 rather than left implicit in the code.
+
+**There is no golden-file test for hour bucketing, and that is permanent, not
+pending** (D-150). Unlike PAYE or the minimum wage, no regulator publishes a worked
+hour-bucketing example to reproduce. Fabricating one from this codebase's own
+arithmetic and calling it golden would prove nothing — it could only ever agree with
+itself. Covered instead by table-driven tests for every boundary the task named
+explicitly, and Hypothesis property tests for the invariants: no bucket negative, the
+worked total never exceeds 24 hours, ordinary never exceeds the schedule, overtime is
+exactly the excess, a day with no work produces no paid hours but the guarantee. 100%
+branch coverage — `[tool.coverage.run] branch = true` in `pyproject.toml`, added this
+chunk: without it `--cov-fail-under=100` was only ever measuring line coverage, which
+an if/elif chain can satisfy while still skipping one of its branches entirely. CI's
+calculator coverage step is a self-removing guard keyed on a real `.py` file existing
+under `calculators/` — it now runs for real, with no change to the workflow file
+needed.
+
+**Buckets are computed at capture and stored, never recomputed on read** (invariant 2)
+— `attendance/capture.py` reads the rule set in force **on the work date**, not today's.
+A March day re-read in 2029 must show what March produced.
+
+**Still open in P5:** the capture screen itself (a monthly grid), pre-fill from
+schedule, bulk actions, the live exception panel's UI (the pure calculation behind it,
+`evaluate_exceptions`, exists), `timesheet_summary`, and `attendance_import_batch`
+(chunk 3). Consecutive sick days needing a leave application are P6 and are not stubbed.
+
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting
 verification** (13 September 2026). 351 tests green. All twenty tables exist with their
 constraints; `statutory/resolve.py` is the only place that answers "what applied on this date";

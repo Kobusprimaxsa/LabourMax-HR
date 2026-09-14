@@ -198,13 +198,23 @@ as a unit. **All three passed on 14 September 2026 — P4 COMPLETE**, 824 tests 
 
 ## P5 — Attendance & Time · 4 weeks · 3 tables
 
-- [ ] `attendance_day` with hour bucketing: ordinary, overtime, Sunday, public holiday, night
+- [x] `attendance_day` with hour bucketing: ordinary, overtime, Sunday, public holiday, night
+      (chunk 1). `calculators/attendance.py` is the first real calculator — every figure
+      read from `working_time_rule_set`, none hard-coded. `attendance/capture.py` computes
+      and stores the buckets from the rule set in force on the work date. Three
+      hour-bucketing shapes (D-148) and `days_worked_equivalent` (D-149) are modelling
+      choices flagged for the labour law review (O-06); there is deliberately no
+      golden-file test (D-150). Locking is a trigger (D-151), not an application check
 - [ ] Monthly capture grid — sticky headers, keyboard navigation, colour-coded day types
 - [ ] Pre-fill from schedule for salaried bases **only**; hourly and daily open blank
 - [ ] Bulk actions filling empty cells only
-- [ ] `attendance_import_batch` — preview, validate, apply, reverse
+- [ ] `attendance_import_batch` — preview, validate, apply, reverse (chunk 3)
 - [ ] `timesheet_summary` aggregation with staleness flag
-- [ ] Live exception panel: daily and weekly overtime caps, consecutive sick days, weekly rest
+- [ ] Live exception panel: daily and weekly overtime caps, consecutive sick days, weekly rest.
+      The pure calculation (`calculators.attendance.evaluate_exceptions`) exists for the
+      first two and for the meal-interval and rest checks sheet 03 also asks for;
+      consecutive sick days are P6 (a leave application to check against) and are not
+      stubbed. The screen itself does not exist yet
 
 **Done when:** a month for twenty employees is captured in under ten minutes, and an
 uncaptured attendance-driven day blocks the payroll run.

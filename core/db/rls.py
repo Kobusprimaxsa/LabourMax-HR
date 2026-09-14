@@ -327,3 +327,58 @@ CREATE TRIGGER {table}_system_row_lock
 
 def drop_lock_system_rows(table: str) -> str:
     return f"DROP TRIGGER IF EXISTS {table}_system_row_lock ON {table};"
+
+
+# ------------------------------------------------------- locked-status freeze
+
+LOCKED_ROW_FUNCTION = f"""
+CREATE OR REPLACE FUNCTION labourmax_locked_row() RETURNS trigger AS $$
+BEGIN
+    IF OLD.status IS DISTINCT FROM 'locked' THEN
+        RETURN NEW;
+    END IF;
+    IF coalesce(current_setting('{MAINTENANCE_VAR}', true), 'off') = 'on' THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'This row is locked by a finalised payroll run and cannot be '
+        'updated. A correction reverses and replaces the run instead (CLAUDE.md '
+        'invariant 4). Deliberate maintenance sets {MAINTENANCE_VAR}.';
+END;
+$$ LANGUAGE plpgsql;
+"""  # noqa: S608
+
+DROP_LOCKED_ROW_FUNCTION = "DROP FUNCTION IF EXISTS labourmax_locked_row();"
+
+
+def no_update_when_locked(table: str) -> str:
+    """Refuse UPDATE on a row whose own ``status`` column reads ``'locked'``.
+
+    Sheet 03's rule for ``attendance_day`` verbatim: "No UPDATE where
+    status='locked'". A REVOKE does not bind the table owner, which is what the
+    application connects as — the same lesson ``append_only()`` and
+    ``lock_system_rows()`` above already write up, for a third shape of frozen
+    row. This one differs from both: it is neither a ledger (DELETE stays
+    allowed — a locked day is not append-only, a whole finalised run can still
+    be reversed as a unit) nor a shared catalogue (the row is the tenant's own;
+    what freezes it is a fact about itself, not about who owns it). Reuses
+    ``MAINTENANCE_VAR`` rather than a fourth escape-hatch variable, because the
+    shape of the exception is identical: deliberate correction machinery
+    overriding a row invariant 4 would otherwise make untouchable forever.
+
+    ``attendance/capture.py`` checks this before writing and names the payroll
+    run in its own message; this trigger is the backstop for every path that
+    does not go through it — direct SQL, a shell, a future bulk-update.
+
+    Requires the table to carry a ``status`` column, and ``LOCKED_ROW_FUNCTION``
+    to have been run once in an earlier operation of the same migration.
+    """
+    return f"""
+DROP TRIGGER IF EXISTS {table}_no_update_when_locked ON {table};
+CREATE TRIGGER {table}_no_update_when_locked
+    BEFORE UPDATE ON {table}
+    FOR EACH ROW EXECUTE FUNCTION labourmax_locked_row();
+"""
+
+
+def drop_no_update_when_locked(table: str) -> str:
+    return f"DROP TRIGGER IF EXISTS {table}_no_update_when_locked ON {table};"

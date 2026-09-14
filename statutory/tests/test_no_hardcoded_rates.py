@@ -67,7 +67,8 @@ DJANGO_SCAFFOLDING = {"apps.py", "admin.py", "models.py", "__init__.py"}
 # pay_period.working_days_in_period, and "0.000001" one further still, for the
 # six-decimal derived rate columns on employee_remuneration. The rest are identity and
 # zero values, and "100" converts a percentage to a fraction, which is arithmetic
-# rather than a rate.
+# rather than a rate. "60" converts minutes to hours — a universal fact about the
+# clock, the same for every sector and every gazette, never a figure a rule set holds.
 #
 # Nothing whose VALUE could be a statutory figure belongs here. A quantum is a unit of
 # rounding; a rate is a number somebody gazetted.
@@ -80,6 +81,7 @@ PERMITTED_DECIMAL_CONSTANTS = {
     "0.01",
     "1",
     "1.00",
+    "60",
     "100",
     "100.00",
     "-1",

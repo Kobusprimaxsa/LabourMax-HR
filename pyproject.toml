@@ -17,3 +17,10 @@ known-first-party = [
     "leave", "payroll", "calculators", "statutory_out", "discipline",
     "documents", "selfservice", "console", "reporting",
 ]
+
+# CLAUDE.md and calculators/README.md both say "100% BRANCH coverage" on
+# calculators/ — without this, --cov-fail-under=100 only ever measured LINE
+# coverage, which an if/elif chain can satisfy while still never taking one
+# of its branches. branch = true is what makes the number mean what it says.
+[tool.coverage.run]
+branch = true
