@@ -26,6 +26,14 @@ never earned, and every downstream figure would look entirely plausible.
 constraint, so the old engagement has to stop being current in the same transaction
 that the new one starts — otherwise the insert fails on the constraint, which is the
 right outcome but a confusing message.
+
+**A termination captured in advance changes nothing until its date** (D-132).
+``terminate()`` records the facts — the date, the reason, whether notice is worked —
+and then asks ``employees/currentstate.py`` what is true *today*. An employee serving
+a month's notice stays current, active and billable, because they are: the payroll
+run that owes them a final salary must still find them, and the subscription is still
+being used. What is open is therefore ``termination_date IS NULL``, not
+``is_current`` — the two stopped meaning the same thing the day this changed.
 """
 
 from __future__ import annotations
@@ -34,8 +42,10 @@ import datetime
 from dataclasses import dataclass
 
 from django.db import transaction
+from django.utils import timezone
 
 from core.managers import tenant_context_of
+from employees.currentstate import refresh_current_state
 from employees.identity import age_on
 from employees.models import Employee, EmployeeEngagement, EmployeePosition
 from statutory import resolve
@@ -122,7 +132,10 @@ def engage(
     with transaction.atomic(), tenant_context_of(employee):
         existing = list(EmployeeEngagement.objects.filter(employee=employee))
 
-        open_engagement = next((e for e in existing if e.is_current), None)
+        # Open means "no termination date", not "is_current" (D-132). An engagement
+        # terminated with effect from next month is still current today and must not
+        # read as open, or a re-hire captured in advance would be refused.
+        open_engagement = next((e for e in existing if e.termination_date is None), None)
         if open_engagement is not None:
             raise EngagementRefusedError(
                 f"{employee} is already engaged from "
@@ -144,6 +157,10 @@ def engage(
                 f"continuous service."
             )
 
+        # An engagement that starts next month is not current today, and the partial
+        # unique would refuse it anyway while the outgoing one still is (D-132).
+        starts_today_or_earlier = start_date <= timezone.localdate()
+
         engagement = EmployeeEngagement.objects.create(
             tenant=employee.tenant,
             employee=employee,
@@ -151,7 +168,7 @@ def engage(
             start_date=start_date,
             contract_type=contract_type,
             fixed_term_end_date=fixed_term_end_date,
-            is_current=True,
+            is_current=starts_today_or_earlier,
             **engagement_fields,
         )
 
@@ -167,11 +184,9 @@ def engage(
             change_reason=EmployeePosition.ChangeReason.NEW_ENGAGEMENT,
         )
 
-        if employee.first_engagement_date is None or start_date < employee.first_engagement_date:
-            employee.first_engagement_date = start_date
-        if employee.status == Employee.Status.DRAFT:
-            employee.status = Employee.Status.ACTIVE
-        employee.save(update_fields=["first_engagement_date", "status", "updated_at"])
+        # One place decides what is true today, and this is not it (D-132). An
+        # engagement starting next month leaves the employee in draft until it does.
+        refresh_current_state(employee, on_date=timezone.localdate())
 
     return engagement
 
@@ -184,12 +199,18 @@ def terminate(
     notice_worked: bool | None = None,
     notes: str = "",
 ) -> EmployeeEngagement:
-    """Close an engagement. The employee stays; the period of service ends.
+    """Record the end of an engagement. The employee stays; the service ends.
 
-    ``is_current`` goes false here rather than being derived from
-    ``termination_date``, because a termination is captured in advance: an employee
-    serving a month's notice is still currently employed, and the flag has to be able
-    to say so.
+    The facts are written here — date, reason, whether notice is worked. What is
+    *true today* is then recomputed by ``employees/currentstate.py``, which is the
+    only place that decides it (D-132).
+
+    So a termination dated today closes the engagement immediately, and one dated
+    next month changes nothing today: the employee stays current, active and
+    billable until the date arrives, and the nightly job moves them. That is what
+    the flag was always documented to mean, and setting it false here was the bug —
+    an employee serving notice would vanish from the payroll run that still owes
+    them a final salary.
     """
     if termination_date < engagement.start_date:
         raise EngagementRefusedError(
@@ -207,29 +228,25 @@ def terminate(
         engagement.termination_reason_code = reason_code
         engagement.notice_worked = notice_worked
         engagement.termination_notes = notes
-        engagement.is_current = False
         engagement.save(
             update_fields=[
                 "termination_date",
                 "termination_reason_code",
                 "notice_worked",
                 "termination_notes",
-                "is_current",
                 "updated_at",
             ]
         )
 
-        employee = engagement.employee
-        employee.status = Employee.Status.TERMINATED
-        employee.latest_termination_date = termination_date
-        employee.is_billable = False
-        employee.save(
-            update_fields=["status", "latest_termination_date", "is_billable", "updated_at"]
-        )
-
+        # The position closes on the facts, not on today: effective_to is EXCLUSIVE,
+        # so it ends the day AFTER the last day of service, or that final day has no
+        # position and therefore no job grade to be paid against.
         EmployeePosition.objects.filter(engagement=engagement, effective_to__isnull=True).update(
             effective_to=termination_date + datetime.timedelta(days=1)
         )
+
+        refresh_current_state(engagement.employee, on_date=timezone.localdate())
+        engagement.refresh_from_db(fields=["is_current"])
 
     return engagement
 

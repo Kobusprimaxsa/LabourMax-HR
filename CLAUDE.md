@@ -102,6 +102,13 @@ zero, or a save appears to do nothing, check the context before you check the da
 A scanner callback, a Celery task and a retention job all arrive with no request and
 therefore no tenant context, so this is the ordinary path, not an edge case.
 
+**A service function that reads a setting is one of them.** `default_sort()` looked
+up `employer_setting` with nothing pinned, got no row, and fell back to the registry
+default — which IS the domestic default, so it was right for most employers and
+silently wrong for exactly the one who had changed their order. Its first test
+passed. When a fallback and the truth agree by coincidence, a missing tenant context
+does not announce itself at all.
+
 **And a context block that WRITES outside a request must open a transaction first**
 (D-92). `set_config(..., true)` is transaction-local, deliberately — a pooled connection
 must not carry one request's tenant into the next. Under autocommit, which is where every
@@ -431,7 +438,7 @@ python manage.py seedcomponents --list   # the catalogue, without touching the d
 
 Still open in P3: the municipality-to-area data.
 
-**P4 — Employee Master File: started** (13 September 2026). 726 tests green. `employee`,
+**P4 — Employee Master File: started** (14 September 2026). 770 tests green. `employee`,
 `employee_address`, `employee_contact`, `employee_engagement`, `employee_position` and
 `employee_remuneration`, `work_schedule`, `work_schedule_day`, `employee_tax_profile`,
 `employee_bank_account`, `employee_leave_entitlement`, `employee_recurring_component` and
@@ -523,6 +530,42 @@ back-dated into an open period — the D-103 trap again. The recurring component
 opposite case: two advances running at once is ordinary, and forbidding it would be worked
 around by inventing a second component, at which point the deduction stops being
 recognisable as an advance in the s34 total.
+
+**The as-at columns move on a date, not on capture** (D-132). `is_current`,
+`status`, `is_billable` and the two pay-cache columns are all recomputed by
+`employees/currentstate.py` — on write, and by `manage.py refreshemployeecache`
+nightly. `terminate()` used to close the engagement, mark the employee terminated
+and stop the billing at the moment of capture, so an employee serving a month's
+notice read as having left six weeks early: every current-employee query would skip
+the person the next payroll still owes a final salary, a leave payout and an IRP5.
+D-107 was this bug pointing the other way. Two guards moved with it — "already
+engaged" in `engage()` and "no open engagement" in `capture()` now read
+`termination_date IS NULL`, because `is_current` stopped meaning "not terminated"
+the day this changed.
+
+```powershell
+python manage.py refreshemployeecache                  # today, every tenant
+python manage.py refreshemployeecache --as-at 2026-07-01
+python manage.py refreshemployeecache --tenant 12 --dry-run
+```
+
+**The employee list is `employees/listing.py`** — grouped by pay group, ordered by
+the employer's `EMPLOYEE_LIST_SORT` (D-16), headings suppressed under
+`GROUP_HEADER_MINIMUM` (D-19), and a user's own re-sort remembered in
+`tenant_membership.ui_preferences` (D-133), a JSONB bag whose keys and values are
+checked against a registry. The employer's setting still governs the attendance grid
+and the payroll run; one person's view choice is one person's. Ordering is the
+ICU-collated generated columns and nothing else: *Böhmer* files between
+*Bezuidenhout* and *Botha* under `en-ZA-x-icu` and after both under a byte
+comparison, which is a customer saying the list looks random.
+
+**`leave_type` had the system-row lock and not the column it keys on** (D-134). The
+trigger's first statement is `IF NOT OLD.is_system`, the column was never added, and
+every UPDATE and DELETE on every row of the table failed inside it — an employer
+could add a leave type and then never rename it. A green suite hid it because the
+one test covering the area asserted `DatabaseError`, and `record "old" has no field
+"is_system"` is one. **Assert on the message, not only the exception class**, and
+the same goes for every `IntegrityError` test in this codebase.
 
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting
 verification** (13 September 2026). 351 tests green. All twenty tables exist with their

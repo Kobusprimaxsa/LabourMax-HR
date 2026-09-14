@@ -387,6 +387,25 @@ class TenantMembership(AuditedModel, TenantScopedModel):
         db_index=True,
         help_text="Termination date + 2 months for an employee self-service login (D-08).",
     )
+    # D-133, an addition to sheet 02. A person's own view choices belong to the
+    # person *in this tenant* — which is exactly what a membership is — and the
+    # row is already tenant-scoped and policy-covered, so nothing new has to be
+    # protected. Deliberately a small bag rather than a table: these are view
+    # preferences, they will grow one key at a time, and a table per preference
+    # is a migration for every UI decision.
+    #
+    # **Nothing that decides a figure may live here.** A key that changed a rate,
+    # a rounding, or who may see what would be a per-user copy of a compliance
+    # decision (D-89) with no citation and no audit trail. Writers go through the
+    # registry in ``employees/listing.py``, which refuses an unknown key.
+    ui_preferences = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "This person's view choices in this tenant. Never anything that "
+            "decides a figure (D-133)."
+        ),
+    )
 
     class Meta:
         db_table = "tenant_membership"

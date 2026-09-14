@@ -98,12 +98,17 @@ def employee(db, tenant, employer, parameters):
 
 @pytest.fixture
 def annual(db):
-    """A shared leave type, as the platform stocks it."""
+    """A shared leave type, as the platform stocks it.
+
+    ``is_system`` because a shared row IS a system row — the CHECK pair added with
+    the column says so, for the same reason payroll_component's does (D-93).
+    """
     with platform_context():
         return LeaveType.objects.create(
             code=LeaveType.Code.ANNUAL,
             name="Annual leave",
             payable_on_termination=True,
+            is_system=True,
         )
 
 
@@ -150,6 +155,7 @@ def test_a_sub_type_draws_on_its_parents_balance(annual):
             balance_source=LeaveType.BalanceSource.PARENT,
             accrues=False,
             is_paid=False,
+            is_system=True,
         )
 
     assert unauthorised.parent_leave_type_id == annual.pk
@@ -174,6 +180,7 @@ def test_sub_types_are_one_level_deep(annual):
             parent_leave_type=annual,
             balance_source=LeaveType.BalanceSource.PARENT,
             accrues=False,
+            is_system=True,
         )
         deeper = LeaveType(
             code="DEEPER",
@@ -341,7 +348,7 @@ def test_different_leave_types_may_overlap(employee, annual):
     """The exclusion is per type — extra annual and extra sick are not a conflict."""
     with platform_context():
         sick = LeaveType.objects.create(
-            code=LeaveType.Code.SICK, name="Sick leave", cycle_months=36
+            code=LeaveType.Code.SICK, name="Sick leave", cycle_months=36, is_system=True
         )
 
     make_entitlement(employee, annual, additional_days_per_cycle=Decimal("3.000"))

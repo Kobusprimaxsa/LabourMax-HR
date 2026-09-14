@@ -495,7 +495,9 @@ class EmployeeEngagement(AuditedModel, TenantScopedModel):
     ``is_current`` is a cached flag with a partial unique behind it: at most one
     current engagement per employee. It is not merely "termination_date is NULL",
     because a future-dated termination is captured in advance and the employee is
-    still currently employed until it arrives.
+    still currently employed until it arrives. It is maintained by
+    ``employees/currentstate.py`` — on write, and by the nightly job that moves it
+    when the date arrives (D-132). Never set it by hand.
 
     ``termination_reason_code`` decides more than reporting. Only ``retrenchment``
     triggers severance under BCEA s41, and the UI-19 declaration carries its own
@@ -594,10 +596,15 @@ class EmployeeEngagement(AuditedModel, TenantScopedModel):
                 | models.Q(fixed_term_end_date__isnull=False),
                 name="engagement_fixed_term_has_an_end_date",
             ),
-            models.CheckConstraint(
-                condition=models.Q(is_current=False) | models.Q(termination_date__isnull=True),
-                name="engagement_current_means_not_yet_terminated",
-            ),
+            # There was a CHECK here saying is_current implies no termination date.
+            # It was wrong, and migration 0006 drops it (D-132): a termination
+            # captured in advance is exactly the case where both are true, and an
+            # employee serving a month's notice is still the current engagement.
+            # The condition cannot be rewritten against the date either — a
+            # `termination_date >= CURRENT_DATE` CHECK gets STRICTER as time passes,
+            # so a row valid when written fails the next table rewrite or restore.
+            # What must hold is one current engagement per employee, and that is the
+            # partial unique above.
             models.CheckConstraint(
                 condition=models.Q(termination_date__isnull=True)
                 | ~models.Q(termination_reason_code=""),
@@ -657,12 +664,18 @@ class EmployeeEngagement(AuditedModel, TenantScopedModel):
                 }
             )
 
-        if self.is_current and self.termination_date:
+        from django.utils import timezone
+
+        ended = self.termination_date and self.termination_date < timezone.localdate()
+        if self.is_current and ended:
             raise ValidationError(
                 {
                     "is_current": (
-                        "An engagement with a termination date is not the current one. "
-                        "Capture the termination and let the engagement close."
+                        "This engagement ended on "
+                        f"{self.termination_date:%d %B %Y} and cannot still be the "
+                        "current one. A termination dated in the FUTURE may be — an "
+                        "employee serving notice is still employed (D-132) — but one "
+                        "already past means the nightly refresh has not run."
                     )
                 }
             )

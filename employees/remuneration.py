@@ -199,7 +199,15 @@ def capture(
     rather than reading the clock inside, so a test can state the day it means.
     """
     with transaction.atomic(), tenant_context_of(employee):
-        engagement = EmployeeEngagement.objects.filter(employee=employee, is_current=True).first()
+        # Open means no termination date, not ``is_current`` (D-132). An employee
+        # engaged from next Monday has no current engagement yet and their opening
+        # rate is captured today, in the same sitting; reading ``is_current`` here
+        # refused exactly that, which is most of what onboarding is.
+        engagement = (
+            EmployeeEngagement.objects.filter(employee=employee, termination_date__isnull=True)
+            .order_by("-engagement_number")
+            .first()
+        )
         if engagement is None:
             raise RemunerationRefusedError(
                 f"{employee} has no open engagement, so there is no period of "

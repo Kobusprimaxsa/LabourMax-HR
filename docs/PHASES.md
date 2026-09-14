@@ -162,14 +162,22 @@ constraint refuses a blank one on every cited table.
 - [x] `employee_leave_entitlement`, `employee_recurring_component`, `employee_note`
       (D-127 brings `leave_type` forward from P6; D-128 derives the BCEA s34 consent rule)
 - [ ] `document`, `document_category` — four-way attachment arc, visibility whitelist
-- [ ] Current-state cache columns, maintained on write **and** by a nightly job
-- [ ] Employee list: grouped by pay group, sector-derived default sort, remembered per user
+- [x] Current-state cache columns, maintained on write **and** by a nightly job —
+      `employees/currentstate.py` + `manage.py refreshemployeecache`. D-132 moved the
+      whole as-at set onto the date it belongs to: a termination captured in advance
+      no longer closes the engagement, terminates the employee or stops the billing
+      six weeks before they stop working
+- [x] Employee list: grouped by pay group, sector-derived default sort, remembered per
+      user — `employees/listing.py`. The per-user memory is D-133,
+      `tenant_membership.ui_preferences`, a registry-checked bag. Service layer and
+      tests; the screen itself belongs with the UI phase
 - [ ] `employee_import_batch` — bulk import from a generated .xlsx template, on the
       preview-validate-apply-reverse pattern, running every validation the single-capture
       path runs (D-122, closes O-11). ADDED to P4 scope, +1 week
 
 **Done when:** capturing an employee below the sectoral minimum raises a visible, logged
-exception, and a future-dated increase flips the cache on its own effective date. Forty employees
+exception, and a future-dated increase flips the cache on its own effective date. Both
+halves passed on 14 September 2026. Forty employees
 import from a spreadsheet with every one of those checks applied, and the batch reverses as a unit.
 
 ---

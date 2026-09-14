@@ -99,6 +99,16 @@ class LeaveType(AuditedModel, TenantSharedModel):
         default=True, help_text="Whether the period counts toward service length."
     )
 
+    # D-127 said this column exists and the migration installs the lock that keys
+    # on it; the column itself was never written, so every UPDATE and DELETE on
+    # ANY leave_type row — a tenant's own included — failed inside the trigger with
+    # `record "old" has no field "is_system"`. Migration 0002 adds it. The one test
+    # that covered the area asserted `DatabaseError` and passed on the wrong error,
+    # which is the argument for asserting on the message as well as the class.
+    is_system = models.BooleanField(
+        default=False, help_text="System types cannot be edited or deleted (D-93)."
+    )
+
     colour_hex = models.CharField(max_length=7, default="#4A7C9E")
     display_order = models.SmallIntegerField(default=0)
     is_active = models.BooleanField(default=True)
@@ -107,6 +117,20 @@ class LeaveType(AuditedModel, TenantSharedModel):
         db_table = "leave_type"
         ordering = ["display_order", "code"]
         constraints = [
+            # A shared row IS a system row, and a tenant's row is never one — the
+            # same pair payroll_component carries, and for the same reason. Without
+            # the first, a shared row with is_system false is readable by every
+            # tenant and deletable by any of them, because a DELETE is checked
+            # against the policy's USING clause only (D-93). Without the second, an
+            # employer could mint a row of its own that it can then never edit.
+            models.CheckConstraint(
+                condition=models.Q(tenant__isnull=False) | models.Q(is_system=True),
+                name="leave_type_shared_rows_are_system_rows",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(tenant__isnull=True) | models.Q(is_system=False),
+                name="leave_type_system_rows_are_shared_rows",
+            ),
             # Coalesce, because NULL = NULL is unknown in PostgreSQL and the shared
             # rows are exactly the ones with a NULL tenant — so a plain unique would
             # permit the platform to stock ANNUAL twice.
@@ -122,6 +146,14 @@ class LeaveType(AuditedModel, TenantSharedModel):
             models.CheckConstraint(
                 condition=models.Q(cycle_months__gt=0),
                 name="leave_type_cycle_is_positive",
+            ),
+            # The colour lands in a leave calendar, a payslip legend and a PDF. A
+            # value that is not a hex triplet renders as whatever the browser
+            # guesses in one place and as black in the PDF, which reads as a bug in
+            # the document rather than as a bad setting.
+            models.CheckConstraint(
+                condition=models.Q(colour_hex__regex=r"^#[0-9A-Fa-f]{6}$"),
+                name="leave_type_colour_is_a_hex_triplet",
             ),
             # A type that draws on a parent must have one, and a type with no parent
             # cannot draw on one. Either half alone leaves a balance nobody can find.
@@ -152,6 +184,21 @@ class LeaveType(AuditedModel, TenantSharedModel):
                             f"{parent.code} already draws on another type. Sub-types are "
                             "one level deep, so point this at the type that owns the "
                             "balance."
+                        )
+                    }
+                )
+
+        # A shared type pointing at a tenant's row would put one employer's private
+        # leave type in the catalogue every other employer reads — through the FK,
+        # where no policy is looking. PROTECT then stops that tenant deleting their
+        # own row, and the reason would be invisible to them.
+        if self.tenant_id is None and self.parent_leave_type_id is not None:
+            if self.parent_leave_type.tenant_id is not None:
+                raise ValidationError(
+                    {
+                        "parent_leave_type": (
+                            "A shared leave type cannot draw on one employer's own "
+                            "type. Stock the parent in the catalogue first."
                         )
                     }
                 )
