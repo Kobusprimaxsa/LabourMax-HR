@@ -1,0 +1,100 @@
+{
+  "version_label": "REF-2026.03.01-NOTICE-BANDS",
+  "applies_from": "2026-03-01",
+  "description": "termination_notice_band (D-68): the BCEA default and the domestic sector's SD7 override, carried over unchanged from termination_rule_set's retired notice_weeks_* columns; and SD1's own two-band notice regime, clause 23(1), read for the first time here. NOT verified.",
+  "tables": {
+    "termination_notice_band": [
+      {
+        "sector": null,
+        "effective_from": "2026-03-01",
+        "sequence": 1,
+        "source_reference": "Basic Conditions of Employment Act 75 of 1997, ss 37 and 41",
+        "notes": "Carried over from termination_rule_set.notice_weeks_* (D-68) — the same figure, the same citation, now with its own unit instead of an implied week. service_from/service_to touch the adjacent band exactly, in the same unit both sides, by construction — the reconciliation check in statutory/checks.py relies on that rather than converting between units.",
+        "service_from_value": "0",
+        "service_from_unit": "months",
+        "service_to_value": "6",
+        "service_to_unit": "months",
+        "notice_value": "1",
+        "notice_unit": "weeks"
+      },
+      {
+        "sector": null,
+        "effective_from": "2026-03-01",
+        "sequence": 2,
+        "source_reference": "Basic Conditions of Employment Act 75 of 1997, ss 37 and 41",
+        "notes": "Carried over from termination_rule_set.notice_weeks_* (D-68) — the same figure, the same citation, now with its own unit instead of an implied week.",
+        "service_from_value": "6",
+        "service_from_unit": "months",
+        "service_to_value": "1",
+        "service_to_unit": "years",
+        "notice_value": "2",
+        "notice_unit": "weeks"
+      },
+      {
+        "sector": null,
+        "effective_from": "2026-03-01",
+        "sequence": 3,
+        "source_reference": "Basic Conditions of Employment Act 75 of 1997, ss 37 and 41",
+        "notes": "Carried over from termination_rule_set.notice_weeks_* (D-68) — the same figure, the same citation, now with its own unit instead of an implied week.",
+        "service_from_value": "1",
+        "service_from_unit": "years",
+        "service_to_value": null,
+        "service_to_unit": "",
+        "notice_value": "4",
+        "notice_unit": "weeks"
+      },
+      {
+        "sector": "DOMESTIC",
+        "effective_from": "2026-03-01",
+        "sequence": 1,
+        "source_reference": "Sectoral Determination 7: Domestic Worker Sector, published in Regulation Gazette No. 7434 (consolidated text), read with Basic Conditions of Employment Act 75 of 1997 s37(1)(c)",
+        "notes": "Carried over from termination_rule_set.notice_weeks_* (D-68) — the same figure, the same citation, now with its own unit instead of an implied week. service_from/service_to touch the adjacent band exactly, in the same unit both sides, by construction — the reconciliation check in statutory/checks.py relies on that rather than converting between units.",
+        "service_from_value": "0",
+        "service_from_unit": "months",
+        "service_to_value": "6",
+        "service_to_unit": "months",
+        "notice_value": "1",
+        "notice_unit": "weeks"
+      },
+      {
+        "sector": "DOMESTIC",
+        "effective_from": "2026-03-01",
+        "sequence": 2,
+        "source_reference": "Sectoral Determination 7: Domestic Worker Sector, published in Regulation Gazette No. 7434 (consolidated text), read with Basic Conditions of Employment Act 75 of 1997 s37(1)(c)",
+        "notes": "Carried over from termination_rule_set.notice_weeks_* (D-68) — the same figure, the same citation, now with its own unit instead of an implied week. SD7's 6-months-and-over and over-1-year columns held the same figure (4 weeks), so this is one open-ended band rather than a redundant third one with no real boundary.",
+        "service_from_value": "6",
+        "service_from_unit": "months",
+        "service_to_value": null,
+        "service_to_unit": "",
+        "notice_value": "4",
+        "notice_unit": "weeks"
+      },
+      {
+        "sector": "CONTRACT_CLEANING",
+        "effective_from": "2026-03-01",
+        "sequence": 1,
+        "source_reference": "Sectoral Determination 1: Contract Cleaning Sector, current consolidated text (clauses 3, 8-24), clause 23(1)(a)",
+        "notes": "'during the first four weeks of employment, not less than one working day's [notice]'. A DAY, not a fraction of a week — see the model docstring. service_from/service_to touch the adjacent band exactly, in the same unit both sides, by construction — the reconciliation check in statutory/checks.py relies on that rather than converting between units.",
+        "service_from_value": "0",
+        "service_from_unit": "weeks",
+        "service_to_value": "4",
+        "service_to_unit": "weeks",
+        "notice_value": "1",
+        "notice_unit": "days"
+      },
+      {
+        "sector": "CONTRACT_CLEANING",
+        "effective_from": "2026-03-01",
+        "sequence": 2,
+        "source_reference": "Sectoral Determination 1: Contract Cleaning Sector, current consolidated text (clauses 3, 8-24), clause 23(1)(b)",
+        "notes": "'four weeks, if the employee has been employed for more than four weeks'. D-158: exactly four weeks resolves HERE, not to band 1 — see the module docstring for why that is not the most literal reading of clause (b) alone.",
+        "service_from_value": "4",
+        "service_from_unit": "weeks",
+        "service_to_value": null,
+        "service_to_unit": "",
+        "notice_value": "4",
+        "notice_unit": "weeks"
+      }
+    ]
+  }
+}

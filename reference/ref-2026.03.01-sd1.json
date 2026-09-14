@@ -67,11 +67,8 @@
     "termination_rule_set": [
       {
         "effective_from": "2026-03-01",
-        "source_reference": "Sectoral Determination 1: Contract Cleaning Sector, current consolidated text (clauses 3, 8-24), clauses 3(3), 23 and 24",
-        "notes": "effective_from is the start of this reference data, not the provision's commencement. The rule itself is older. SD1 clause 3(3): 4,333 weeks of the weekly wage, paid in December or on termination. Under twelve months' service it is pro-rated as full calendar months divided by twelve, times 4,333, times the weekly wage - so a single full month earns a share, which is why the minimum service is zero. MODEL GAP, and it over-pays rather than under-pays. SD1 clause 23 splits notice at FOUR WEEKS of service, not at six months: one working day in the first four weeks, four weeks after that. This table's buckets are under-6-months, 6-months-and-over and over-1-year, which cannot express a boundary at four weeks. All three are therefore loaded at four weeks, so an employee in their first four weeks is given more notice than SD1 requires. The alternative - loading one working day in the under-6-months bucket - would under-pay every employee between one month and six months, which is a compliance breach rather than a cost. Needs a notice band table or a fourth column before P6.",
-        "notice_weeks_under_6_months": "4.00",
-        "notice_weeks_6_months_and_over": "4.00",
-        "notice_weeks_over_1_year": "4.00",
+        "source_reference": "Sectoral Determination 1: Contract Cleaning Sector, current consolidated text (clauses 3, 8-24), clauses 3(3) and 24",
+        "notes": "effective_from is the start of this reference data, not the provision's commencement. The rule itself is older. SD1 clause 3(3): 4,333 weeks of the weekly wage, paid in December or on termination. Under twelve months' service it is pro-rated as full calendar months divided by twelve, times 4,333, times the weekly wage - so a single full month earns a share, which is why the minimum service is zero.",
         "severance_weeks_per_completed_year": "1.00",
         "severance_requires_operational_reason": true,
         "annual_bonus_weeks": "4.333",

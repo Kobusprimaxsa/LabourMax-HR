@@ -33,6 +33,7 @@ from statutory.models import (
     SarsSourceCode,
     StatutoryParameter,
     TaxYear,
+    TerminationRuleSet,
     WorkingTimeRuleSet,
 )
 
@@ -313,6 +314,87 @@ def check_night_allowance_coherence() -> list[Issue]:
     return issues
 
 
+def check_notice_bands() -> list[Issue]:
+    """A rule set's notice bands must start at zero, touch with no gap or
+    overlap, and have exactly one open-ended top band — the same shape
+    ``check_paye_brackets`` already proves for PAYE (D-68).
+
+    Deliberately does NOT convert between units to compare adjacent
+    boundaries. A rule set's own bands touch in the SAME unit on both sides
+    by construction (``tools/build_notice_band_fixture.py``'s own discipline
+    — a band's ``service_to`` and the next band's ``service_from`` are
+    always written as the identical (value, unit) pair), so a plain equality
+    check is both correct and honest: it does not pretend "26 weeks" and "6
+    months" are the same thing, it insists the data never makes it ask.
+    """
+    issues = []
+    for rule_set in TerminationRuleSet.objects.select_related("sector").all():
+        scope = rule_set.sector.code if rule_set.sector else "BCEA default"
+        where_set = f"termination_rule_set {scope}"
+        bands = list(rule_set.notice_bands.order_by("sequence"))
+
+        if not bands:
+            issues.append(Issue(True, where_set, "has no notice bands loaded"))
+            continue
+
+        if bands[0].service_from_value != 0:
+            issues.append(
+                Issue(
+                    True,
+                    f"{where_set} band {bands[0].sequence}",
+                    f"starts at {bands[0].service_from_value} {bands[0].service_from_unit}, "
+                    f"not 0. A service length below that would resolve to no band at all.",
+                )
+            )
+
+        open_ended = [band for band in bands if band.service_to_value is None]
+        if len(open_ended) != 1:
+            issues.append(
+                Issue(
+                    True,
+                    where_set,
+                    f"has {len(open_ended)} open-ended band(s), not exactly 1 "
+                    f"({', '.join(str(b.sequence) for b in open_ended) or 'none'}).",
+                )
+            )
+        elif open_ended[0] is not bands[-1]:
+            issues.append(
+                Issue(
+                    True,
+                    where_set,
+                    f"band {open_ended[0].sequence} is open-ended but is not the last "
+                    f"band in sequence. The top band must be the open-ended one.",
+                )
+            )
+
+        for previous, current in zip(bands, bands[1:], strict=False):
+            where = f"{where_set} band {current.sequence}"
+
+            if previous.service_to_value is None:
+                issues.append(
+                    Issue(True, where, f"band {previous.sequence} below it is open-ended")
+                )
+                continue
+
+            touches = (
+                current.service_from_value == previous.service_to_value
+                and current.service_from_unit == previous.service_to_unit
+            )
+            if not touches:
+                issues.append(
+                    Issue(
+                        True,
+                        where,
+                        f"starts at {current.service_from_value} {current.service_from_unit} "
+                        f"but the band below ends at {previous.service_to_value} "
+                        f"{previous.service_to_unit}. Bands must touch exactly, in the same "
+                        f"unit.",
+                    )
+                )
+
+    return issues
+
+
 def check_citations() -> list[Issue]:
     """Nothing cited to a placeholder.
 
@@ -386,5 +468,6 @@ def run_all(year: TaxYear | None = None) -> list[Issue]:
     issues.extend(check_source_codes())
     issues.extend(check_banks())
     issues.extend(check_night_allowance_coherence())
+    issues.extend(check_notice_bands())
     issues.extend(check_citations())
     return issues

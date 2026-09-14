@@ -907,11 +907,30 @@ wage floors, the SARS 2027 tax year tables, the contribution parameters, public 
 verified** — `in_force_on()` cannot see it, so every payroll run is still blocked. That is
 correct and deliberate.
 
+**`termination_notice_band` closed the notice band gap** (D-68, 14 September 2026).
+`termination_rule_set`'s three `notice_weeks_*` columns could express BCEA's six-month
+and one-year thresholds but not SD1's boundary at FOUR WEEKS of service, nor its unit —
+clause 23(1)(a) states one WORKING DAY, worth a fifth or a sixth of a week depending on
+the working week, and contract cleaning is exactly the sector that runs six-day weeks.
+The replacement is a cited child table, `(service_from, service_to, notice_value)` each
+with its own unit, built by `tools/build_notice_band_fixture.py` and resolved by
+`statutory/resolve.py::notice_band()` — which computes nothing itself: it converts each
+band's own `(value, unit)` to a calendar date via `dateutil.relativedelta` and picks the
+band whose start has most recently been reached, never a day/week/month/year count
+written in the module (D-158). An exact boundary match resolves to the band that STARTS
+there, matching every other effective-dated range in this schema's own inclusive-start/
+exclusive-end convention — flagged for the labour law review in case a more literal
+reading of clause 23(1)(b) is wanted instead. `statutory/checks.py::check_notice_bands()`
+reconciles every rule set's bands the same way PAYE brackets are reconciled: they start
+at zero, touch with no gap or overlap, and have exactly one open-ended top band.
+Nothing reads SD1's own pay-in-lieu-of-notice formula yet — clause 23(1)(d) gives figures
+for one working day and for two weeks, and no band in the determination is two weeks, so
+P7 must not encode a reading of the four-week case until the labour law review answers
+it (O-06).
+
 **What remains in P2:**
 
 - Kobus verifies every figure against its source document, then `verifystatutory`
-- The notice band gap (D-68): SD1 splits notice at four weeks of service and the rule set
-  table cannot express it. Fix before P6 builds the termination engine
 - Contract cleaning **Area B (KwaZulu-Natal)** has no rate: the gazette states none and points
   at the BCCCI collective agreement, which nobody has. A KwaZulu-Natal contract cleaning
   employer cannot be onboarded until it is loaded. (Area B, not Area C — D-61 had the

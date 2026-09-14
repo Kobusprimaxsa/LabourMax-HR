@@ -78,6 +78,7 @@ from statutory.models import (
     StatutoryParameter,
     StatutoryWatchItem,
     TaxYear,
+    TerminationNoticeBand,
     TerminationRuleSet,
     WorkingTimeRuleSet,
 )
@@ -102,6 +103,15 @@ class TableSpec:
     ``references`` maps a field to the model and lookup field its natural key is
     resolved against, which is rule 4.
 
+    ``composite_references`` is the same idea for a parent whose OWN natural key is
+    more than one field — ``termination_notice_band`` -> ``termination_rule_set`` is
+    the first of these, since a rule set's identity is ``(sector, effective_from)``,
+    not one column the way ``tax_year.label`` is. The tuple names which
+    ALREADY-RESOLVED fields on this row (in the order they were resolved — plain
+    references first, so ``sector`` is already a ``Sector`` instance by the time a
+    composite lookup reads it) form the parent's lookup, and they are consumed:
+    popped from the row once used, because they are not columns on the child.
+
     ``scope`` is the set of fields that define "the same thing over time" for an
     effective-dated table — the columns that must match for one period to supersede
     another. It is deliberately the same tuple the exclusion constraint uses.
@@ -110,6 +120,9 @@ class TableSpec:
     model: type[models.Model]
     natural_key: tuple[str, ...]
     references: dict[str, tuple[type[models.Model], str]] = field(default_factory=dict)
+    composite_references: dict[str, tuple[type[models.Model], tuple[str, ...]]] = field(
+        default_factory=dict
+    )
     scope: tuple[str, ...] = ()
 
     @property
@@ -190,6 +203,14 @@ TABLES: dict[str, TableSpec] = {
         references={"sector": (Sector, "code")},
         scope=("sector",),
     ),
+    "termination_notice_band": TableSpec(
+        TerminationNoticeBand,
+        natural_key=("termination_rule_set", "sequence"),
+        references={"sector": (Sector, "code")},
+        composite_references={
+            "termination_rule_set": (TerminationRuleSet, ("sector", "effective_from"))
+        },
+    ),
     "public_holiday": TableSpec(PublicHoliday, natural_key=("country_code", "holiday_date")),
     "sars_source_code": TableSpec(
         SarsSourceCode,
@@ -221,6 +242,7 @@ FIXTURE_ORDER = [
     "ref-2026.03.01.json",
     "ref-2026.03.01-rules.json",
     "ref-2026.03.01-sd1.json",
+    "ref-2026.03.01-notice-bands.json",
     "ref-2026.03.01-codes.json",
     "ref-2026.03.01-banks.json",
     "ref-2026.03.01-employment.json",
@@ -305,6 +327,33 @@ def _resolve_references(spec: TableSpec, row: dict[str, Any], *, where: str) -> 
                 f"A fixture refers to rows by natural key, so these codes have to be "
                 f"unique across sectors - prefix them if two sectors reuse one."
             ) from exc
+
+    for field_name, (model, lookup_fields) in spec.composite_references.items():
+        kwargs = {}
+        for key in lookup_fields:
+            if key not in resolved:
+                raise ReferenceDataLoadError(
+                    f"{where}: '{key}' is required to resolve '{field_name}' and is missing."
+                )
+            kwargs[key] = resolved[key]
+        try:
+            resolved[field_name] = model.objects.get(**kwargs)
+        except model.DoesNotExist as exc:
+            described = ", ".join(f"{k}={v!r}" for k, v in kwargs.items())
+            raise ReferenceDataLoadError(
+                f"{where}: no {model._meta.db_table} with {described}. "
+                f"Load it earlier in the same file, or correct the reference."
+            ) from exc
+        except model.MultipleObjectsReturned as exc:
+            raise ReferenceDataLoadError(
+                f"{where}: more than one {model._meta.db_table} matches {kwargs}, which "
+                f"should not be possible - its own natural key is meant to be unique."
+            ) from exc
+        # The lookup fields were needed only to find the parent; they are not
+        # columns on this table, so they do not survive into the final values.
+        for key in lookup_fields:
+            resolved.pop(key, None)
+
     return resolved
 
 

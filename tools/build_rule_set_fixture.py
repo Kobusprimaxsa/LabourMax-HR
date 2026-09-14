@@ -88,18 +88,6 @@ HAS_STATUTORY_BONUS = (
     "month earns a share, which is why the minimum service is zero."
 )
 
-SD1_NOTICE_GAP = (
-    "MODEL GAP, and it over-pays rather than under-pays. SD1 clause 23 splits notice "
-    "at FOUR WEEKS of service, not at six months: one working day in the first four "
-    "weeks, four weeks after that. This table's buckets are under-6-months, "
-    "6-months-and-over and over-1-year, which cannot express a boundary at four "
-    "weeks. All three are therefore loaded at four weeks, so an employee in their "
-    "first four weeks is given more notice than SD1 requires. The alternative - "
-    "loading one working day in the under-6-months bucket - would under-pay every "
-    "employee between one month and six months, which is a compliance breach rather "
-    "than a cost. Needs a notice band table or a fourth column before P6."
-)
-
 
 def leave_rules(*, sector, source, family_days, extra_notes=""):
     notes = [EFFECTIVE_NOTE, DERIVED_LEAVE_DAYS]
@@ -199,14 +187,14 @@ def termination_rules(
     *,
     sector,
     source,
-    notice_under_6_months="1.00",
-    notice_6_months,
-    notice_over_year,
     bonus_weeks="0.000",
     bonus_month=None,
     bonus_pro_rata=False,
     extra_notes="",
 ):
+    """Severance and pro-rata bonus only. Notice moved to
+    ``termination_notice_band`` (D-68) — see ``build_notice_band_fixture.py``.
+    """
     notes = [EFFECTIVE_NOTE]
     notes.append(NO_STATUTORY_BONUS if bonus_month is None else HAS_STATUTORY_BONUS)
     if extra_notes:
@@ -215,9 +203,6 @@ def termination_rules(
         "effective_from": EFFECTIVE_FROM,
         "source_reference": source,
         "notes": " ".join(notes),
-        "notice_weeks_under_6_months": notice_under_6_months,
-        "notice_weeks_6_months_and_over": notice_6_months,
-        "notice_weeks_over_1_year": notice_over_year,
         "severance_weeks_per_completed_year": "1.00",
         "severance_requires_operational_reason": True,
         "annual_bonus_weeks": bonus_weeks,
@@ -306,14 +291,10 @@ DOCUMENT = {
             termination_rules(
                 sector=None,
                 source=f"{BCEA}, ss 37 and 41",
-                notice_6_months="2.00",
-                notice_over_year="4.00",
             ),
             termination_rules(
                 sector="DOMESTIC",
                 source=f"{SD7}, read with {BCEA} s37(1)(c)",
-                notice_6_months="4.00",
-                notice_over_year="4.00",
             ),
         ],
     },
@@ -381,14 +362,10 @@ DOCUMENT_SD1 = {
         "termination_rule_set": [
             termination_rules(
                 sector="CONTRACT_CLEANING",
-                source=f"{SD1}, clauses 3(3), 23 and 24",
-                notice_under_6_months="4.00",
-                notice_6_months="4.00",
-                notice_over_year="4.00",
+                source=f"{SD1}, clauses 3(3) and 24",
                 bonus_weeks="4.333",
                 bonus_month=12,
                 bonus_pro_rata=True,
-                extra_notes=SD1_NOTICE_GAP,
             )
         ],
     },

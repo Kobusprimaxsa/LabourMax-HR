@@ -223,6 +223,15 @@ def sd1_loaded(rules_loaded):
     return load_reference_data(document)
 
 
+NOTICE_BANDS_FIXTURE = FIXTURE.parent / "ref-2026.03.01-notice-bands.json"
+
+
+@pytest.fixture
+def notice_bands_loaded(sd1_loaded):
+    document = json.loads(NOTICE_BANDS_FIXTURE.read_text(encoding="utf-8"))
+    return load_reference_data(document)
+
+
 @pytest.mark.statutory
 def test_the_rule_set_fixture_loads(rules_loaded):
     assert rules_loaded.created["leave_rule_set"] == 2
@@ -231,7 +240,7 @@ def test_the_rule_set_fixture_loads(rules_loaded):
 
 
 @pytest.mark.statutory
-def test_the_domestic_sector_overrides_the_bcea_where_sd7_differs(rules_loaded):
+def test_the_domestic_sector_overrides_the_bcea_where_sd7_differs(notice_bands_loaded):
     """Three places SD7 departs from the Act, and getting any of them wrong
     underpays or over-restricts every domestic employee in the system."""
     domestic = Sector.objects.get(code=Sector.Code.DOMESTIC)
@@ -243,8 +252,9 @@ def test_the_domestic_sector_overrides_the_bcea_where_sd7_differs(rules_loaded):
     assert resolve.working_time_rules(domestic, on).max_overtime_hours_per_week == Decimal("15.00")
     assert resolve.working_time_rules(None, on).max_overtime_hours_per_week == Decimal("10.00")
 
-    assert resolve.termination_rules(domestic, on).notice_weeks_6_months_and_over == Decimal("4.00")
-    assert resolve.termination_rules(None, on).notice_weeks_6_months_and_over == Decimal("2.00")
+    started = datetime.date(2025, 12, 1)  # exactly six months before `on`
+    assert resolve.notice_band(domestic, on, employment_start_date=started).notice_value == 4
+    assert resolve.notice_band(None, on, employment_start_date=started).notice_value == 2
 
 
 @pytest.mark.statutory
@@ -292,18 +302,22 @@ def test_the_night_allowance_is_a_real_figure_only_in_contract_cleaning(sd1_load
 
 
 @pytest.mark.statutory
-def test_the_sd1_notice_gap_is_recorded_rather_than_papered_over(sd1_loaded):
-    """SD1 splits notice at four weeks of service; this table's buckets cannot.
-
-    All three buckets carry four weeks, which over-pays an employee in their first
-    four weeks rather than under-paying one at three months. The note says so, and
-    this test keeps the note attached to the row.
+def test_sd1_notice_splits_at_four_weeks_of_service_not_six_months(notice_bands_loaded):
+    """D-68, closed. SD1 clause 23(1) splits notice at FOUR WEEKS of service, and
+    the shipped fixture now carries that boundary rather than working around it.
     """
     cleaning = Sector.objects.get(code=Sector.Code.CONTRACT_CLEANING)
-    rules = resolve.termination_rules(cleaning, datetime.date(2026, 6, 1))
+    on = datetime.date(2026, 6, 1)
 
-    assert rules.notice_weeks_under_6_months == Decimal("4.00")
-    assert "MODEL GAP" in rules.notes
+    just_under = resolve.notice_band(
+        cleaning, on, employment_start_date=on - datetime.timedelta(weeks=3)
+    )
+    assert just_under.notice_value == 1
+    assert just_under.notice_unit == "days"
+
+    over = resolve.notice_band(cleaning, on, employment_start_date=on - datetime.timedelta(weeks=5))
+    assert over.notice_value == 4
+    assert over.notice_unit == "weeks"
 
 
 @pytest.mark.statutory

@@ -32,6 +32,7 @@ from __future__ import annotations
 import datetime
 from decimal import Decimal
 
+from dateutil.relativedelta import relativedelta
 from django.db.models import Q
 
 from statutory.models import (
@@ -44,6 +45,7 @@ from statutory.models import (
     Sector,
     StatutoryParameter,
     TaxYear,
+    TerminationNoticeBand,
     TerminationRuleSet,
     WorkingTimeRuleSet,
 )
@@ -227,8 +229,61 @@ def working_time_rules(sector: Sector | None, on_date: datetime.date) -> Working
 
 
 def termination_rules(sector: Sector | None, on_date: datetime.date) -> TerminationRuleSet:
-    """Notice, severance and pro-rata bonus rules for a sector on a date."""
+    """Severance and pro-rata bonus rules for a sector on a date."""
     return _rule_set(TerminationRuleSet, sector, on_date)
+
+
+def _boundary_date(start: datetime.date, value: Decimal, unit: str) -> datetime.date:
+    """The calendar date a service-length boundary falls on, counted from
+    ``start``. No day/week/month/year count is written here — the boundary's
+    own (value, unit), read off the loaded row, is handed to ``relativedelta``
+    exactly as stored, and it is the one that knows a calendar's arithmetic.
+    """
+    return start + relativedelta(**{unit: float(value)})
+
+
+def notice_band(
+    sector: Sector | None, on_date: datetime.date, *, employment_start_date: datetime.date
+) -> TerminationNoticeBand:
+    """The one ``termination_notice_band`` covering this employee's service
+    length, for a sector, as at a date (D-68).
+
+    Computes nothing about what the boundaries themselves are — those are
+    read off the rule set in force on ``on_date`` (falling back to the BCEA
+    default the same way every other rule set does), and each band's own
+    ``service_from`` is converted to a calendar date from
+    ``employment_start_date`` before being compared against ``on_date``.
+
+    A service length landing exactly on a boundary resolves to the band that
+    STARTS there (D-158) — among every band whose start has been reached,
+    the one with the latest start wins, which is exactly that convention.
+    """
+    rule_set = termination_rules(sector, on_date)
+    bands = list(rule_set.notice_bands.all())
+    if not bands:
+        scope = sector.code if sector else "the BCEA default"
+        raise StatutoryValueMissingError(
+            f"No termination notice bands for {scope} on {on_date:%d %B %Y}. The "
+            f"reference data does not cover this."
+        )
+
+    reached = [
+        band
+        for band in bands
+        if _boundary_date(employment_start_date, band.service_from_value, band.service_from_unit)
+        <= on_date
+    ]
+    if not reached:
+        raise StatutoryValueMissingError(
+            f"No notice band covers an employee who started {employment_start_date:%d %B %Y}, "
+            f"as at {on_date:%d %B %Y}. Every rule set's bands must start at zero service."
+        )
+    return max(
+        reached,
+        key=lambda band: _boundary_date(
+            employment_start_date, band.service_from_value, band.service_from_unit
+        ),
+    )
 
 
 # ----------------------------------------------------------------- public holidays

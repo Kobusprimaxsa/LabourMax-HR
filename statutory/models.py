@@ -1127,14 +1127,17 @@ class WorkingTimeRuleSet(SectorRuleSet):
 
 
 class TerminationRuleSet(SectorRuleSet):
-    """Notice, severance and pro-rata bonus. BCEA ss 37–41, SD7, SD1."""
+    """Severance and pro-rata bonus. BCEA ss 37–41, SD7, SD1.
 
-    # SD7 and SD1 accelerate to four weeks at six months, where the BCEA default
-    # would still be two. Getting this wrong underpays notice on every termination
-    # in the first year of service.
-    notice_weeks_under_6_months = models.DecimalField(max_digits=5, decimal_places=2)
-    notice_weeks_6_months_and_over = models.DecimalField(max_digits=5, decimal_places=2)
-    notice_weeks_over_1_year = models.DecimalField(max_digits=5, decimal_places=2)
+    Notice itself is NOT on this row (D-68, closed). It used to be three
+    DecimalField buckets — under 6 months, 6 months and over, over 1 year —
+    and that shape cannot express SD1's own boundary at FOUR WEEKS of service,
+    nor its unit: SD1 clause 23(1)(a) states one WORKING DAY, and a day is a
+    fifth or a sixth of a week depending on the working week, which a bare
+    number would have to guess. ``termination_notice_band`` (below) is the
+    cited, unit-carrying replacement; ``statutory/resolve.py::notice_band()``
+    is the one place that reads it.
+    """
 
     severance_weeks_per_completed_year = models.DecimalField(max_digits=5, decimal_places=2)
     severance_requires_operational_reason = models.BooleanField(
@@ -1170,6 +1173,107 @@ class TerminationRuleSet(SectorRuleSet):
 
     def __str__(self):
         return f"Termination rules {self.sector_id or 'BCEA'} from {self.effective_from}"
+
+
+class TerminationNoticeBand(AuditedModel, AuditMixin, CitedStatutoryModel):
+    """One band of a sector's notice-by-service-length table (D-68).
+
+    A child of ``termination_rule_set`` the way a ``paye_tax_bracket`` is a
+    child of a ``tax_year`` — the rule set is the sector's whole notice regime
+    as at one effective date, and this is one rung of it. Cited on its own,
+    because SD1's four-week boundary is a different clause from BCEA's
+    six-month one and neither should borrow the other's citation.
+
+    **Units are stored, not assumed.** SD1 clause 23(1)(a) states "not less
+    than one WORKING DAY" — a day is worth a fifth of a week on a five-day
+    working week and a sixth on a six-day one, and contract cleaning is
+    exactly the sector that runs six-day weeks. Storing ``0.2`` would bake a
+    five-day week into a statutory figure that says nothing about days per
+    week at all. ``notice_value``/``notice_unit`` are handed to the caller
+    as given; converting a day into hours or rand reads the EMPLOYEE's own
+    schedule and is payroll's job (P7), not this table's.
+
+    ``service_from``/``service_to`` are the half-open range this band covers,
+    in the same INCLUSIVE-START, EXCLUSIVE-END convention as every other
+    effective-dated range in this schema (``EffectiveDatedModel``) — a
+    service length landing exactly on a boundary belongs to the band that
+    STARTS there, not the one that ends there (D-158). ``service_to`` is
+    NULL only for the top band; every rule set must have exactly one.
+    """
+
+    class ServiceUnit(models.TextChoices):
+        DAYS = "days", "Days"
+        WEEKS = "weeks", "Weeks"
+        MONTHS = "months", "Months"
+        YEARS = "years", "Years"
+
+    class NoticeUnit(models.TextChoices):
+        DAYS = "days", "Days"
+        WEEKS = "weeks", "Weeks"
+
+    termination_rule_set = models.ForeignKey(
+        TerminationRuleSet, on_delete=models.PROTECT, related_name="notice_bands"
+    )
+    sequence = models.PositiveSmallIntegerField(help_text="1..n, shortest service first.")
+
+    service_from_value = models.DecimalField(max_digits=6, decimal_places=2)
+    service_from_unit = models.CharField(max_length=10, choices=ServiceUnit.choices)
+    service_to_value = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True, help_text="NULL = open-ended."
+    )
+    service_to_unit = models.CharField(max_length=10, choices=ServiceUnit.choices, blank=True)
+
+    notice_value = models.DecimalField(max_digits=6, decimal_places=2)
+    notice_unit = models.CharField(max_length=10, choices=NoticeUnit.choices)
+
+    class Meta:
+        db_table = "termination_notice_band"
+        ordering = ["termination_rule_set_id", "sequence"]
+        indexes = [models.Index(fields=["termination_rule_set"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["termination_rule_set", "sequence"], name="uniq_notice_band_sequence"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(service_from_value__gte=0),
+                name="termination_notice_band_service_from_not_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(service_to_value__isnull=True)
+                | models.Q(service_to_value__gt=0),
+                name="termination_notice_band_service_to_positive",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(notice_value__gt=0),
+                name="termination_notice_band_notice_positive",
+            ),
+            # Paired nullability: an open-ended band names no unit either,
+            # the same shape workplace.sector_area/area_resolved_on already
+            # uses for "both or neither".
+            models.CheckConstraint(
+                condition=models.Q(service_to_value__isnull=True, service_to_unit="")
+                | models.Q(
+                    service_to_value__isnull=False,
+                    service_to_unit__in=["days", "weeks", "months", "years"],
+                ),
+                name="termination_notice_band_service_to_paired",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(service_from_unit__in=["days", "weeks", "months", "years"]),
+                name="termination_notice_band_service_from_unit_is_known",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(notice_unit__in=["days", "weeks"]),
+                name="termination_notice_band_notice_unit_is_known",
+            ),
+            source_reference_not_blank("termination_notice_band"),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.termination_rule_set_id} band {self.sequence}: "
+            f"{self.notice_value} {self.notice_unit}"
+        )
 
 
 # ------------------------------------------------------------- public holidays
