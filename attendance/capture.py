@@ -108,6 +108,12 @@ def capture(
     for a caller that captured a plain figure rather than clock times (the
     bulk import's "hours worked" column, D-156). Ignored when both time_in and
     time_out are given — a captured time span always wins.
+
+    The returned row carries a non-persisted ``capture_warnings`` attribute —
+    the calculator's own warnings (D-157: a bare hours total whose night hours
+    could not honestly be computed, among others). Not a column: nothing here
+    is stored, only surfaced to whichever caller just wrote the day, so the
+    grid and the importer report the same thing from the same call.
     """
     with transaction.atomic(), tenant_context_of(employee):
         existing = AttendanceDay.objects.filter(employee=employee, work_date=work_date).first()
@@ -137,6 +143,8 @@ def capture(
                 schedule.days_per_week > 5 if schedule is not None else False
             ),
             hours_worked=hours_worked,
+            scheduled_start_time=schedule_day.start_time if schedule_day else None,
+            scheduled_end_time=schedule_day.end_time if schedule_day else None,
         )
         result = bucket_day(day_input, rules)
 
@@ -169,9 +177,11 @@ def capture(
                 setattr(existing, key, value)
             existing.full_clean()
             existing.save()
+            existing.capture_warnings = result.warnings
             return existing
 
         day = AttendanceDay(**fields)
         day.full_clean()
         day.save()
+        day.capture_warnings = result.warnings
         return day

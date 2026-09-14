@@ -710,8 +710,8 @@ a plain `int`, not a `Decimal` literal: it is a plausible salary for a demo cell
 statutory figure, and `test_no_hardcoded_rates` scans this file exactly like every
 other module in `employees/`.
 
-**P5 — Attendance & Time: build complete, chunk 3 of three** (14 September 2026). 928
-tests green. `attendance_day` exists, tenant-scoped, and `calculators/attendance.py` is **the first
+**P5 — Attendance & Time: build complete, chunk 3 of three, plus a hardening pass**
+(14 September 2026). 935 tests green. `attendance_day` exists, tenant-scoped, and `calculators/attendance.py` is **the first
 real calculator** — the calculators rule stops being aspirational from here. Pure
 functions only: no ORM import, no database access, no file I/O, no `datetime.now()`.
 Every multiplier, cap, window and minimum it uses is a field the caller reads from
@@ -852,6 +852,27 @@ small hooks (`extra_refusal` for a second whole-batch refusal reason, `on_succes
 extra fields a domain needs saved once a batch commits) rather than forcing the
 difference into a single function. The employee import's twelve tests pass unmodified
 against the extracted code, which is the evidence, not just the intent.
+
+**A bare `hours_worked` capture genuinely loses `night_hours`, and now says so — but it
+does NOT lose `standby_hours_worked`, which the brief that raised this assumed** (D-157,
+a post-chunk hardening pass). `_night_hours()` needs an actual time span to test against
+the night window, and returns zero unconditionally without one — a real gap, closed with
+a WARNING rather than a refusal: a standby day captured as bare hours always warns
+(standby is not part of the ordinary schedule, so there is nothing to test); an ordinary
+day warns only when the employee's own schedule for that weekday has both a start and
+end time on file and that span crosses the night window, silent otherwise so the
+household employer whose worker does eight daytime hours never sees it. Standby pay
+itself needed no fix: `bucket_day()`'s `is_standby` branch computes `standby_hours_worked`
+from the worked total and the flag alone, never from clock time — proven by reading the
+code rather than assumed, and the outright refusal the brief asked for on every bare-hours
+standby day would have been inventing a restriction with nothing behind it. One related,
+pre-existing, and separate fact surfaced along the way: `RuleFigures.standby_window_start`/
+`standby_window_end` are loaded and never consulted by any bucketing logic at all —
+flagged as O-20 for someone to confirm is deliberate before P7 prices standby pay, not
+fixed here because it predates this pass and nothing asked for it. `capture()`'s returned
+row now carries a non-persisted `capture_warnings` attribute, surfaced identically whether
+the day was written through a single manual call (the grid's own path) or through the
+bulk importer, because both are the same function and neither duplicates its logic.
 
 **On P5's own definition of done — read literally, it does not yet pass, and that is
 stated here rather than ticked.** "A month for twenty employees is captured in under ten

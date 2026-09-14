@@ -528,3 +528,73 @@ def test_an_unknown_workplace_is_refused(batch, tenant, employee, pay_group, rul
 
     assert result.blocking_count == 1
     assert "Nonexistent Site" in result.issues[0].message
+
+
+# ------------------------------------------------- bare hours worked (D-157)
+
+
+def test_a_bare_hours_day_warns_identically_through_the_grid_and_the_importer(
+    batch, tenant, employer, pay_group, rules
+):
+    """The grid and the importer are two callers of the same
+    ``attendance.capture.capture()`` — there is no second write path to drift
+    from it. Proven here rather than assumed: the same ambiguous day, once
+    captured directly (the grid's own path) and once through the importer,
+    produces the exact same warning.
+    """
+    with tenant_context(tenant.pk):
+        night_employee = Employee.objects.create(
+            tenant=tenant,
+            employer=employer,
+            first_name="Night",
+            last_name="Worker",
+            date_of_birth=datetime.date(1988, 1, 1),
+            mobile_number="+27820000003",
+            email="night@example.com",
+            id_number="8801015009084",
+        )
+        night_schedule = WorkSchedule.objects.create(
+            tenant=tenant,
+            employee=night_employee,
+            days_per_week=Decimal("5"),
+            ordinary_hours_per_week=Decimal("40"),
+            effective_from=START,
+        )
+        for cycle_day in range(7):
+            WorkScheduleDay.objects.create(
+                tenant=tenant,
+                work_schedule=night_schedule,
+                cycle_day=cycle_day,
+                is_working_day=cycle_day < 5,
+                start_time=datetime.time(22, 0) if cycle_day < 5 else None,
+                end_time=datetime.time(6, 0) if cycle_day < 5 else None,
+                ordinary_hours=Decimal("8") if cycle_day < 5 else Decimal("0"),
+            )
+
+    # THE GRID PATH — a single manual capture, exactly what a live cell edit calls.
+    grid_day = capture(
+        night_employee, work_date=MONDAY, day_type=DayType.ORDINARY, hours_worked=Decimal("8")
+    )
+    assert grid_day.night_hours == Decimal("0.000")
+    assert len(grid_day.capture_warnings) == 1
+    assert "crosses the night window" in grid_day.capture_warnings[0]
+
+    # THE IMPORTER PATH — the same ambiguous day, a different date to avoid
+    # colliding with the grid's own write above.
+    rows = parsed(
+        [
+            row(
+                night_employee,
+                TUESDAY,
+                time_in="",
+                time_out="",
+                unpaid_break_minutes="",
+                hours_worked="8",
+            )
+        ]
+    )
+    result = apply_batch(batch, rows)
+
+    warnings = [issue for issue in result.issues if issue.severity == "warning"]
+    assert len(warnings) == 1
+    assert warnings[0].message == grid_day.capture_warnings[0]

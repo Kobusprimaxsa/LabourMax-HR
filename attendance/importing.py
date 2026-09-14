@@ -48,6 +48,12 @@ right to do. Every REPLACE therefore snapshots the day's pre-replace values
 into ``batch.prior_state`` before ``capture()`` overwrites them; reverse
 restores each one exactly and deletes only the days the batch created
 outright.
+
+**A bare ``hours_worked`` figure cannot carry night pay, and this importer
+says so rather than staying silent** (D-157). ``capture()`` surfaces the
+calculator's own warnings on the row it just wrote; every one is added to
+this batch's report as a WARNING issue, never blocking — the day itself is
+still accepted, exactly as the grid's single-cell capture would accept it.
 """
 
 from __future__ import annotations
@@ -405,7 +411,7 @@ def _run_rows(
 
         savepoint = transaction.savepoint()
         try:
-            capture(
+            captured_day = capture(
                 employee,
                 work_date=work_date,
                 day_type=values["day_type"],
@@ -431,6 +437,8 @@ def _run_rows(
         else:
             transaction.savepoint_commit(savepoint)
             accepted += 1
+            for warning in captured_day.capture_warnings:
+                issues.append(RowIssue(parsed.row_number, "hours_worked", warning, "warning"))
             if is_replace:
                 replaced += 1
                 snapshot_entries.append(

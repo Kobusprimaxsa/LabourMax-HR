@@ -210,6 +210,95 @@ def test_a_standby_shift_with_no_work_performed():
     assert result.paid_hours_guaranteed == D("0.000")
 
 
+# ------------------------------------------------- bare hours worked (D-157)
+
+
+def test_a_bare_hours_total_still_buckets_standby_correctly():
+    """Standby pay does not depend on clock position at all — bucket_day's
+    is_standby branch reads only is_standby and the worked total, never
+    time_in/time_out or the standby window. A bare total is exactly as good
+    as a time span for this figure.
+    """
+    day = make_day(is_standby=True, time_in=None, time_out=None, hours_worked=D("3"))
+    result = bucket_day(day, make_rules())
+
+    assert result.standby_hours_worked == D("3.000")
+    assert result.overtime_hours == D("1.000")  # threshold is 2
+
+
+def test_a_bare_hours_standby_day_warns_that_night_hours_cannot_be_estimated():
+    day = make_day(is_standby=True, time_in=None, time_out=None, hours_worked=D("3"))
+    result = bucket_day(day, make_rules())
+
+    assert result.night_hours == D("0.000")
+    assert len(result.warnings) == 1
+    assert "standby occasion" in result.warnings[0]
+    assert "night" in result.warnings[0].lower()
+
+
+def test_a_bare_hours_day_on_a_schedule_crossing_the_night_window_warns():
+    day = make_day(
+        time_in=None,
+        time_out=None,
+        hours_worked=D("8"),
+        scheduled_start_time=datetime.time(22, 0),
+        scheduled_end_time=datetime.time(6, 0),
+    )
+    result = bucket_day(day, make_rules())
+
+    assert result.night_hours == D("0.000")
+    assert len(result.warnings) == 1
+    assert "crosses the night window" in result.warnings[0]
+
+
+def test_a_bare_hours_day_on_a_daytime_schedule_has_no_warning():
+    """The simple form stays simple for the ordinary household case: an
+    eight-to-five schedule never touches the night window.
+    """
+    day = make_day(
+        time_in=None,
+        time_out=None,
+        hours_worked=D("8"),
+        scheduled_start_time=datetime.time(8, 0),
+        scheduled_end_time=datetime.time(17, 0),
+    )
+    result = bucket_day(day, make_rules())
+
+    assert result.warnings == ()
+
+
+def test_a_bare_hours_day_with_no_schedule_times_on_file_has_no_warning():
+    """No schedule span to test against means no basis to warn — silence
+    here is genuine absence of a signal, not a claim that nothing is wrong.
+    """
+    day = make_day(
+        time_in=None,
+        time_out=None,
+        hours_worked=D("8"),
+        scheduled_start_time=None,
+        scheduled_end_time=None,
+    )
+    result = bucket_day(day, make_rules())
+
+    assert result.warnings == ()
+
+
+def test_a_captured_time_span_never_warns_even_on_a_night_schedule():
+    """A time span always wins — the warning exists only for the ambiguity a
+    bare total creates, and a real time span has none.
+    """
+    day = make_day(
+        time_in=datetime.time(22, 0),
+        time_out=datetime.time(6, 0),
+        unpaid_break_minutes=0,
+        scheduled_start_time=datetime.time(22, 0),
+        scheduled_end_time=datetime.time(6, 0),
+    )
+    result = bucket_day(day, make_rules())
+
+    assert result.warnings == ()
+
+
 def test_leave_counts_as_a_full_day_equivalent_with_no_hours():
     day = make_day(day_type=DayType.LEAVE, time_in=None, time_out=None)
     result = bucket_day(day, make_rules())

@@ -205,9 +205,16 @@ class AttendanceDayInput:
     #: None; a shift with both a time span and this set is bucketed from the
     #: time span, this figure ignored. Night hours cannot be computed from a
     #: bare total — there is no span to test against the night window — so a
-    #: day captured this way always reads zero night hours, honestly: nothing
-    #: recorded when in the shift the work happened.
+    #: day captured this way always reads zero night hours. D-157: where that
+    #: zero is plausibly wrong, a warning names it rather than staying silent
+    #: — see ``_night_ambiguity_warning``.
     hours_worked: Decimal | None = None
+    #: From work_schedule_day.start_time/end_time for this weekday — used only
+    #: to judge whether an hours-only day's true (unrecorded) span plausibly
+    #: crossed the night window (D-157). Not used for anything else: bucketing
+    #: itself works from the CAPTURED time_in/time_out, never the schedule's.
+    scheduled_start_time: datetime.time | None = None
+    scheduled_end_time: datetime.time | None = None
 
 
 @dataclass(frozen=True)
@@ -300,6 +307,51 @@ def _night_hours(day: AttendanceDayInput, rules: RuleFigures, hours_worked: Deci
     return hours_worked * fraction
 
 
+def _night_ambiguity_warning(
+    day: AttendanceDayInput, rules: RuleFigures, hours_worked: Decimal
+) -> str | None:
+    """D-157. None unless this day was captured as a bare hours total AND its
+    night_hours reading of zero is plausibly wrong rather than honestly zero.
+
+    A captured time span always wins — this only fires in its absence. Standby
+    gets its own message rather than the schedule check below: a standby
+    occasion is not part of the ordinary schedule (it is typically the hours
+    around it), so there is no schedule span to test, and the gazetted
+    standby window is exactly the kind of hours a bare total on a standby day
+    is most likely to have touched.
+    """
+    if day.time_in is not None and day.time_out is not None:
+        return None
+    if hours_worked <= 0:
+        return None
+    if day.is_standby:
+        return (
+            "Captured as a total of hours with no clock times, on a standby occasion. "
+            "Standby pay itself is unaffected, but night hours cannot be estimated the "
+            "way an ordinary day's can — standby is not part of the ordinary schedule, "
+            "so there is nothing to check the hours against. Capture time in/time out "
+            "instead if a night allowance may be owed."
+        )
+    if day.scheduled_start_time is None or day.scheduled_end_time is None:
+        return None
+    overlap = _overlap_minutes(
+        day.scheduled_start_time,
+        day.scheduled_end_time,
+        rules.night_work_start_time,
+        rules.night_work_end_time,
+    )
+    if overlap <= 0:
+        return None
+    return (
+        f"Captured as a total of {hours_worked} hours with no clock times. This "
+        f"employee's schedule for this day ({day.scheduled_start_time}–"
+        f"{day.scheduled_end_time}) crosses the night window "
+        f"({rules.night_work_start_time}–{rules.night_work_end_time}), so night "
+        f"hours cannot be computed without clock times — capture time in/time out "
+        f"instead if a night allowance may be owed."
+    )
+
+
 def bucket_day(day: AttendanceDayInput, rules: RuleFigures) -> AttendanceDayResult:
     """Bucket one day's hours. Stateless: the same inputs always produce the
     same result, on any date this function is called.
@@ -307,6 +359,10 @@ def bucket_day(day: AttendanceDayInput, rules: RuleFigures) -> AttendanceDayResu
     warnings: list[str] = []
     hours_worked, hour_warnings = _hours_worked(day)
     warnings.extend(hour_warnings)
+
+    ambiguity = _night_ambiguity_warning(day, rules, hours_worked)
+    if ambiguity is not None:
+        warnings.append(ambiguity)
 
     ordinary = overtime = sunday = public_holiday = ZERO
     standby_worked = ZERO
