@@ -382,6 +382,16 @@ pytest --cov=calculators --cov-report=term-missing --cov-fail-under=100
 ruff check . && ruff format .
 ```
 
+### Windows traps
+
+pytest's default `basetemp` lives under `C:\Users\<name>\AppData\Local\Temp\pytest-of-<name>`.
+When the account name contains a space, or a prior run left that directory in a bad ACL
+state, it can end up locked such that even `icacls` is denied — every test using the
+`tmp_path` fixture then fails at fixture setup, as dozens of unrelated `PermissionError`s
+that look like a code problem and are not. `pytest.ini` pins `--basetemp=.pytest-tmp` for
+exactly this reason; if it still happens, point `--basetemp` at a directory you control
+rather than fighting the ACL.
+
 ---
 
 ## Working style
@@ -507,29 +517,32 @@ against the policy's USING clause only (D-93). The table ships **empty**: seedin
 annual variants and the four sick-leave evidence types is a compliance reading and belongs
 with the P6 engine that has to honour it.
 
-`employee_recurring_component` departs from sheet 02 in two places, and both are invariants
-rather than preferences. **There is no `balance_outstanding`** (D-128): a loan balance
-decremented each run stops the row being effective-dated, makes a balance an editable number
-with no source rows behind it, and means a 2029 re-run of March 2026 reads today's figure —
-invariants 2, 3 and 4 together. The balance comes from an append-only ledger, like leave and
-year-to-date; the ledger itself is O-17, needed before P7 and not before. **There is no
-`total_deduction_cap_pct`** (D-129): the BCEA s34 / SD7 ten per cent is gazetted and already
-lives in `working_time_rule_set.accommodation_deduction_max_pct` with its citation, so a
-per-employee copy is a second copy of a compliance decision (D-89) that no gazette can reach.
+**`employee_recurring_component` matches sheet 02 exactly — `balance_outstanding` and
+`total_deduction_cap_pct` are both in it** (O-17, resolved by D-135). A parallel session on
+14 September removed both, reaching the opposite conclusion for reasons good enough to
+record (see O-17), but the workbook wins until Kobus says otherwise, and here it says keep
+them: the loan balance is a cache the payroll engine has no ledger to derive from until P7,
+and the per-component cap is a per-employee override the gazette permits rather than a
+duplicate of one.
 
-**What may carry a standing figure is decided by the component's calculation method**
-(D-130). Only `fixed` and `percentage_of_base` — a `statutory` component is computed from
-reference data, and `rate_x_units` is BASIC, whose figure is the employee's wage and lives on
-`employee_remuneration`. Written against the method rather than a list of codes, so it keeps
-holding as the catalogue grows.
+**What the table does NOT carry is an overlap exclusion** (D-135). It shipped with one —
+two live rows for the same component were forbidden — and sheet 03 has no such constraint
+here. Two advances of the same component running at once is ordinary; forbidding it made an
+employer invent a second component so the deduction could coexist, and it then stopped being
+recognisable as an advance in the BCEA s34 total, a compliance failure no test caught. The
+guard that survives is a `UniqueConstraint` over `(employee, payroll_component,
+effective_from, amount, percentage_of_basic)` with `nulls_distinct=False` — amount and
+percentage_of_basic are mutually exclusive and therefore nullable, and NULL = NULL is unknown
+in PostgreSQL — which catches the case the EXCLUDE was really standing in for: the same line
+captured twice.
 
-`employee_leave_entitlement` carries an **EXCLUDE over its date range per leave type**, and
-`employee_recurring_component` deliberately carries none (D-131). The workbook's unique on
-the start date stops two grants beginning on one day and does nothing about a grant
-back-dated into an open period — the D-103 trap again. The recurring component is the
-opposite case: two advances running at once is ordinary, and forbidding it would be worked
-around by inventing a second component, at which point the deduction stops being
-recognisable as an advance in the s34 total.
+**`employee_leave_entitlement` carries an EXCLUDE over `[effective_from, effective_to)` per
+`(employee, leave_type)`** (D-136). It shipped in `employees/0005`, ahead of a citation for
+it — sheet 03 is silent on this table but asks for exactly this shape on `employee_position`
+and `work_schedule`, which is the deviation's justification. The unique on `effective_from`
+alone stops two grants beginning on one day and does nothing about a grant back-dated into an
+open period — the D-103 trap again — which leaves two entitlements in force for one leave
+type with nothing but row order deciding between them.
 
 **The as-at columns move on a date, not on capture** (D-132). `is_current`,
 `status`, `is_billable` and the two pay-cache columns are all recomputed by

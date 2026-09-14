@@ -1729,18 +1729,30 @@ class EmployeeRecurringComponent(AuditedModel, TenantScopedModel):
                 | models.Q(effective_to__gt=models.F("effective_from")),
                 name="recurring_component_period_ordered",
             ),
-            # Two live rows for the same component means the line is applied twice —
-            # the employee is charged the deduction, or paid the allowance, double.
-            ExclusionConstraint(
-                name="employee_recurring_component_no_overlapping_periods",
-                expressions=[
-                    (
-                        DateRange("effective_from", "effective_to", RangeBoundary()),
-                        RangeOperators.OVERLAPS,
-                    ),
-                    ("employee", RangeOperators.EQUAL),
-                    ("payroll_component", RangeOperators.EQUAL),
+            # D-135 / O-17: NOT an exclusion. Two advances of the same component
+            # running at once is ordinary — forbidding it makes an employer invent a
+            # second component so the deduction can coexist, and it then stops being
+            # recognisable as an advance in the BCEA s34 total, a compliance failure
+            # no test catches. What is not ordinary is the same line captured twice:
+            # amount and percentage_of_basic are nullable, and NULL = NULL is unknown
+            # in PostgreSQL, so nulls_distinct=False is what makes two rows with the
+            # same NULL amount collide instead of silently coexisting.
+            models.UniqueConstraint(
+                fields=[
+                    "employee",
+                    "payroll_component",
+                    "effective_from",
+                    "amount",
+                    "percentage_of_basic",
                 ],
+                name="uniq_recurring_component_line_per_period",
+                nulls_distinct=False,
+                violation_error_message=(
+                    "This line has already been captured for this period — same "
+                    "employee, component, start date, amount and percentage. Two "
+                    "advances running at once is fine; this is the same advance "
+                    "captured twice."
+                ),
             ),
         ]
 

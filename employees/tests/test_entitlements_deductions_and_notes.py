@@ -321,10 +321,31 @@ def test_two_entitlements_for_one_type_cannot_overlap(employee, annual):
     """Two answers to 'how many days', decided by row order."""
     make_entitlement(employee, annual, additional_days_per_cycle=Decimal("3.000"))
 
-    with pytest.raises(IntegrityError), transaction.atomic():
+    with pytest.raises(IntegrityError) as raised, transaction.atomic():
         make_entitlement(
             employee, annual, effective_from=LATER, additional_days_per_cycle=Decimal("5.000")
         )
+
+    assert "employee_leave_entitlement_no_overlapping_periods" in str(raised.value)
+
+
+def test_an_entitlement_cannot_be_backdated_into_an_open_period(employee, annual):
+    """D-136. The unique on effective_from alone would miss this — the dates differ.
+
+    The first entitlement is open (no effective_to), so a second one starting
+    earlier still overlaps it: two entitlements in force for one leave type, with
+    nothing but row order deciding which one applies.
+    """
+    make_entitlement(
+        employee, annual, effective_from=LATER, additional_days_per_cycle=Decimal("5.000")
+    )
+
+    with pytest.raises(IntegrityError) as raised, transaction.atomic():
+        make_entitlement(
+            employee, annual, effective_from=START, additional_days_per_cycle=Decimal("3.000")
+        )
+
+    assert "employee_leave_entitlement_no_overlapping_periods" in str(raised.value)
 
 
 def test_a_closed_entitlement_leaves_room_for_the_next(employee, annual):
@@ -467,15 +488,32 @@ def test_a_cap_is_a_percentage(employee, tenant, source_code):
         make_recurring(employee, allowance, total_deduction_cap_pct=Decimal("101.00"))
 
 
-def test_one_component_cannot_be_live_twice(employee, tenant, source_code):
-    """The employee would be paid the allowance, or charged the deduction, twice."""
+def test_two_advances_of_one_component_may_run_at_once(employee, tenant):
+    """D-135 / O-17. Forbidding this makes an employer invent a second component,
+    and the deduction then stops being recognisable as an advance in the BCEA s34
+    total — a compliance failure no test catches.
+    """
+    loan = make_component(tenant, "ADVANCE", PayrollComponent.ComponentType.DEDUCTION)
+    make_recurring(employee, loan, amount=Decimal("250.0000"))
+
+    later = make_recurring(employee, loan, effective_from=LATER, amount=Decimal("400.0000"))
+
+    with tenant_context(employee.tenant_id):
+        assert EmployeeRecurringComponent.objects.filter(employee=employee).count() == 2
+    assert later.effective_from == LATER
+
+
+def test_the_same_line_cannot_be_captured_twice(employee, tenant, source_code):
+    """What the removed EXCLUDE was really standing in for."""
     allowance = make_component(
         tenant, "TRANSPORT", PayrollComponent.ComponentType.EARNING, source_code=source_code
     )
-    make_recurring(employee, allowance)
+    make_recurring(employee, allowance, amount=Decimal("100.0000"))
 
-    with pytest.raises(IntegrityError), transaction.atomic():
-        make_recurring(employee, allowance, effective_from=LATER)
+    with pytest.raises(IntegrityError) as raised, transaction.atomic():
+        make_recurring(employee, allowance, amount=Decimal("100.0000"))
+
+    assert "uniq_recurring_component_line_per_period" in str(raised.value)
 
 
 def test_two_different_components_may_run_together(employee, tenant, source_code):
