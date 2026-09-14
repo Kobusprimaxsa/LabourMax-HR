@@ -21,6 +21,19 @@ summary. If this file and the workbook disagree, **the workbook wins** — and t
 
 ## Non-negotiables
 
+**PROVE EVERY GUARD FAILS.** A constraint, trigger, policy or coverage gate is not
+in force until you have watched it reject the case it exists for. This project has
+now shipped five guards that read correctly and did nothing at runtime — the P0
+five, `leave_type`'s system-row lock keying on a column that did not exist (D-134),
+`dbcheck` demanding extensions nothing uses (D-137), and `--cov-fail-under=100`
+measuring only line coverage until `branch = true` was set (P5 chunk 1). Every one
+was found by accident, not by design. Writing the guard is not the work; writing
+the violating case, watching it fail with the right message, and keeping that
+failure as a test is the work. This is why every test file in this codebase that
+exercises a refusal asserts on the message and not only the exception class (D-134
+again) — a guard that raises the wrong error for the right reason is exactly as
+silent as one that does not raise at all.
+
 ### 1. Tenant isolation — three layers, no exceptions
 
 No table holding employer or employee data may be merged without **all three**:
@@ -685,8 +698,8 @@ a plain `int`, not a `Decimal` literal: it is a plausible salary for a demo cell
 statutory figure, and `test_no_hardcoded_rates` scans this file exactly like every
 other module in `employees/`.
 
-**P5 — Attendance & Time: chunk 1 of three** (14 September 2026). 882 tests green.
-`attendance_day` exists, tenant-scoped, and `calculators/attendance.py` is **the first
+**P5 — Attendance & Time: chunk 2 of three** (14 September 2026). 907 tests
+green. `attendance_day` exists, tenant-scoped, and `calculators/attendance.py` is **the first
 real calculator** — the calculators rule stops being aspirational from here. Pure
 functions only: no ORM import, no database access, no file I/O, no `datetime.now()`.
 Every multiplier, cap, window and minimum it uses is a field the caller reads from
@@ -725,7 +738,11 @@ ratio of hours actually paid — worked hours plus the SD1 guarantee — to the 
 own scheduled hours for that day, capped at 1.000. An equally defensible rule would use
 the rule set's statutory per-day cap as the denominator instead, or count only
 `ordinary_hours`; either would move the number on a short or non-standard day. Flagged
-for O-06 rather than left implicit in the code.
+for O-06 rather than left implicit in the code. **AMENDED in chunk 2: "1.000 for leave"
+holds only while a leave day is whole-day.** P6's `leave_application` brings part days —
+a half day of annual leave must yield 0.500, read by both daily-rate pay and leave
+accrual — and P6 must revisit `FULL_DAY_EQUIVALENT_TYPES` before
+`leave_application_id_ref` becomes a real FK.
 
 **There is no golden-file test for hour bucketing, and that is permanent, not
 pending** (D-150). Unlike PAYE or the minimum wage, no regulator publishes a worked
@@ -746,10 +763,51 @@ needed.
 — `attendance/capture.py` reads the rule set in force **on the work date**, not today's.
 A March day re-read in 2029 must show what March produced.
 
-**Still open in P5:** the capture screen itself (a monthly grid), pre-fill from
-schedule, bulk actions, the live exception panel's UI (the pure calculation behind it,
-`evaluate_exceptions`, exists), `timesheet_summary`, and `attendance_import_batch`
-(chunk 3). Consecutive sick days needing a leave application are P6 and are not stubbed.
+**`timesheet_summary` is a CACHE and nothing more** (invariant 3), and chunk 2's central
+rule is that recomputation always rebuilds from `attendance_day` from scratch — there is
+no incremental update path, because an incrementally-maintained cache that has drifted
+cannot be told apart from a correct one. `total_public_holidays_not_worked` reads the
+employee's **schedule**, never the calendar directly: a high earner above the BCEA
+earnings threshold loses s18(3) but **keeps** the public holiday entitlement, so this
+figure is never gated on earnings, only on whether the day is one the employee
+ordinarily works. `total_unpaid_days` is a plain row count and the other two day-totals
+sum `days_worked_equivalent` (D-154) — `days_worked_equivalent` is *defined* as 0.000
+for an unpaid day, so summing it for `total_unpaid_days` would always read zero, which
+is not what that column is for.
+
+**Staleness is answered two ways, and the two are deliberately independent** (D-153).
+`attendance/staleness.py`'s signal on `AttendanceDay` `post_save`/`post_delete` sets
+`is_stale` the moment a covered day changes — a signal rather than a check inside
+`attendance/capture.py`, so chunk 3's import batch and any future writer are covered by
+construction, with no call site to remember. `attendance/summary.py`'s
+`is_actually_stale()` is the ground truth and does not look at the flag at all: it
+compares `computed_at` against the covered days' own `updated_at`, so a flag that was
+missed — or cleared by hand, which the test suite proves against directly — is still
+detectable. **PROVE EVERY GUARD FAILS** (see the Non-negotiables) is not a slogan here:
+both halves of this pair are tested by first watching them NOT fire, then watching them
+fire.
+
+**The capture grid (`attendance/grid.py`) and approval (`attendance/approval.py`) are
+services, not screens** — no views, no templates, the same as everything else in this
+codebase so far. Pre-fill is for salaried bases only (D-25, already settled via
+`PayGroup.is_attendance_driven`): hourly and daily open blank, because a pre-filled
+hourly day nobody looked at is an invented wage. A pre-fill proposal is never a saved
+row. Bulk fill goes through `attendance.capture.capture()` for every date and skips
+anything already captured — never a second, faster write path. Approval refuses
+outright, naming each one, while any BLOCKING exception from chunk 1's
+`evaluate_exceptions` stands over the span; a warning does not block, and a locked day
+is refused by the trigger itself rather than a Python-side copy of the same check.
+
+**`attendance/completeness.py` is the P7 hook, and getting its direction backwards
+breaks payroll two different ways.** `missing_attendance_days()` answers "what is
+missing" only for attendance-driven bases (hourly, daily) — for a salaried employee, no
+row means an ordinary day worked, so the function returns nothing rather than flagging
+every uncaptured day of a month nobody was ever going to capture one by one. P7's
+validation gate will call this; it is not built here.
+
+**Still open in P5:** the screens themselves (the capture grid, the exception panel),
+`timesheet_summary`'s own display, and `attendance_import_batch` (chunk 3). Consecutive
+sick days needing a leave application are P6 and are not stubbed.
 
 **P2 — Statutory Reference Data: structure complete, data loaded, awaiting
 verification** (13 September 2026). 351 tests green. All twenty tables exist with their

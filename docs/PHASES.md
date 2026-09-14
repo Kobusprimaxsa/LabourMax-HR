@@ -205,16 +205,28 @@ as a unit. **All three passed on 14 September 2026 — P4 COMPLETE**, 824 tests 
       hour-bucketing shapes (D-148) and `days_worked_equivalent` (D-149) are modelling
       choices flagged for the labour law review (O-06); there is deliberately no
       golden-file test (D-150). Locking is a trigger (D-151), not an application check
-- [ ] Monthly capture grid — sticky headers, keyboard navigation, colour-coded day types
-- [ ] Pre-fill from schedule for salaried bases **only**; hourly and daily open blank
-- [ ] Bulk actions filling empty cells only
+- [ ] Monthly capture grid — sticky headers, keyboard navigation, colour-coded day types.
+      The service the screen will call exists (`attendance/grid.py::month_grid`, chunk 2);
+      the screen itself does not — no views, no templates, this codebase still has none
+- [x] Pre-fill from schedule for salaried bases **only**; hourly and daily open blank
+      (chunk 2, D-25 already settled the distinction). A pre-fill proposal is never a
+      saved row
+- [x] Bulk actions filling empty cells only (chunk 2, `attendance/grid.py::bulk_fill`) —
+      through `attendance.capture.capture()` for every date, never a second write path
 - [ ] `attendance_import_batch` — preview, validate, apply, reverse (chunk 3)
-- [ ] `timesheet_summary` aggregation with staleness flag
-- [ ] Live exception panel: daily and weekly overtime caps, consecutive sick days, weekly rest.
-      The pure calculation (`calculators.attendance.evaluate_exceptions`) exists for the
-      first two and for the meal-interval and rest checks sheet 03 also asks for;
-      consecutive sick days are P6 (a leave application to check against) and are not
-      stubbed. The screen itself does not exist yet
+- [x] `timesheet_summary` aggregation with staleness flag (chunk 2). A cache and nothing
+      more (invariant 3) — recomputation always rebuilds from `attendance_day`, no
+      incremental path. Staleness is two layers, deliberately independent: a signal
+      (D-153) and a ground-truth function that does not trust the signal's own flag
+- [x] Live exception panel's approval gate: `attendance/approval.py::approve()` (chunk 2)
+      refuses, naming each one, while a BLOCKING exception from chunk 1's
+      `evaluate_exceptions` stands over the span; a warning does not block. Daily and
+      weekly overtime caps, and the meal-interval and rest checks sheet 03 also asks for,
+      are covered. Consecutive sick days are P6 (a leave application to check against)
+      and are not stubbed. The panel screen itself does not exist yet
+- [x] `attendance/completeness.py::missing_attendance_days` — the P7 hook (chunk 2).
+      Attendance-driven bases only; a salaried employee with no row is assumed to have
+      worked the day, not flagged missing. P7's gate will call this and is not built here
 
 **Done when:** a month for twenty employees is captured in under ten minutes, and an
 uncaptured attendance-driven day blocks the payroll run.

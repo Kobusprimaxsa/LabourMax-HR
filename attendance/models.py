@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from django.db import models
 from django.db.models import F
+from django.utils import timezone
 
 from core.audit import AuditedModel
 from core.models import TenantScopedModel
@@ -208,3 +209,70 @@ class AttendanceDay(AuditedModel, TenantScopedModel):
 
     def __str__(self):
         return f"{self.employee_id} on {self.work_date} ({self.day_type})"
+
+
+class TimesheetSummary(AuditedModel, TenantScopedModel):
+    """One employee's totals for one pay period. A CACHE, and nothing more
+    (invariant 3).
+
+    Every figure here is recomputable from ``attendance_day`` — nothing reads
+    this table that could not instead read the days it summarises, and it is
+    NEVER edited directly. There is no incremental update path: recomputation
+    always rebuilds from scratch (``attendance/summary.py::recompute_summary``),
+    because an incrementally-updated cache that has drifted cannot be told
+    apart from a correct one — the only way to trust a total is to have just
+    derived it fresh. A stored total is exactly the kind of number somebody
+    later "corrects" by hand; do not.
+
+    **Staleness is answered two ways, deliberately** (D-153). ``is_stale`` is a
+    fast flag, set by a signal the moment an ``attendance_day`` in this period
+    is saved or deleted — a signal rather than a service-layer check, so the
+    bulk importer in chunk 3 and every future writer are covered by
+    construction, with no call site to remember. ``attendance/summary.py``'s
+    ``is_actually_stale()`` is the ground truth: it compares ``computed_at``
+    against the covered days' own ``updated_at``, straight from the data, so a
+    flag that was somehow missed — or cleared by hand — is still detectable
+    rather than permanently wrong.
+    """
+
+    employee = models.ForeignKey(
+        "employees.Employee", on_delete=models.CASCADE, related_name="timesheet_summaries"
+    )
+    pay_period = models.ForeignKey(
+        "payroll.PayPeriod", on_delete=models.PROTECT, related_name="timesheet_summaries"
+    )
+
+    total_ordinary_hours = models.DecimalField(max_digits=9, decimal_places=3, default=0)
+    total_overtime_hours = models.DecimalField(max_digits=9, decimal_places=3, default=0)
+    total_sunday_hours = models.DecimalField(max_digits=9, decimal_places=3, default=0)
+    total_public_holiday_hours = models.DecimalField(max_digits=9, decimal_places=3, default=0)
+    total_night_hours = models.DecimalField(max_digits=9, decimal_places=3, default=0)
+    total_standby_shifts = models.SmallIntegerField(default=0)
+
+    total_days_worked = models.DecimalField(max_digits=7, decimal_places=3, default=0)
+    total_paid_leave_days = models.DecimalField(max_digits=7, decimal_places=3, default=0)
+    total_unpaid_days = models.DecimalField(max_digits=7, decimal_places=3, default=0)
+    total_public_holidays_not_worked = models.DecimalField(
+        max_digits=7,
+        decimal_places=3,
+        default=0,
+        help_text="Paid if they fall on an ordinary working day.",
+    )
+
+    computed_at = models.DateTimeField(default=timezone.now)
+    is_stale = models.BooleanField(
+        default=False, help_text="Set when an underlying attendance_day changes."
+    )
+
+    class Meta:
+        db_table = "timesheet_summary"
+        ordering = ["employee_id", "-pay_period_id"]
+        indexes = [models.Index(fields=["tenant", "pay_period"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee", "pay_period"], name="uniq_timesheet_summary_per_employee_period"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.employee_id} for period {self.pay_period_id}"

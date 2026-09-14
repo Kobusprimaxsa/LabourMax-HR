@@ -19,10 +19,11 @@ from decimal import Decimal
 
 from django.db import transaction
 
+from attendance import scheduling
 from attendance.models import AttendanceDay
 from calculators.attendance import AttendanceDayInput, RuleFigures, bucket_day
 from core.managers import tenant_context_of
-from employees.models import Employee, WorkSchedule, WorkScheduleDay
+from employees.models import Employee
 from statutory import resolve
 
 
@@ -32,40 +33,6 @@ class AttendanceCaptureRefusedError(Exception):
 
 class LockedDayError(AttendanceCaptureRefusedError):
     """The day is locked by a finalised payroll run."""
-
-
-def _current_schedule(employee: Employee, on_date: datetime.date) -> WorkSchedule | None:
-    return (
-        WorkSchedule.objects.filter(employee=employee, effective_from__lte=on_date)
-        .exclude(effective_to__lte=on_date)
-        .order_by("-effective_from")
-        .first()
-    )
-
-
-def _cycle_day_for(schedule: WorkSchedule, on_date: datetime.date) -> int:
-    """Which day of the schedule's cycle a date falls on.
-
-    For the ordinary 7-day cycle, day 0 is Monday (the schedule's own
-    documented convention) — calendar weekday, independent of when the
-    schedule itself started. Any other cycle length (only 14 is modelled, and
-    the WorkSchedule docstring itself says that is unexercised by the
-    product) has no such calendar anchor, so it falls back to counting from
-    the schedule's own effective_from.
-    """
-    if schedule.cycle_length_days == 7:
-        return on_date.weekday()
-    return (on_date - schedule.effective_from).days % schedule.cycle_length_days
-
-
-def _schedule_day_for(
-    schedule: WorkSchedule | None, on_date: datetime.date
-) -> WorkScheduleDay | None:
-    if schedule is None:
-        return None
-    return WorkScheduleDay.objects.filter(
-        work_schedule=schedule, cycle_day=_cycle_day_for(schedule, on_date)
-    ).first()
 
 
 def _rule_figures(row) -> RuleFigures:
@@ -147,8 +114,8 @@ def capture(
 
         rules = rules_in_force(employee, work_date)
 
-        schedule = _current_schedule(employee, work_date)
-        schedule_day = _schedule_day_for(schedule, work_date)
+        schedule = scheduling.current_schedule(employee, work_date)
+        schedule_day = scheduling.schedule_day_for(schedule, work_date)
 
         day_input = AttendanceDayInput(
             work_date=work_date,

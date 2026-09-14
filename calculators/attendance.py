@@ -129,6 +129,12 @@ WORKED_DAY_TYPES = frozenset(
 #: Day types that still count as a full day for daily-rate pay and leave
 #: accrual despite zero hours worked — see the days_worked_equivalent choice
 #: (D-149) in the module docstring.
+#:
+#: HOLDS ONLY WHILE LEAVE IS WHOLE-DAY (D-149, amended). P6 introduces
+#: leave_application with part days, and a half day of annual leave must
+#: yield 0.500 here, not 1.000 — this flat lookup will need the part-day
+#: fraction as an input once one exists. P6 must revisit this before
+#: leave_application_id_ref becomes a real FK.
 FULL_DAY_EQUIVALENT_TYPES = frozenset({DayType.LEAVE, DayType.ABSENT_PAID})
 
 
