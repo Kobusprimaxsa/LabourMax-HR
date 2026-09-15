@@ -1053,3 +1053,65 @@ class LeaveApplicationDay(AuditedModel, TenantScopedModel):
 
     def __str__(self):
         return f"{self.leave_application_id} {self.leave_date}"
+
+
+class PublicHolidayObservance(AuditedModel, TenantScopedModel):
+    """An employer's own record of how one date was actually treated — P6
+    chunk 3, task 4.
+
+    **This changes chunk 2's answer, on purpose.**
+    ``leave/applications.py``'s day computation used to read the statutory
+    calendar (``statutory.resolve.is_public_holiday()``) directly and
+    unconditionally. It now checks HERE FIRST: an observance row with
+    ``is_observed=FALSE`` means this employer's employees worked that date
+    as an ordinary day, so it IS a working day and it IS deducted from
+    leave, even though the statutory calendar still calls it a public
+    holiday. No row at all falls back to the calendar exactly as before.
+
+    ``public_holiday`` is NULLABLE for a genuinely employer-specific day —
+    a company day off that is not on the statutory calendar at all, sheet
+    02's own reason for the column.
+
+    **COMPLIANCE NOTE, flagged for the labour law review (O-06): a row
+    with ``is_observed=FALSE`` RECORDS an agreement — it does not MAKE
+    one.** BCEA s18 does not let an employer unilaterally require work on a
+    public holiday; s18(3) conditions it on agreement (and pays a premium
+    when worked). This table is the employer's statement of what was
+    agreed, captured for payroll and leave to read consistently — it is not
+    itself the legal instrument, and nothing in this codebase checks that a
+    genuine agreement exists behind a row before honouring it. A future
+    chunk that captures consent formally should point at whatever record
+    proves it, not treat this table's existence as proof.
+    """
+
+    employer = models.ForeignKey(
+        "employers.Employer", on_delete=models.PROTECT, related_name="public_holiday_observances"
+    )
+    public_holiday = models.ForeignKey(
+        "statutory.PublicHoliday",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="+",
+        help_text="NULL for an employer-specific day not on the statutory calendar.",
+    )
+    observance_date = models.DateField(db_index=True)
+    name = models.CharField(max_length=120)
+    is_observed = models.BooleanField(
+        default=True,
+        help_text="FALSE = this employer's employees worked this day as ordinary.",
+    )
+    is_paid = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "public_holiday_observance"
+        ordering = ["employer_id", "observance_date"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employer", "observance_date"],
+                name="uniq_public_holiday_observance_per_employer_date",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.employer_id} {self.observance_date} observed={self.is_observed}"

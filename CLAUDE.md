@@ -158,11 +158,29 @@ does. Statutory constraints are therefore explicit per model via the helpers in
 `statutory/models.py`, with `statutory/tests/test_citations.py` reading `pg_constraint` to
 prove they landed.
 
-**`NULL = NULL` is unknown in PostgreSQL, so nullable key columns escape both unique and
-exclusion constraints.** A `UniqueConstraint` over nullable scope columns permits duplicates,
-and an `ExclusionConstraint` permits overlaps, precisely for the rows where every scope
-column is NULL — which in `minimum_wage_rate` is the general National Minimum Wage, the row
-most likely to be loaded twice. Use `nulls_distinct=False` and `Coalesce(col, 0)`.
+**EVERY CONSTRAINT OVER A NULLABLE COLUMN IS PERMISSIVE BY DEFAULT.** This is one PostgreSQL
+behaviour, not three unrelated ones, and it has now been found in three shapes:
+
+- A `UniqueConstraint` over nullable scope columns permits DUPLICATES, precisely for the rows
+  where every scope column is NULL — which in `minimum_wage_rate` is the general National
+  Minimum Wage, the row most likely to be loaded twice. `NULL = NULL` is unknown, so two NULLs
+  are never equal and the constraint never sees a clash. Fixed with `nulls_distinct=False`.
+- An `ExclusionConstraint` over a nullable scope expression permits OVERLAPS for the same
+  reason — `employee_recurring_component` needed `Coalesce(col, 0)` inside the exclusion
+  expression so two NULL-scoped rows compare equal instead of each being unique.
+- A `CHECK` that evaluates to NULL rather than FALSE counts as SATISFIED — PostgreSQL only
+  rejects a row when the expression is FALSE, never when it is merely unknown. A per-branch
+  test over a nullable column (`Q(transaction_type="accrual", hours__gt=0)` when `hours` IS
+  NULL) evaluates NULL, and ORed against another branch's plain FALSE the whole CHECK stays
+  NULL — which PASSES, silently, for exactly the wrong-signed row the CHECK exists to catch
+  (`leave_transaction_sign_matches_type`, D-170). The fix is the same shape as the other two:
+  make NULL's meaning explicit, here with `__isnull=False` guarding every branch that touches
+  the nullable column, so a NULL resolves the branch to a definite FALSE instead.
+
+**If a constraint touches a nullable column, its author must say what NULL means** —
+`Coalesce`, `nulls_distinct=False`, or an explicit `IS NULL`/`IS NOT NULL` on every branch —
+or the constraint silently does not apply to the rows carrying NULL, which are usually the
+exact rows it was written for.
 
 **Extensions belong in migrations, not in a setup script.** `BtreeGistExtension()`,
 installed by `statutory/0002` and backing every `ExclusionConstraint` in this schema — the
@@ -975,7 +993,8 @@ gateway), so starting it means stopping to ask.
 **Statutory figures are never invented.** If a rate is needed and cannot be cited, say so and
 stop. That applies to filling in a fixture as much as to writing code.
 
-**P6 — Leave: chunks 1 and 2 of three built** (15 September 2026). 1048 tests green. The leave
+**P6 — Leave: PHASE COMPLETE, all three chunks built** (15 September 2026). 1072 tests
+green. The leave
 catalogue, cycles, the append-only ledger, the accrual engine, evidence, applications and
 authorisation are in — forfeiture *capture* is chunk 3, and it is not stubbed here.
 
@@ -1120,8 +1139,72 @@ wrong in between. `employees/engagements.py::terminate()` now calls
 import here would be a circular import at Python's own load time, not merely a layering
 preference. The lazy path stays as the backstop, not the mechanism.
 
-Still open in this chunk: nothing — chunk 2's own seven tasks are complete and green. Chunk 3
-(forfeiture capture) is unstarted.
+**Chunk 3 closes the phase, and the last task is proving the phase's own definition of done
+rather than asserting it.** Before chunk 3's own work, one documentation debt was paid first:
+CLAUDE.md's non-negotiables used to document the NULL-escapes-a-unique and
+NULL-escapes-an-exclusion findings as two separate traps. They are the same PostgreSQL
+behaviour, now stated once — "every constraint over a nullable column is permissive by
+default" — with the CHECK-evaluates-to-NULL case (found closing chunk 2, D-170) folded in
+as the third face of it rather than left implicit.
+
+**Forfeiture capture is built exactly as Kobus decided it, in chunk 1, and restated here
+(D-177): manual, and NOTHING else.** `leave/forfeiture.py::capture_forfeiture()` is the
+whole mechanism — an employer names a cycle, a quantity and a reason, and it writes one
+negative `forfeiture` transaction attributed to the capturing user. Refuses a forfeiture
+larger than the cycle's own (recomputed, never cached) balance, naming both figures;
+refuses one against a cycle with nothing to forfeit; reversible like anything else in the
+ledger. **Chunk 1's `test_no_forfeiture_transaction_is_ever_written_automatically` is
+UNCHANGED and still passes** — a dedicated test in this chunk inspects it by name rather
+than merely trusting nobody touched it, because "trust me, I didn't edit it" is not a proof.
+
+**The forfeiture deadline warning (D-178) is a query, not a screen and not a job** —
+`leave/warnings.py::forfeiture_warnings()` writes nothing, ever, because chunk 1 and chunk 3
+both refuse to let anything automatic near a forfeiture transaction. For an employer, every
+ANNUAL cycle that has ended with a balance still outstanding, bucketed
+approaching/due/past against `cycle_end + leave_rule_set.annual_leave_forfeit_months` — the
+six months read through `statutory.resolve`, never a literal, exactly as the brief demanded.
+`DUE_WINDOW_DAYS = 30` is NOT that statutory figure; it is a plain reporting judgement call
+about escalation urgency INSIDE the six months, flagged for O-06 alongside this chunk's other
+modelling choices rather than dressed up as a citation it is not. Excludes a terminated
+employee's CLOSED cycle on purpose — that is a BCEA s40(b) termination-payout question, a
+different duty this list must not conflate with forfeiture.
+
+**`public_holiday_observance` (D-179) changes chunk 2's own answer, on purpose.** An employer
+whose observance row says `is_observed=FALSE` has its employees work that date as ordinary —
+so it BECOMES a working day and IS deducted from leave, on the same calendar date a different
+employer's employees still get free. `leave/applications.py::_is_observed_holiday()` checks
+this table before the statutory calendar, in either direction; a NULL `public_holiday` lets an
+employer declare a day the calendar knows nothing about. Proven both directions, same date, two
+employers, one test. **COMPLIANCE NOTE, in the model's own docstring and flagged for O-06**: a
+row with `is_observed=FALSE` RECORDS an agreement under BCEA s18(3) — it does not MAKE one, and
+nothing here checks that a genuine agreement stands behind it.
+
+**Task 5 asked for P6's own definition of done to be PROVEN, not asserted, and it found
+something real.** `leave/tests/test_reconciliation_property.py` uses Hypothesis to generate
+random sequences — accruals across multiple cycles, applications approved and cancelled (full
+day and part day), adjustments with reasons, forfeitures, reversals of any of them — and after
+every single step confirms the balance equals an independent sum of the ledger exactly, is
+never negative, and that `leave/balances.py`'s own staleness-driven cache agrees with that
+independent sum. It tests "never negative" as an UNQUALIFIED property, stronger than the
+brief's own "except where an overdrawn application explicitly made it so" — because this
+codebase's chunk 2 design (D-174) never actually lets an application drive a balance negative
+in the first place; the qualifier's own premise does not arise here. **It DID find one genuine
+interaction (D-176)**: reversing an EARLIER transaction after a LATER adjustment or forfeiture
+has already relied on its own contribution being present is correct, order-independent ledger
+arithmetic that can legitimately leave a cycle showing a deficit — the ledger doing exactly
+what a signed sum should do, not a bug in `leave/ledger.py`. Fixed in the TEST's own definition
+of a valid sequence (skip a reversal that would drive its cycle negative, the same treatment an
+overdrawn adjustment already gets), not in the ledger, which was never asked to understand
+causality between independent rows.
+
+**What that proof does NOT cover, stated plainly:** SICK and every other leave type besides
+ANNUAL (the accrual engine itself is scoped to ANNUAL only, D-168, so there is nothing yet to
+reconcile for the rest); HOURS-denominated balances by property test (proven deterministically
+instead — `leave/tests/test_applications.py` — but not by the random-sequence proof, which only
+generates DAYS-unit actions); `ANNUAL_UNAUTHORISED`'s parent-balance resolution (flagged
+unresolved since chunk 2, D-174, and not exercised here either); and termination payout, which
+is P7's. Full detail, including which P6 done-clauses pass and which do not and why, is in
+`docs/PHASES.md`'s own P6 section — not ticked here without it being demonstrated there first.
 
 See `docs/PHASES.md` for the task breakdown.
 

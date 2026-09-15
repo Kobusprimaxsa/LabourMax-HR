@@ -250,11 +250,16 @@ completed prerequisite, not the outcome the "Done when" clause actually asks for
 
 ---
 
-## P6 — Leave Management · 5 weeks · 8 tables
+## P6 — Leave Management · 5 weeks · 8 tables — PHASE CLOSED
 
-**Chunks 1 and 2 of 3 done** (15 September 2026): the catalogue, cycles, the ledger, the
-accrual engine, evidence, applications and authorisation. Chunk 3 (forfeiture capture) is
-unstarted — see the P6 section of CLAUDE.md and D-162 to D-175 for the detail.
+**All three chunks done** (15 September 2026): the catalogue, cycles, the ledger, the
+accrual engine, evidence, applications, authorisation, manual forfeiture capture, the
+forfeiture deadline warning, and public holiday observance. See the P6 section of
+CLAUDE.md and D-162 to D-179 for the detail. **Read the honest "Done when" assessment
+at the bottom of this section before treating the phase as fully proven** — it is not,
+in a specific and stated way, and the property test that found the one real interaction
+this phase surfaced is the reason to trust that statement rather than merely take it on
+faith.
 
 - [x] `leave_type` **table built in P4** (D-127) — seeded via `manage.py seedleavetypes`,
       all ten codes; two shapes FLAGGED (`STUDY`, `COMPASSIONATE`) rather than settled
@@ -293,16 +298,64 @@ unstarted — see the P6 section of CLAUDE.md and D-162 to D-175 for the detail.
       captured as worked (naming the date) or locked by a payroll run (naming the run), and
       writes the ledger transaction and the attendance day together. Cancelling REVERSES the
       ledger and removes the attendance days it wrote, even after the leave was taken
-- [ ] Forfeiture job writing explicit transactions — **will never be built as a job** (D-165,
-      Kobus's decision): forfeiture is captured by the employer BY HAND in chunk 3, and no
-      job, task or engine path in this codebase may write a forfeiture transaction. Chunk 3
-      builds the manual capture path and the warnings that lead up to it, not an automated one
-- [ ] `public_holiday_observance` overrides
+- [x] Forfeiture — NOT a job, BY DESIGN (D-165, Kobus's decision) — **and that half never
+      will be ticked, because it is never going to be built**. What chunk 3 DOES build and
+      tick: `leave/forfeiture.py::capture_forfeiture()`, a manual capture the employer
+      triggers by hand, naming an employee, leave type, cycle and reason. Refuses a
+      forfeiture larger than the cycle's balance (naming both figures) or against a cycle
+      with no balance; reversible like any other ledger entry. Chunk 1's own
+      `test_no_forfeiture_transaction_is_ever_written_automatically` is UNCHANGED and still
+      passes — see D-177
+- [x] The forfeiture deadline warning (task 3, not in the workbook's own table list — a
+      query, not a table) — `leave/warnings.py::forfeiture_warnings()`. For an employer,
+      every ANNUAL cycle that has ENDED with a balance still outstanding, bucketed
+      approaching/due/past against `leave_rule_set.annual_leave_forfeit_months` (read
+      through `statutory.resolve`, never a literal). Read-only — it writes nothing, exactly
+      because nothing may forfeit automatically. Excludes a terminated employee's closed
+      cycle, which is a BCEA s40(b) payout question, not a forfeiture one (D-178)
+- [x] `public_holiday_observance` overrides (task 4, D-179) — built to sheet 02's own
+      columns. **Changes chunk 2's own answer, deliberately**: an employer whose observance
+      row says `is_observed=FALSE` has its employees work that date as ordinary, so it BECOMES
+      a working day and IS deducted from leave, on the same calendar date a different
+      employer's employees still get free. Proven both directions, same date, two employers,
+      in one test. COMPLIANCE NOTE recorded in the model's own docstring and flagged for
+      O-06: a row with `is_observed=FALSE` RECORDS an agreement under BCEA s18(3); it does
+      not MAKE one, and nothing in this codebase checks that a genuine agreement stands
+      behind a row before honouring it
 
 **Done when:** every employee's balance reconciles to their ledger in every scenario,
-with no drift. **Chunks 1 and 2's own share of this is met**: twelve months of accrual sum
-exactly to the ledger with no drift, and cancelling an approved application returns the
-balance to its exact prior figure, both proven in the test suite.
+with no drift. **PROVEN, not merely asserted, for the scope this phase actually built** —
+`leave/tests/test_reconciliation_property.py` generates random sequences (Hypothesis,
+40 examples, up to 12 actions each) of accruals across multiple cycles, applications
+approved and cancelled (full day and part day), adjustments with reasons, forfeitures and
+reversals of any of them, and after EVERY step confirms the balance equals an independent
+sum of the ledger exactly, is never negative, and that `leave/balances.py`'s own
+staleness-driven cache agrees with that independent sum. Zero drift found across every
+run — **after one real interaction the test itself surfaced and a fix to the test's own
+definition of a valid sequence, not to the ledger** (D-176): reversing an EARLIER
+transaction (say, an accrual) after a LATER adjustment or forfeiture has already relied on
+its contribution being there is legitimate, order-independent ledger mechanics that can
+correctly leave a cycle showing a deficit — the ledger is doing exactly what a plain
+signed sum should do, and that deficit is the honest answer, not corruption. The property
+test now treats such a reversal as outside ITS OWN definition of a valid sequence (matching
+how an overdrawn adjustment or forfeiture is already capped rather than let through), the
+same way a real employer would need to resolve the dependent entry first. This is a
+genuine, worthwhile finding from writing the property test — not a defect in
+`leave/ledger.py`, which was never asked to (and should not) understand causality between
+independent rows.
+
+**What this proof does NOT cover, stated plainly rather than implied by a tick:**
+- **SICK, FAMILY_RESPONSIBILITY and every other leave type besides ANNUAL** — the accrual
+  engine itself is scoped to ANNUAL only (D-168), so there is nothing yet to reconcile for
+  the others. The property test inherits that scope; it is not a gap the test introduced.
+- **HOURS-denominated balances** (an employee on `PER_HOURS_WORKED`) — proven deterministically
+  (`leave/tests/test_applications.py`) but NOT by the property test, which only generates
+  DAYS-unit actions. A property-based proof of the hours path is future work, not done here.
+- **`ANNUAL_UNAUTHORISED`** (`balance_source='parent'`) — flagged since chunk 2 (D-174) as not
+  resolved to its parent's cycle by `ensure_cycles`/`balance_as_at`; the property test does
+  not exercise it, consistently with that flag.
+- **Termination payout** — P7's job. A terminated employee's closed cycle balance is proven
+  untouched at termination (chunk 2's own tests) but paying it out is not this phase's work.
 
 ---
 

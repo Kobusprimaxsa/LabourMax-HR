@@ -15,10 +15,16 @@ they are taken, they are just unpaid. ``exceeds_balance`` and
 ``unpaid_days`` carry the audit; ``leave/authorisation.py::approve()`` is
 what actually warns and commits it to the ledger.
 
-**A week's leave over a public holiday costs four days, not five.**
-``is_working_day`` is FALSE for a rest day AND for a public holiday inside
-the span — neither deducts, neither is paid, and both still get their own
-``leave_application_day`` row so the audit can show why.
+**A week's leave over a public holiday costs four days, not five —
+UNLESS this employer's own ``PublicHolidayObservance`` says otherwise**
+(P6 chunk 3, task 4). ``is_working_day`` is FALSE for a rest day AND for a
+public holiday inside the span — neither deducts, neither is paid, and
+both still get their own ``leave_application_day`` row so the audit can
+show why. Which dates count as a holiday for THIS employer is decided by
+``_is_observed_holiday()`` — an explicit observance row wins over the
+statutory calendar in either direction; see that function and
+``PublicHolidayObservance``'s own docstring for the compliance note this
+carries.
 
 FLAGGED: a ``balance_source='parent'`` type (``ANNUAL_UNAUTHORISED``) is not
 resolved to its PARENT's cycle here — ``ensure_cycles``/``balance_as_at``
@@ -49,6 +55,7 @@ from leave.models import (
     LeaveCycle,
     LeaveEvidenceType,
     LeaveType,
+    PublicHolidayObservance,
 )
 from statutory import resolve
 
@@ -102,6 +109,26 @@ def _is_sick_leave_paid(
     return working_units <= threshold
 
 
+def _is_observed_holiday(employer, a_date: datetime.date) -> bool:
+    """Whether ``a_date`` is treated as a holiday for THIS employer — task
+    4's observance override, checked before the statutory calendar.
+
+    An explicit ``PublicHolidayObservance`` row wins outright, in EITHER
+    direction: ``is_observed=False`` on a genuine statutory holiday means
+    this employer's employees worked it as ordinary (see the model's own
+    compliance note — this records an agreement, it does not make one), and
+    an employer-specific row with no ``public_holiday`` at all can declare a
+    day off the statutory calendar knows nothing about. No row falls back to
+    the plain calendar exactly as chunk 2 read it.
+    """
+    observance = PublicHolidayObservance.objects.filter(
+        employer=employer, observance_date=a_date
+    ).first()
+    if observance is not None:
+        return observance.is_observed
+    return resolve.is_public_holiday(a_date)
+
+
 def _build_days(
     employee,
     leave_type: LeaveType,
@@ -118,7 +145,7 @@ def _build_days(
     for a_date in scheduling.iter_dates(start_date, end_date):
         schedule = scheduling.current_schedule(employee, a_date)
         schedule_day = scheduling.schedule_day_for(schedule, a_date)
-        is_public_holiday = resolve.is_public_holiday(a_date)
+        is_public_holiday = _is_observed_holiday(employee.employer, a_date)
         is_working_day = bool(
             schedule_day is not None and schedule_day.is_working_day and not is_public_holiday
         )
