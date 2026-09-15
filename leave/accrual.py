@@ -1,39 +1,68 @@
-"""The monthly accrual engine — P6 chunk 1's fourth task.
+"""The monthly accrual engine — P6 chunk 1's fourth task, extended in chunk 4.
 
 **Monthly and idempotent per employee, per leave type, per period.**
 ``leave_accrual_run``'s own ``UNIQUE (employer, leave_type, accrual_as_at)``
 is what makes a second run write nothing (task 4) — a database constraint,
 not merely a status check the engine remembers to make. ``run_monthly_accrual``
 also checks for an existing COMPLETED run first, so the ordinary case never
-even reaches the constraint.
+even reaches the constraint. THREE leave types go through the SAME
+``run_monthly_accrual`` entry point now — ANNUAL, SICK and
+FAMILY_RESPONSIBILITY — dispatching on ``leave_type.code`` inside
+``accrue_employee`` rather than each gaining a parallel run mechanism
+(P6 chunk 4, task 2's own instruction).
 
-**Scoped to ANNUAL leave for this chunk.** BCEA s20(2)'s three accrual
-methods (plus the upfront-grant form ``employee_leave_entitlement`` already
-supports) are fully specified by ``leave_rule_set`` today, and are
-implemented here in full: straight-line monthly (day-based, by the
-employee's own 5-day/6-day schedule), per-days-worked and per-hours-worked
-(both attendance-based — this is why P5 had to come before P6), and a single
+**ANNUAL** — BCEA s20(2)'s three accrual methods (plus the upfront-grant
+form ``employee_leave_entitlement`` already supports) are fully specified by
+``leave_rule_set``: straight-line monthly (day-based, by the employee's own
+5-day/6-day schedule), per-days-worked and per-hours-worked (both
+attendance-based — this is why P5 had to come before P6), and a single
 upfront grant of the whole cycle.
 
-**SICK's BCEA s22 first-six-months rule is NOT implemented here, and that is
-a deliberate, recorded gap, not an oversight.** It genuinely does accrue off
-attendance the same way the per-17-hours method does — but "the first six
-months" is a statutory THRESHOLD with no home yet in ``leave_rule_set``
-(only the accrual RATIO, ``sick_leave_first_six_months_ratio``, is stored;
-the six itself is not), and what happens to sick leave crediting AFTER that
-window — a lump sum at eligibility, never smeared over 36 months the way
-annual leave is — is a separate, undesigned mechanism this chunk was not
-asked to build. Calling this engine for SICK, or any other ``accrues=True``
-type besides ANNUAL, raises ``AccrualNotSupportedError`` naming the gap
-rather than silently doing nothing — "resolve raises when a figure is
-missing" applied to the THRESHOLD a rule would need, not only to a rate.
+**SICK (P6 chunk 4, D-181)** — BCEA s22 is genuinely two-phase, and neither
+phase is agreement-based the way ANNUAL's three methods are, so SICK never
+goes through ``accrual_method_for()``/``AccrualMethod`` at all:
+
+- Cycle 1 (the employee's first 36-month sick cycle) starts with the
+  ATTENDANCE-DRIVEN ratio from s22(1) — one day per
+  ``sick_leave_first_six_months_ratio`` days worked, from
+  ``attendance_day.days_worked_equivalent``, monthly and idempotent exactly
+  like ANNUAL's per-days-worked method. This is why P5 had to exist for SICK
+  too, not only for ANNUAL's hourly method.
+- At the ``SICK_LEAVE_FIRST_PERIOD_MONTHS`` mark (a new ``statutory_parameter``
+  this chunk — the SIX itself was the gap chunk 1 flagged and never claimed
+  to have closed), ONE top-up transaction transitions the cycle to the full
+  six-week-equivalent entitlement, and NO further accrual happens for the
+  rest of cycle 1 — the lump sum covers it, per s22(2)'s own "following sick
+  leave cycle" wording.
+- Cycle 2 onward never sees the ratio phase at all — by definition, a SECOND
+  36-month sick cycle cannot fall inside the employee's first six months of
+  employment — so it is granted the full six-week-equivalent UPFRONT, once,
+  at cycle start.
+
+See ``_accrue_sick()`` for exactly how the transition preserves what was
+already taken rather than doubling the entitlement or stranding it — the
+two wrong readings task 2 named explicitly — and D-181 in
+``docs/DECISIONS.md`` for the arithmetic proof.
+
+**FAMILY_RESPONSIBILITY (P6 chunk 4)** — BCEA s27 is not agreement-based
+either: the full cycle entitlement (``family_responsibility_days``) is
+GRANTED once, upfront, at cycle start — never accrued monthly, never
+carried to the next cycle (each cycle simply starts its own grant fresh),
+and (``leave_type.payable_on_termination = False``, already seeded in
+chunk 1) never paid out. Eligibility conditions
+(``family_resp_min_service_months``, ``family_resp_min_days_per_week``) are
+read from the rule set and exist as columns, but are NOT enforced by this
+engine — flagged rather than half-built, since nothing in this chunk asked
+for or tested enforcement, and a leave application layer that checks
+eligibility before approval is a different, untested piece of work.
 """
 
 from __future__ import annotations
 
 import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
+from dateutil.relativedelta import relativedelta
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
@@ -46,6 +75,30 @@ from leave.models import LeaveAccrualRun, LeaveTransaction, LeaveType
 
 ZERO = Decimal("0")
 AccrualMethod = EmployeeLeaveEntitlement.AccrualMethod
+
+#: ``leave_transaction.days``/``.hours`` are ``DecimalField(decimal_places=3)``
+#: (D-182, a hardening fix found while building this chunk's own ratio-based
+#: SICK accrual). An un-quantized division — ``worked / ratio`` — carries
+#: Python's full 28-significant-digit context precision, which
+#: ``full_clean()``'s own ``DecimalValidator`` refuses outright the moment the
+#: division is not exact. Chunk 1's ``_per_days_worked_quantity`` and
+#: ``_per_hours_worked_quantity`` carried this same latent gap, untested
+#: because every existing test happened to divide evenly; fixed here
+#: alongside the new SICK ratio, in the same place, the same way
+#: ``leave/applications.py`` already rounds a part-day's hours.
+_QUANTUM = Decimal("0.001")
+
+#: BCEA s22(1)-(2)'s "first six months of employment" — the duration itself,
+#: as opposed to the accrual RATIO (``sick_leave_first_six_months_ratio``,
+#: already in ``leave_rule_set``). Chunk 1's own accrual.py docstring named
+#: this exact gap; see tools/build_sick_accrual_fixture.py and D-181.
+SICK_FIRST_PERIOD_PARAMETER = "SICK_LEAVE_FIRST_PERIOD_MONTHS"
+
+#: calculation_basis markers for the two SICK-specific transaction shapes,
+#: read by tests and by anyone auditing a sick leave cycle's own history.
+SICK_TRANSITION_BASIS = "sick_six_month_transition"
+SICK_UPFRONT_BASIS = "sick_upfront_cycle"
+FAMILY_RESPONSIBILITY_BASIS = "family_responsibility_upfront"
 
 
 class AccrualRefusedError(Exception):
@@ -95,49 +148,45 @@ def _attendance_hours_worked(employee, *, period_start, period_end) -> Decimal:
 
 def _per_days_worked_quantity(employee, rules, *, period_start, as_at) -> tuple[Decimal, str]:
     worked = _attendance_days_worked(employee, period_start=period_start, period_end=as_at)
-    return worked / Decimal(rules.annual_accrual_ratio_days_worked), "per_17_days"
+    quantity = worked / Decimal(rules.annual_accrual_ratio_days_worked)
+    return quantity.quantize(_QUANTUM, rounding=ROUND_HALF_UP), "per_17_days"
 
 
 def _per_hours_worked_quantity(employee, rules, *, period_start, as_at) -> tuple[Decimal, str]:
     worked = _attendance_hours_worked(employee, period_start=period_start, period_end=as_at)
-    return worked / Decimal(rules.annual_accrual_ratio_hours_worked), "per_17_hours"
+    quantity = worked / Decimal(rules.annual_accrual_ratio_hours_worked)
+    return quantity.quantize(_QUANTUM, rounding=ROUND_HALF_UP), "per_17_hours"
 
 
-def accrue_employee(
+def _already_accrued_this_period(cycle, *, period_start, as_at) -> bool:
+    return LeaveTransaction.objects.filter(
+        leave_cycle=cycle,
+        transaction_type=LeaveTransaction.TransactionType.ACCRUAL,
+        transaction_date__gte=period_start,
+        transaction_date__lte=as_at,
+    ).exists()
+
+
+def _any_accrual_posted(cycle) -> bool:
+    return LeaveTransaction.objects.filter(
+        leave_cycle=cycle, transaction_type=LeaveTransaction.TransactionType.ACCRUAL
+    ).exists()
+
+
+def _accrue_annual(
     employee, leave_type: LeaveType, *, as_at: datetime.date
 ) -> LeaveTransaction | None:
-    """Post this employee's accrual for one leave type as at a date, or
-    return None if there is nothing to post — the type does not accrue, the
-    cycle already received this period's accrual, or the computed quantity
-    is zero.
-
-    Caller must already hold ``tenant_context_of(employee)`` (or
-    ``tenant_context(employee.tenant_id)``) — this function, and everything
-    it calls, assumes the context is pinned, the same discipline
-    ``leave/cycles.py`` documents at its own top.
+    """BCEA s20(2)'s three agreement-based methods, plus the upfront grant —
+    chunk 1's own logic, unchanged in substance, only moved into its own
+    function so ``accrue_employee`` can dispatch by leave type.
     """
-    if not leave_type.accrues:
-        return None
-    if leave_type.code != LeaveType.Code.ANNUAL:
-        raise AccrualNotSupportedError(
-            f"{leave_type.code} accrual is not implemented by this engine yet. "
-            f"See leave/accrual.py's module docstring and O-22 in docs/DECISIONS.md "
-            f"for exactly what is missing and why it is not guessed at."
-        )
-
     ensure_cycles(employee, leave_type, horizon=as_at)
     cycle = current_cycle(employee, leave_type, as_at)
     if cycle is None:
         return None
 
     period_start = as_at.replace(day=1)
-    already_this_period = LeaveTransaction.objects.filter(
-        leave_cycle=cycle,
-        transaction_type=LeaveTransaction.TransactionType.ACCRUAL,
-        transaction_date__gte=period_start,
-        transaction_date__lte=as_at,
-    ).exists()
-    if already_this_period:
+    if _already_accrued_this_period(cycle, period_start=period_start, as_at=as_at):
         return None
 
     from statutory import resolve
@@ -156,10 +205,7 @@ def accrue_employee(
             employee, rules, period_start=period_start, as_at=as_at
         )
     elif method == AccrualMethod.UPFRONT_ANNUAL:
-        already_granted = LeaveTransaction.objects.filter(
-            leave_cycle=cycle, transaction_type=LeaveTransaction.TransactionType.ACCRUAL
-        ).exists()
-        if already_granted:
+        if _any_accrual_posted(cycle):
             return None
         quantity, basis = cycle.entitlement_quantity, "upfront_annual"
     else:
@@ -178,6 +224,178 @@ def accrue_employee(
         transaction_date=as_at,
         calculation_basis=basis,
     )
+
+
+def _accrue_sick(
+    employee, leave_type: LeaveType, *, as_at: datetime.date
+) -> LeaveTransaction | None:
+    """BCEA s22, two-phase, D-181. Never goes through ``AccrualMethod`` —
+    sick leave accrual is prescribed, not agreed.
+
+    Cycle 1 only: attendance-driven ratio accrual up to the
+    ``SICK_LEAVE_FIRST_PERIOD_MONTHS`` mark, then ONE top-up transaction to
+    the full six-week-equivalent, then nothing further for the rest of the
+    cycle. Cycle 2 onward: the full six-week-equivalent, upfront, once.
+    """
+    ensure_cycles(employee, leave_type, horizon=as_at)
+    cycle = current_cycle(employee, leave_type, as_at)
+    if cycle is None:
+        return None
+
+    if cycle.cycle_number > 1:
+        # Never inside the employee's first six months of EMPLOYMENT by
+        # construction — cycle 1 alone runs 36 months (D-181).
+        if _any_accrual_posted(cycle):
+            return None
+        quantity = cycle.entitlement_quantity
+        if quantity <= 0:
+            return None
+        return post_transaction(
+            employee=employee,
+            leave_cycle=cycle,
+            leave_type=leave_type,
+            transaction_type=LeaveTransaction.TransactionType.ACCRUAL,
+            quantity=quantity,
+            unit=cycle.unit,
+            transaction_date=cycle.cycle_start,
+            calculation_basis=SICK_UPFRONT_BASIS,
+        )
+
+    from statutory import resolve
+
+    first_period_months = int(resolve.parameter_value(SICK_FIRST_PERIOD_PARAMETER, as_at))
+    transition_date = cycle.cycle_start + relativedelta(months=first_period_months)
+
+    if as_at < transition_date:
+        period_start = as_at.replace(day=1)
+        if _already_accrued_this_period(cycle, period_start=period_start, as_at=as_at):
+            return None
+        rules = resolve.leave_rules(employee.employer.sector, as_at)
+        worked = _attendance_days_worked(employee, period_start=period_start, period_end=as_at)
+        quantity = (worked / Decimal(rules.sick_leave_first_six_months_ratio)).quantize(
+            _QUANTUM, rounding=ROUND_HALF_UP
+        )
+        if quantity <= 0:
+            return None
+        return post_transaction(
+            employee=employee,
+            leave_cycle=cycle,
+            leave_type=leave_type,
+            transaction_type=LeaveTransaction.TransactionType.ACCRUAL,
+            quantity=quantity,
+            unit=cycle.unit,
+            transaction_date=as_at,
+            calculation_basis="per_26_days_first_6m",
+        )
+
+    # At or past the transition: the one-time top-up, if not already done.
+    already_transitioned = LeaveTransaction.objects.filter(
+        leave_cycle=cycle, calculation_basis=SICK_TRANSITION_BASIS
+    ).exists()
+    if already_transitioned:
+        return None
+
+    accrued_so_far = (
+        LeaveTransaction.objects.filter(
+            leave_cycle=cycle, transaction_type=LeaveTransaction.TransactionType.ACCRUAL
+        ).aggregate(total=Sum(cycle.unit))["total"]
+        or ZERO
+    )
+    # D-181's own derivation: target balance after the transition is
+    # entitlement MINUS days taken in the first six months (s22(2)'s own
+    # words). Days already taken are already reflected in the ledger's
+    # current balance, so topping up by (entitlement - accrued) — never
+    # re-touching what was taken — lands on exactly that target: if A is
+    # accrued and T is taken (both already in the ledger), the balance
+    # after posting (E - A) is (A - T) + (E - A) = E - T. Deliberately does
+    # NOT reduce the balance if the ratio phase somehow over-accrued beyond
+    # the full entitlement (quantity <= 0 below) — the ACCRUAL sign CHECK
+    # cannot carry a negative quantity, and manufacturing an ADJUSTMENT's
+    # reason for an automatic engine action would be inventing an
+    # explanation nobody gave. Flagged rather than solved; unreachable at
+    # the ratios this rule set actually loads.
+    quantity = cycle.entitlement_quantity - accrued_so_far
+    if quantity <= 0:
+        return None
+
+    return post_transaction(
+        employee=employee,
+        leave_cycle=cycle,
+        leave_type=leave_type,
+        transaction_type=LeaveTransaction.TransactionType.ACCRUAL,
+        quantity=quantity,
+        unit=cycle.unit,
+        transaction_date=transition_date,
+        calculation_basis=SICK_TRANSITION_BASIS,
+    )
+
+
+def _accrue_family_responsibility(
+    employee, leave_type: LeaveType, *, as_at: datetime.date
+) -> LeaveTransaction | None:
+    """BCEA s27: granted once, upfront, at cycle start — never accrued
+    monthly, never carried to the next cycle (each cycle grants its own
+    fresh amount, with no reference to what a prior cycle held).
+
+    Eligibility (``family_resp_min_service_months``,
+    ``family_resp_min_days_per_week``) is read from the rule set via
+    ``leave/cycles.py``'s own entitlement computation but NOT enforced
+    here — flagged, not silently guessed; see the module docstring.
+    """
+    ensure_cycles(employee, leave_type, horizon=as_at)
+    cycle = current_cycle(employee, leave_type, as_at)
+    if cycle is None:
+        return None
+    if _any_accrual_posted(cycle):
+        return None
+
+    quantity = cycle.entitlement_quantity
+    if quantity <= 0:
+        return None
+
+    return post_transaction(
+        employee=employee,
+        leave_cycle=cycle,
+        leave_type=leave_type,
+        transaction_type=LeaveTransaction.TransactionType.ACCRUAL,
+        quantity=quantity,
+        unit=cycle.unit,
+        transaction_date=cycle.cycle_start,
+        calculation_basis=FAMILY_RESPONSIBILITY_BASIS,
+    )
+
+
+_DISPATCH = {
+    LeaveType.Code.ANNUAL: _accrue_annual,
+    LeaveType.Code.SICK: _accrue_sick,
+    LeaveType.Code.FAMILY_RESPONSIBILITY: _accrue_family_responsibility,
+}
+
+
+def accrue_employee(
+    employee, leave_type: LeaveType, *, as_at: datetime.date
+) -> LeaveTransaction | None:
+    """Post this employee's accrual for one leave type as at a date, or
+    return None if there is nothing to post — the type does not accrue, the
+    cycle already received this period's accrual, or the computed quantity
+    is zero.
+
+    Caller must already hold ``tenant_context_of(employee)`` (or
+    ``tenant_context(employee.tenant_id)``) — this function, and everything
+    it calls, assumes the context is pinned, the same discipline
+    ``leave/cycles.py`` documents at its own top.
+    """
+    if not leave_type.accrues:
+        return None
+
+    handler = _DISPATCH.get(leave_type.code)
+    if handler is None:
+        raise AccrualNotSupportedError(
+            f"{leave_type.code} accrual is not implemented by this engine yet. "
+            f"See leave/accrual.py's module docstring and O-22 in docs/DECISIONS.md "
+            f"for exactly what is missing and why it is not guessed at."
+        )
+    return handler(employee, leave_type, as_at=as_at)
 
 
 def run_monthly_accrual(

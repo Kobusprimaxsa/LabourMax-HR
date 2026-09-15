@@ -8,20 +8,42 @@ day), adjustments with reasons, forfeitures, and reversals of any of them,
 and after EVERY step this asserts:
 
 - the balance equals the sum of the ledger, exactly, for every cycle
-- no balance is ever negative
+- whenever a balance IS negative, ``leave/negative_balances.py`` reports
+  that exact cycle, with that exact balance, and at least one transaction
+  to show for it
 - a reversal of any transaction returns the balance to precisely what it
   was before that transaction
 - the cache and a from-scratch rebuild agree
 
-**Why "no balance is ever negative" rather than the brief's own "except
-where an overdrawn application explicitly made it so"**: this codebase's
-own chunk 2 design (D-174) never actually lets an application drive a
-balance negative — an overdrawn application caps its own deduction at the
-available balance and marks the uncovered days unpaid/not-deducted instead
-(``leave/applications.py::submit_application()``). So in THIS system the
-general case degenerates to the stronger, simpler property, which is what
-is tested here — a deliberate strengthening, not a narrowing, recorded as
-D-176.
+**D-176, corrected (P6 chunk 4, task 1): "no balance is ever negative" was
+never actually true, and constraining the generator to keep it true only
+hid the sequence that disproves it.** Accrue, spend against the accrual,
+then reverse the accrual is a real business sequence — an accrual posted
+in error, consumed, then corrected — and the ledger is right to let the
+reversal go through mechanically even though a later transaction already
+relied on the reversed one's contribution still being there. The balance
+that results is the mathematically honest answer: an account in debt. The
+first fix suppressed exactly this sequence in the generator, which removed
+the coverage instead of closing the gap — in production the sequence still
+runs and the balance still goes negative, and nothing told anyone. This
+version restores the generator (the ``reverse`` action no longer skips a
+reversal that would take a balance below zero) and replaces the false
+invariant with the one that is actually true: the balance always equals
+the ledger sum exactly, and every negative balance is fully attributable to
+identifiable rows — proven here by checking it against
+``leave/negative_balances.py``, the same query an employer is shown.
+
+**Both denominations, not just days (P6 chunk 4, task 5).** The whole
+sequence above is generated twice — once against a DAYS-denominated cycle
+(the ordinary case) and once against an HOURS-denominated one, produced by
+giving the employee an ``EmployeeLeaveEntitlement`` override with
+``accrual_method=PER_HOURS_WORKED`` before any cycle is generated, which is
+the one thing that flips ``leave/cycles.py::unit_for_method()``'s answer.
+No conversion between the two is ever performed — D-164 still holds — every
+action posts and reads whichever physical column (``days`` or ``hours``)
+the cycle it is touching actually carries, via ``cycle.unit`` itself, never
+a hardcoded ``LeaveCycle.Unit.DAYS``. A test that converted between them
+would quietly bless the exact thing D-164 forbids.
 
 Decimal arithmetic throughout, matching every other ledger figure in this
 codebase — a float here would be exactly the bug invariant 6 exists to
@@ -42,7 +64,7 @@ from core.managers import tenant_context
 from core.models import AppUser, Tenant
 from employees.engagements import engage
 from employees.identity import luhn_check_digit
-from employees.models import Employee, WorkSchedule, WorkScheduleDay
+from employees.models import Employee, EmployeeLeaveEntitlement, WorkSchedule, WorkScheduleDay
 from employers.models import Employer
 from leave.applications import submit_application
 from leave.authorisation import approve, cancel
@@ -51,6 +73,7 @@ from leave.cycles import ensure_cycles
 from leave.forfeiture import ForfeitureRefusedError, capture_forfeiture
 from leave.ledger import post_transaction, reverse_transaction
 from leave.models import LeaveCycle, LeaveTransaction
+from leave.negative_balances import negative_balances
 from statutory.models import Sector
 
 pytestmark = pytest.mark.django_db
@@ -74,10 +97,16 @@ def owner_user(db):
     return AppUser.objects.create_user(email="property-owner@example.com", password="x" * 16)
 
 
-def _fresh_employee_with_two_cycles(annual_type):
+def _fresh_employee_with_two_cycles(annual_type, unit: str = LeaveCycle.Unit.DAYS):
     """A brand-new tenant, employer, employee, schedule and engagement, with
     TWO annual leave cycles already ensured — "accruals over multiple
-    cycles" needs somewhere to land."""
+    cycles" needs somewhere to land.
+
+    ``unit="hours"`` gives the employee a ``PER_HOURS_WORKED``
+    ``EmployeeLeaveEntitlement`` override BEFORE any cycle is generated —
+    the one thing ``leave/cycles.py::unit_for_method()`` reads to decide a
+    cycle's own denomination (task 5).
+    """
     n = next(_counter)
     tenant = Tenant.objects.create(trading_name=f"Household {n}")
     with tenant_context(tenant.pk):
@@ -114,9 +143,19 @@ def _fresh_employee_with_two_cycles(annual_type):
                 is_working_day=cycle_day < 5,
                 ordinary_hours=Decimal("8") if cycle_day < 5 else Decimal("0"),
             )
+        if unit == LeaveCycle.Unit.HOURS:
+            EmployeeLeaveEntitlement.objects.create(
+                tenant=tenant,
+                employee=employee,
+                leave_type=annual_type,
+                accrual_method=EmployeeLeaveEntitlement.AccrualMethod.PER_HOURS_WORKED,
+                effective_from=START,
+            )
 
     cycles = ensure_cycles(employee, annual_type, horizon=datetime.date(2027, 6, 1))
     assert len(cycles) == 2, "Two cycles, up front, for 'accruals over multiple cycles'."
+    for cycle in cycles:
+        assert cycle.unit == unit, f"expected a {unit}-denominated cycle, got {cycle.unit}"
     return employee, cycles
 
 
@@ -150,8 +189,23 @@ def _reconcile(employee, leave_type, cycle_start) -> LeaveCycle:
         f"balance {cycle.balance_quantity} != ledger sum {ledger_sum} for cycle "
         f"{cycle.pk} ({cycle.cycle_start} - {cycle.cycle_end})"
     )
-    assert cycle.balance_quantity >= 0, f"balance went negative: {cycle.balance_quantity}"
     assert isinstance(cycle.balance_quantity, Decimal)
+
+    if cycle.balance_quantity < 0:
+        # The replacement invariant (D-176, corrected): a negative balance is
+        # never asserted away — it is asserted to be FOUND, by the same
+        # read-only query an employer is shown, with the rows that caused it.
+        reported = {n.cycle.pk: n for n in negative_balances(employee.employer)}
+        found = reported.get(cycle.pk)
+        assert found is not None, (
+            f"cycle {cycle.pk} balance {cycle.balance_quantity} is negative but "
+            f"leave.negative_balances.negative_balances() did not report it"
+        )
+        assert found.balance == cycle.balance_quantity
+        assert found.causing_transactions, (
+            "a reported negative balance must carry the transactions that caused it"
+        )
+
     return cycle
 
 
@@ -208,11 +262,14 @@ action_strategy = st.one_of(_accrue, _adjust, _apply, _cancel, _forfeit, _revers
     deadline=None,
     suppress_health_check=[HealthCheck.function_scoped_fixture, HealthCheck.too_slow],
 )
-@given(actions=st.lists(action_strategy, min_size=3, max_size=12))
+@given(
+    actions=st.lists(action_strategy, min_size=3, max_size=12),
+    unit=st.sampled_from([LeaveCycle.Unit.DAYS, LeaveCycle.Unit.HOURS]),
+)
 def test_balance_reconciles_to_the_ledger_across_any_valid_sequence(
-    minimum_age, leave_rules, working_time_rules, annual_type, owner_user, actions
+    minimum_age, leave_rules, working_time_rules, annual_type, owner_user, actions, unit
 ):
-    employee, cycles = _fresh_employee_with_two_cycles(annual_type)
+    employee, cycles = _fresh_employee_with_two_cycles(annual_type, unit)
     cursor_date = START + datetime.timedelta(days=1)  # the first Monday
 
     applications: list[dict] = []  # {"application": obj, "cancelled": bool}
@@ -233,7 +290,7 @@ def test_balance_reconciles_to_the_ledger_across_any_valid_sequence(
                     leave_type=annual_type,
                     transaction_type=TransactionType.ACCRUAL,
                     quantity=action["quantity"],
-                    unit=LeaveCycle.Unit.DAYS,
+                    unit=cycle.unit,
                     transaction_date=cycle.cycle_start,
                     calculation_basis="manual",
                 )
@@ -254,7 +311,7 @@ def test_balance_reconciles_to_the_ledger_across_any_valid_sequence(
                     leave_type=annual_type,
                     transaction_type=TransactionType.ADJUSTMENT,
                     quantity=quantity,
-                    unit=LeaveCycle.Unit.DAYS,
+                    unit=cycle.unit,
                     transaction_date=cycle.cycle_start,
                     calculation_basis="manual",
                     reason="property test adjustment",
@@ -327,23 +384,18 @@ def test_balance_reconciles_to_the_ledger_across_any_valid_sequence(
                 txn = target["txn"]
                 delta = txn.days if txn.days is not None else txn.hours
                 before = _reconcile(employee, annual_type, target["cycle_start"]).balance_quantity
-                # A REAL FINDING from this property test, recorded as D-176:
-                # reversing transaction T is a purely mechanical negation of
-                # T alone — it does not know that a LATER transaction (an
-                # adjustment or a forfeiture, both capped against the
-                # balance AT THE TIME they were posted) already relied on
-                # T's own contribution still being there. Reversing T after
-                # that is legitimate bookkeeping — the resulting negative
-                # balance is the mathematically honest answer, an account
-                # now in debt — but it is a SEPARATE property from "no
-                # balance is ever negative", and conflating the two would
-                # either hide this interaction or make the test assert
-                # something the ledger was never designed to guarantee.
-                # Skipped here as outside THIS test's own definition of a
-                # valid sequence, exactly as an overdrawn adjustment or
-                # forfeiture is already capped rather than allowed through.
-                if before - delta < 0:
-                    continue
+                # A REAL FINDING from this property test, recorded as D-176
+                # and corrected in P6 chunk 4: reversing transaction T is a
+                # purely mechanical negation of T alone — it does not know
+                # that a LATER transaction (an adjustment or a forfeiture,
+                # both capped against the balance AT THE TIME they were
+                # posted) already relied on T's own contribution still being
+                # there. Reversing T after that is legitimate bookkeeping —
+                # the resulting negative balance is the mathematically
+                # honest answer, an account now in debt. No longer skipped:
+                # ``_reconcile`` now asserts the negative case is reported by
+                # ``leave/negative_balances.py`` rather than asserting it
+                # away, so this sequence stays IN the generator's coverage.
                 reverse_transaction(txn, reason="property test reversal")
                 target["reversed"] = True
                 after = _reconcile(employee, annual_type, target["cycle_start"]).balance_quantity

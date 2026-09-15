@@ -1,0 +1,18 @@
+{
+  "version_label": "REF-2026.03.01-SICK-ACCRUAL",
+  "applies_from": "2026-03-01",
+  "description": "The BCEA s22 first-six-months threshold. Researched 15 September 2026 from the Basic Conditions of Employment Act. NOT verified.",
+  "tables": {
+    "statutory_parameter": [
+      {
+        "parameter_code": "SICK_LEAVE_FIRST_PERIOD_MONTHS",
+        "value_numeric": "6.000000",
+        "unit": "months",
+        "effective_from": "1997-12-01",
+        "source_reference": "Basic Conditions of Employment Act 75 of 1997, s22(1)-(2). Commencement of Chapter 6.",
+        "source_url": "https://www.labour.gov.za/DocumentCenter/Acts/Basic%20Conditions%20of%20Employment/Act%20-%20Basic%20Conditions%20of%20Employment.pdf",
+        "notes": "s22(1): during the first six months of employment, an employee accrues one day's paid sick leave for every 26 days worked. s22(2): during the FOLLOWING sick leave cycle (i.e. from this point on, for the remainder of the 36-month cycle), the employee is entitled to the number of days the employee would normally work in six weeks, LESS the number of days' sick leave taken during those first six months. leave/accrual.py implements the transition as a single top-up transaction \u2014 entitlement minus whatever was accrued (not taken) during the ratio phase \u2014 which is mathematically identical to the Act's own 'six weeks less days taken' once the days already deducted from the ledger are accounted for; see D-181 in docs/DECISIONS.md for the derivation and why the alternative readings were rejected."
+      }
+    ]
+  }
+}

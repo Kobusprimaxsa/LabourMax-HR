@@ -22,6 +22,7 @@ from employees.engagements import MINIMUM_AGE_PARAMETER, engage
 from employees.identity import luhn_check_digit
 from employees.models import Employee, WorkSchedule, WorkScheduleDay
 from employers.models import Employer
+from leave.accrual import SICK_FIRST_PERIOD_PARAMETER
 from leave.evidence import SICK_CERTIFICATE_THRESHOLD_PARAMETER, seed_system_evidence_types
 from leave.models import LeaveType
 from leave.types import seed_system_leave_types
@@ -198,6 +199,37 @@ def sick_type(db):
 def evidence_types(sick_type, sick_certificate_threshold):
     created = seed_system_evidence_types()
     return {e.code: e for e in created}
+
+
+@pytest.fixture
+def sick_first_period(db):
+    """BCEA s22(1)-(2)'s six-months-of-employment threshold (P6 chunk 4).
+    Mirrors ``sick_certificate_threshold``'s own pattern — a single cited
+    figure a test loads directly rather than via ``loadstatutory``."""
+    return StatutoryParameter.objects.create(
+        parameter_code=SICK_FIRST_PERIOD_PARAMETER,
+        value_numeric=Decimal("6.000000"),
+        unit=StatutoryParameter.Unit.MONTHS,
+        effective_from=datetime.date(1997, 12, 1),
+        source_reference="Basic Conditions of Employment Act 75 of 1997, s22(1)-(2)",
+    )
+
+
+@pytest.fixture
+def family_type(db):
+    """The seeded, shared FAMILY_RESPONSIBILITY leave type."""
+    seed_system_leave_types()
+    with platform_context():
+        return LeaveType.objects.get(code=LeaveType.Code.FAMILY_RESPONSIBILITY, tenant__isnull=True)
+
+
+@pytest.fixture
+def annual_unauthorised_type(db):
+    """The seeded, shared ANNUAL_UNAUTHORISED leave type — balance_source
+    'parent', pointing at ANNUAL (P6 chunk 4, task 4)."""
+    seed_system_leave_types()
+    with platform_context():
+        return LeaveType.objects.get(code=LeaveType.Code.ANNUAL_UNAUTHORISED, tenant__isnull=True)
 
 
 @pytest.fixture

@@ -20,6 +20,18 @@ gap between them and the horizon is filled in.
 Only for leave types with their own balance (``balance_source == "own"``).
 A type that draws on a parent (``ANNUAL_UNAUTHORISED``) or has no balance at
 all (``UNPAID``) has nothing of its own for a cycle to describe.
+
+**A ``balance_source == "parent"`` type resolves to its parent, transparently,
+everywhere a cycle or an entitlement method is looked up** (P6 chunk 4, task
+4 — unresolved since chunk 2's own flag, D-174). ``resolve_balance_leave_type()``
+is the one place this happens; ``ensure_cycles()``, ``current_cycle()`` and
+``accrual_method_for()`` all call it first, so a caller asking about
+``ANNUAL_UNAUTHORISED`` transparently gets ``ANNUAL``'s own cycle, balance and
+accrual method. The sub-type is never silenced, though — a ``leave_transaction``
+still records its OWN ``leave_type`` (the label, "this was unauthorised"), only
+``leave_cycle`` points at the parent's row, which is exactly the split
+``leave/balances.py::recompute_cycle()`` already relies on (it sums by
+``leave_cycle``, never by ``leave_type``), so no change was needed there at all.
 """
 
 from __future__ import annotations
@@ -50,6 +62,30 @@ class EntitlementNotResolvableError(Exception):
 _RESOLVABLE_CODES = frozenset(
     {LeaveType.Code.ANNUAL, LeaveType.Code.SICK, LeaveType.Code.FAMILY_RESPONSIBILITY}
 )
+
+
+def resolve_balance_leave_type(leave_type: LeaveType) -> LeaveType:
+    """A ``balance_source == 'parent'`` type resolves to the parent it draws
+    on, for every cycle, balance and accrual-method purpose (task 4, D-180).
+
+    ``ANNUAL_UNAUTHORISED`` never gets a cycle of its own —
+    ``leave_type.balance_source`` says so, and always has — but nothing
+    before this resolved a query about it to the row that DOES carry a
+    balance, so it silently read as an employee with nothing to lose. This
+    function is the one place that resolution happens; every caller below
+    that accepts a caller-supplied ``leave_type`` calls it first.
+
+    Touching ``leave_type.parent_leave_type`` with no tenant pinned is safe
+    here specifically because ``LeaveType`` is ``TenantSharedModel`` (D-127)
+    and both rows in a parent/sub-type pair are shared system rows — a
+    session with no tenant context still sees the shared catalogue, per
+    ``TenantSharedManager``'s own read rule. This would NOT be safe for a
+    tenant-scoped model's own FK.
+    """
+    is_parent_type = leave_type.balance_source == LeaveType.BalanceSource.PARENT
+    if is_parent_type and leave_type.parent_leave_type_id:
+        return leave_type.parent_leave_type
+    return leave_type
 
 
 def current_entitlement(
@@ -89,7 +125,13 @@ def accrual_method_for(
     ``employee_leave_entitlement.accrual_method`` says otherwise. That row
     IS the recorded agreement; there is no employer-wide switch, because the
     Act wants the method agreed per employee, not decreed for all of them.
+
+    Resolves a parent-balance type first (task 4) — an accrual-method
+    agreement is inherently about the type that actually accrues (ANNUAL),
+    never about a sub-type like ANNUAL_UNAUTHORISED that only ever labels a
+    reason against it.
     """
+    leave_type = resolve_balance_leave_type(leave_type)
     entitlement = current_entitlement(employee, leave_type, on_date)
     method = entitlement.accrual_method if entitlement else AccrualMethod.MONTHLY
     return method, entitlement
@@ -252,7 +294,11 @@ def ensure_cycles(
     Stops generating past the engagement's own termination date, if it has
     one — a terminated engagement's leave does not keep accruing cycles for
     a period of employment that ended.
+
+    Resolves a parent-balance type first (task 4) — asking for
+    ``ANNUAL_UNAUTHORISED``'s cycles transparently ensures ``ANNUAL``'s.
     """
+    leave_type = resolve_balance_leave_type(leave_type)
     if leave_type.balance_source != LeaveType.BalanceSource.OWN:
         return []
 
@@ -321,7 +367,11 @@ def current_cycle(
 ) -> LeaveCycle | None:
     """The cycle covering a date, if one has been generated yet. Does not
     generate one — callers that need it to exist call ``ensure_cycles`` first.
+
+    Resolves a parent-balance type first (task 4) — ``ANNUAL_UNAUTHORISED``
+    has no cycle of its own; this returns ``ANNUAL``'s.
     """
+    leave_type = resolve_balance_leave_type(leave_type)
     with tenant_context_of(employee):
         return LeaveCycle.objects.filter(
             employee=employee,

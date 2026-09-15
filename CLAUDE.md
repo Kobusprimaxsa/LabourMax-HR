@@ -993,10 +993,11 @@ gateway), so starting it means stopping to ask.
 **Statutory figures are never invented.** If a rate is needed and cannot be cited, say so and
 stop. That applies to filling in a fixture as much as to writing code.
 
-**P6 — Leave: PHASE COMPLETE, all three chunks built** (15 September 2026). 1072 tests
-green. The leave
-catalogue, cycles, the append-only ledger, the accrual engine, evidence, applications and
-authorisation are in — forfeiture *capture* is chunk 3, and it is not stubbed here.
+**P6 — Leave: chunk 4 of 5 built** (15 September 2026). 1083 tests green. The leave
+catalogue, cycles, the append-only ledger, the accrual engine (ANNUAL, SICK and
+FAMILY_RESPONSIBILITY as of chunk 4), evidence, applications and authorisation are in —
+forfeiture *capture* is chunk 3, and it is not stubbed here. **Chunk 5 — maternity,
+parental leave under the Van Wyk interim reading, and adoption — has not started.**
 
 `leave_type` is seeded via `manage.py seedleavetypes` (`--list` shows the catalogue without
 touching the database), in the `seedcomponents` mould: idempotent, never updates, and every
@@ -1050,6 +1051,20 @@ own 5-day/6-day schedule or off P5's attendance rows — this is why P5 had to c
 `leave_accrual_run`'s own `UNIQUE (employer, leave_type, accrual_as_at)` is the idempotency
 guarantee; `run_monthly_accrual()` checks for an existing COMPLETED run first so the ordinary
 case never reaches the constraint at all.
+
+**AMENDED in chunk 4 (D-181, D-183): SICK and FAMILY_RESPONSIBILITY are no longer behind
+`AccrualNotSupportedError`.** `SICK_LEAVE_FIRST_PERIOD_MONTHS` (the six-month threshold
+this paragraph named as missing) is now a `statutory_parameter`
+(`reference/ref-2026.03.01-sick-accrual.json`), and `leave/accrual.py` dispatches by leave
+type code — never a parallel run mechanism, still the same `run_monthly_accrual()` entry
+point. SICK's cycle 1 runs the attendance-driven ratio phase this paragraph describes,
+then ONE top-up transaction at the six-month mark to the full six-week-equivalent LESS
+what was taken, proven as the cycle's TOTAL balance rather than the top-up's own delta —
+see D-181's arithmetic proof. Cycle 2 onward is granted the six-week-equivalent upfront,
+once, since a second 36-month sick cycle can never fall inside the first six months of
+employment. FAMILY_RESPONSIBILITY is granted once, upfront, per cycle (D-183) — never
+accrued monthly, never carried over, never paid out. `AccrualNotSupportedError` still
+applies to MATERNITY, PARENTAL and ADOPTION, chunk 5's own work.
 
 **THE NEGATIVE TEST THAT MATTERS is named exactly that in `leave/tests/test_accrual.py`** —
 `test_no_forfeiture_transaction_is_ever_written_automatically` runs the engine eighteen months
@@ -1106,9 +1121,15 @@ what is not there. **A week's leave over a public holiday costs four days, not f
 `is_working_day` is FALSE for a rest day AND a public holiday inside the span, and neither
 deducts; both still get their own row so the audit can show why. Half days are the minimum
 increment for a salaried basis (`day_portion`); an hourly-accrual employee's application deducts
-`hours` instead and never converts (D-164, still). FLAGGED in the module's own docstring: a
-`balance_source='parent'` type (`ANNUAL_UNAUTHORISED`) is not resolved to its parent's cycle here,
-and an hourly employee's own overdraw has no `unpaid_hours` column to summarise into.
+`hours` instead and never converts (D-164, still). FLAGGED in the module's own docstring, at the
+time: a `balance_source='parent'` type (`ANNUAL_UNAUTHORISED`) is not resolved to its parent's
+cycle here, and an hourly employee's own overdraw has no `unpaid_hours` column to summarise into.
+**AMENDED in chunk 4 (D-180): `ANNUAL_UNAUTHORISED` now resolves.**
+`leave/cycles.py::resolve_balance_leave_type()` is the one place a `balance_source='parent'`
+type resolves to its `parent_leave_type`, called first by `ensure_cycles()`, `current_cycle()`
+and `accrual_method_for()` — so an unauthorised-absence transaction posts against ANNUAL's own
+cycle and reduces ANNUAL's own balance, while the ledger row still carries its own
+`leave_type=ANNUAL_UNAUTHORISED` as the audit label. The `unpaid_hours` gap is still open.
 
 **Self-approval is BLOCKED and escalates to the owner (task 3, D-174).** Only where the deciding
 user IS the owner AND no other approver (owner or admin) exists for the tenant may
@@ -1205,6 +1226,40 @@ generates DAYS-unit actions); `ANNUAL_UNAUTHORISED`'s parent-balance resolution 
 unresolved since chunk 2, D-174, and not exercised here either); and termination payout, which
 is P7's. Full detail, including which P6 done-clauses pass and which do not and why, is in
 `docs/PHASES.md`'s own P6 section — not ticked here without it being demonstrated there first.
+
+**Chunk 4: D-176 was the right diagnosis and the wrong fix, and this chunk corrects the fix
+rather than the diagnosis (D-184).** Chunk 3 responded to the property test's own finding —
+reversing an earlier transaction after a later one already relied on its contribution can
+legitimately leave a cycle negative — by excluding that sequence from the test's own generator.
+That preserved a false invariant ("no balance is ever negative") by removing the coverage that
+disproved it; in production the sequence still runs and the balance still goes negative, with
+nothing surfacing it. This chunk restores the generator and replaces the invariant with the one
+that is actually true: the balance always equals the ledger sum exactly, and every negative
+balance is fully attributable to identifiable rows. `leave/negative_balances.py` is the query
+that proves the second half — same shape as `leave/warnings.py`'s forfeiture list (read-only, no
+job, no screen), but not scoped to ANNUAL, since a negative balance is not a leave-type-specific
+statutory question. **Recorded against P7, not built here (D-185): a termination payout must
+never net a negative leave balance off the final payment** — recovering it is a BCEA s34
+deduction requiring the employee's consent, and P7 must surface this query's own figure for a
+human decision, never subtract it automatically.
+
+**Chunk 4 also closed the property test's own remaining HOURS gap (task 5).** The same
+Hypothesis generator now runs twice — once against a DAYS-denominated ANNUAL cycle, once against
+an HOURS-denominated one, produced by giving the fixture employee a `PER_HOURS_WORKED`
+`EmployeeLeaveEntitlement` override before any cycle is generated — with every action posting
+and reading whichever physical column (`days` or `hours`) the cycle it touches actually carries,
+via `cycle.unit` itself. No conversion between the two is performed anywhere in the test — D-164
+still holds — because a test that converted would quietly bless the exact thing that decision
+forbids. Zero drift found in either denomination, run at 250+ examples during development.
+
+**A hardening fix, found while building SICK's own ratio phase, reaches ANNUAL's two
+attendance-based methods too (D-182).** `leave_transaction.days`/`.hours` are
+`DecimalField(decimal_places=3)`, and an un-quantized division carries Python's full
+~28-significant-digit context precision — `full_clean()` refuses the row outright the moment the
+division is not exact. `_per_days_worked_quantity` and `_per_hours_worked_quantity` (chunk 1's
+own ANNUAL methods) carried this same latent defect, untested because every existing test
+divided evenly; all three ratio-based quantity functions now quantize to `Decimal("0.001")` with
+`ROUND_HALF_UP`, the same rounding `leave/applications.py` already applies to a part-day's hours.
 
 See `docs/PHASES.md` for the task breakdown.
 

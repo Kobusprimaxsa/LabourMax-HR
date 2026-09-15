@@ -866,6 +866,7 @@ class StatutoryParameter(AuditedModel, AuditMixin, EffectiveDatedModel, CitedSta
         HOURS = "hours", "Hours"
         RATIO = "ratio", "Ratio"
         WEEKS = "weeks", "Weeks"
+        MONTHS = "months", "Months"
         YEARS = "years", "Years"
 
     parameter_code = models.CharField(

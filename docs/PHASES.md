@@ -250,16 +250,18 @@ completed prerequisite, not the outcome the "Done when" clause actually asks for
 
 ---
 
-## P6 — Leave Management · 5 weeks · 8 tables — PHASE CLOSED
+## P6 — Leave Management · 5 weeks · 8 tables — chunk 4 of 5 done
 
-**All three chunks done** (15 September 2026): the catalogue, cycles, the ledger, the
-accrual engine, evidence, applications, authorisation, manual forfeiture capture, the
-forfeiture deadline warning, and public holiday observance. See the P6 section of
-CLAUDE.md and D-162 to D-179 for the detail. **Read the honest "Done when" assessment
-at the bottom of this section before treating the phase as fully proven** — it is not,
-in a specific and stated way, and the property test that found the one real interaction
-this phase surfaced is the reason to trust that statement rather than merely take it on
-faith.
+**Chunks 1 to 4 done** (15 September 2026): the catalogue, cycles, the ledger, the
+accrual engine (now ANNUAL, SICK and FAMILY_RESPONSIBILITY), evidence, applications,
+authorisation, manual forfeiture capture, the forfeiture deadline warning, public
+holiday observance, the negative balance report, and `ANNUAL_UNAUTHORISED`'s parent
+balance. See the P6 section of CLAUDE.md and D-162 to D-185 for the detail. **Chunk 5 —
+maternity, parental leave under the Van Wyk interim reading, and adoption — is not yet
+started.** Read the honest "Done when" assessment at the bottom of this section before
+treating any part of the phase as fully proven — it is not, in specific and stated ways,
+and the property test's own findings (D-176, corrected as D-184) are the reason to trust
+that statement rather than merely take it on faith.
 
 - [x] `leave_type` **table built in P4** (D-127) — seeded via `manage.py seedleavetypes`,
       all ten codes; two shapes FLAGGED (`STUDY`, `COMPASSIONATE`) rather than settled
@@ -271,27 +273,35 @@ faith.
 - [x] `leave_cycle` — anchored to the CURRENT engagement's own start date (D-163, not the
       workbook's own unique — deviation recorded), lazy, idempotent, non-overlapping by
       EXCLUDE. Closed at TERMINATION itself as of chunk 2 (D-172), not lazily on re-hire.
-      12-month annual is exercised; 36-month sick is supported by the table shape but not
-      exercised, since the accrual engine does not generate SICK cycles yet (see below)
+      12-month annual, 36-month sick and 12-month family responsibility are all now
+      generated and exercised (chunk 4)
 - [x] `leave_transaction` append-only ledger — sign convention enforced by CHECK, trigger
       backs append-only, reversal-of-reversal refused (D-164, D-167). RECONCILED against
       sheet 02 in chunk 2 (D-170): `days`/`hours`, both nullable, exactly one populated —
       sheet 02's own column names, kept nullable against D-164's own settled decision.
       `leave_application` is now a real FK (D-175)
-- [x] Accrual engine, ANNUAL ONLY this chunk: monthly straight-line, per 17 days, per 17
-      hours all implemented and tested. **Sick leave's first-six-months rule is deliberately
-      NOT implemented** (D-168) — the accrual RATIO is loaded but the SIX-MONTH THRESHOLD
-      itself has no home yet in `leave_rule_set`, and this codebase does not guess it.
-      `AccrualNotSupportedError` names the gap for every other `accrues=True` type
+- [x] Accrual engine, THREE leave types through the SAME `run_monthly_accrual` entry point
+      (chunk 4, task 2's own instruction — no parallel run mechanism): ANNUAL's monthly
+      straight-line, per-17-days and per-17-hours methods (chunk 1); SICK's two-phase BCEA
+      s22 accrual — an attendance-driven ratio in cycle 1's first six months, then ONE
+      top-up transaction to the full six-week-equivalent LESS what was taken, proven as the
+      TOTAL rather than the delta (D-181); FAMILY_RESPONSIBILITY's single upfront grant per
+      cycle, no carry-over, never paid out (D-183). A quantization defect shared by ANNUAL's
+      own per-days/per-hours-worked methods and SICK's new ratio phase was found and fixed
+      in the same pass (D-182). `AccrualNotSupportedError` still names the gap for
+      MATERNITY, PARENTAL and ADOPTION — chunk 5's own work
 - [x] `leave_accrual_run` — idempotent per employee per leave type per period, proven by
-      running the engine twice and asserting the ledger unchanged
+      running the engine twice and asserting the ledger unchanged, now for all three
+      implemented leave types
 - [x] `leave_application` + `leave_application_day` with part days and holidays inside a span
       — built chunk 2 (D-174). A public holiday or a rest day inside a span is never
       deducted; a half day deducts 0.500; an hourly employee's application deducts hours and
       never converts. An overdrawn application is never refused — the excess is capped
       against the ledger and falls to unpaid. Evidence gates pay, never the leave itself.
-      FLAGGED: `ANNUAL_UNAUTHORISED` (`balance_source='parent'`) is not resolved to its
-      parent's cycle; an hourly employee's own overdraw has no `unpaid_hours` column
+      `ANNUAL_UNAUTHORISED` (`balance_source='parent'`) now resolves to ANNUAL's own cycle
+      and balance (chunk 4, D-180) — an unauthorised absence measurably costs the employee
+      annual leave, proven by a dedicated test. STILL FLAGGED: an hourly employee's own
+      overdraw has no `unpaid_hours` column
 - [x] Employer authorisation; self-approval blocked, escalating to the owner — built chunk 2
       (D-174). Only the sole owner, with no other approver, may self-approve, and only with
       a mandatory reason visible in the leave register. Approval refuses a day already
@@ -322,40 +332,68 @@ faith.
       O-06: a row with `is_observed=FALSE` RECORDS an agreement under BCEA s18(3); it does
       not MAKE one, and nothing in this codebase checks that a genuine agreement stands
       behind a row before honouring it
+- [x] The negative balance report (chunk 4, task 1, D-184) — `leave/negative_balances.py`.
+      Same shape as the forfeiture warning: read-only, no job, no screen, writes nothing.
+      Every OPEN cycle for an employer's employees, ANY leave type, currently below zero,
+      with every ledger row that sums to it — because a negative balance is not a
+      leave-type-specific statutory question the way forfeiture's grace period is. This is
+      the corrected other half of D-176 (below): the false "never negative" invariant is
+      replaced with the true one, and this query is what makes a negative balance a fact the
+      employer is shown rather than a state the system quietly holds. **Recorded against
+      P7, not implemented here (D-185): a termination payout must never net a negative
+      balance off the final payment — recovering it is a BCEA s34 deduction requiring
+      consent, and P7 must surface this query's own figure for a human decision, never
+      subtract it automatically**
 
 **Done when:** every employee's balance reconciles to their ledger in every scenario,
 with no drift. **PROVEN, not merely asserted, for the scope this phase actually built** —
 `leave/tests/test_reconciliation_property.py` generates random sequences (Hypothesis,
-40 examples, up to 12 actions each) of accruals across multiple cycles, applications
-approved and cancelled (full day and part day), adjustments with reasons, forfeitures and
-reversals of any of them, and after EVERY step confirms the balance equals an independent
-sum of the ledger exactly, is never negative, and that `leave/balances.py`'s own
-staleness-driven cache agrees with that independent sum. Zero drift found across every
-run — **after one real interaction the test itself surfaced and a fix to the test's own
-definition of a valid sequence, not to the ledger** (D-176): reversing an EARLIER
-transaction (say, an accrual) after a LATER adjustment or forfeiture has already relied on
-its contribution being there is legitimate, order-independent ledger mechanics that can
-correctly leave a cycle showing a deficit — the ledger is doing exactly what a plain
-signed sum should do, and that deficit is the honest answer, not corruption. The property
-test now treats such a reversal as outside ITS OWN definition of a valid sequence (matching
-how an overdrawn adjustment or forfeiture is already capped rather than let through), the
-same way a real employer would need to resolve the dependent entry first. This is a
-genuine, worthwhile finding from writing the property test — not a defect in
-`leave/ledger.py`, which was never asked to (and should not) understand causality between
-independent rows.
+40 examples, up to 12 actions each, run against BOTH a DAYS-denominated and an
+HOURS-denominated cycle as of chunk 4 — task 5) of accruals across multiple cycles,
+applications approved and cancelled (full day and part day), adjustments with reasons,
+forfeitures and reversals of any of them, and after EVERY step confirms the balance
+equals an independent sum of the ledger exactly, that `leave/balances.py`'s own
+staleness-driven cache agrees with that independent sum, and — chunk 4's own correction —
+that whenever the balance IS negative, `leave/negative_balances.py` reports that exact
+cycle, with that exact balance, and at least one transaction to show for it. Zero
+unexplained drift found across every run, in either denomination.
+
+**D-176, corrected as D-184 (chunk 4).** Chunk 3's original fix to what the property test
+found — reversing an EARLIER transaction (say, an accrual) after a LATER adjustment or
+forfeiture has already relied on its contribution being there, which can leave a cycle
+showing a legitimate deficit — was to treat that sequence as outside the property test's
+OWN definition of a valid one, i.e. to stop generating it. That was the wrong fix: it
+preserved a false invariant ("no balance is ever negative") by removing the coverage that
+disproved it, rather than accepting what the ledger was correctly telling it. In
+production the sequence still runs, the balance still goes negative, and nothing told
+anyone. Chunk 4 restores the generator (the skip is gone) and replaces the invariant with
+the one that is actually true — see the negative balance report bullet above and D-184.
+This is still a genuine, worthwhile finding from writing the property test in the first
+place — not a defect in `leave/ledger.py`, which was never asked to (and should not)
+understand causality between independent rows — only the response to the finding was
+wrong the first time.
 
 **What this proof does NOT cover, stated plainly rather than implied by a tick:**
-- **SICK, FAMILY_RESPONSIBILITY and every other leave type besides ANNUAL** — the accrual
-  engine itself is scoped to ANNUAL only (D-168), so there is nothing yet to reconcile for
-  the others. The property test inherits that scope; it is not a gap the test introduced.
-- **HOURS-denominated balances** (an employee on `PER_HOURS_WORKED`) — proven deterministically
-  (`leave/tests/test_applications.py`) but NOT by the property test, which only generates
-  DAYS-unit actions. A property-based proof of the hours path is future work, not done here.
-- **`ANNUAL_UNAUTHORISED`** (`balance_source='parent'`) — flagged since chunk 2 (D-174) as not
-  resolved to its parent's cycle by `ensure_cycles`/`balance_as_at`; the property test does
-  not exercise it, consistently with that flag.
-- **Termination payout** — P7's job. A terminated employee's closed cycle balance is proven
-  untouched at termination (chunk 2's own tests) but paying it out is not this phase's work.
+- **SICK and FAMILY_RESPONSIBILITY are implemented and tested (chunk 4), but NOT by the
+  property test itself.** `leave/tests/test_accrual_chunk4.py` proves their accrual,
+  transition and grant logic with table-driven tests — the attendance-driven ratio phase,
+  the six-month transition asserted as a total, the upfront grant with no carry-over — but
+  the property test's own action generator still only drives an ANNUAL cycle. A
+  property-based proof that SICK's two-phase accrual and FAMILY_RESPONSIBILITY's grant
+  compose correctly with applications, forfeiture and reversals over long random sequences
+  is future work, not done here. MATERNITY, PARENTAL and ADOPTION have no accrual at all
+  yet — chunk 5.
+- **HOURS-denominated balances are now covered by the property test** (chunk 4, task 5) —
+  the same generator runs against both a DAYS- and an HOURS-denominated ANNUAL cycle.
+  SICK and FAMILY_RESPONSIBILITY's own dedicated tests exercise DAYS only, consistent
+  with the property test's own remaining ANNUAL-only scope noted above.
+- **`ANNUAL_UNAUTHORISED` is now resolved** (chunk 4, D-180) — a `leave_transaction`
+  against it reduces ANNUAL's own balance, proven directly. The property test still does
+  not exercise it; only `leave/tests/test_accrual_chunk4.py` does.
+- **Termination payout — P7's job, with a constraint now recorded ahead of it (D-185).** A
+  terminated employee's closed cycle balance is proven untouched at termination (chunk 2's
+  own tests) but paying it out is not this phase's work, and when P7 does it, it must
+  surface a negative balance for a human decision rather than net it off automatically.
 
 ---
 
