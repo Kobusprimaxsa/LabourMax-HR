@@ -98,9 +98,10 @@ __all__ = [
 
 # ----------------------------------------------------------------- column spec
 
-#: Every day type except LEAVE. A leave day needs leave_application_id_ref
-#: (P6, not built yet), so it is not an importable form of raw capture — the
-#: placeholder column has nothing for this template to point at.
+#: Every day type except LEAVE. A leave day needs a leave_application — set
+#: only by leave/authorisation.py approving one (P6 chunk 2) — so it is not
+#: an importable form of raw capture. The bulk importer captures WORK, not
+#: leave; a day off is recorded by applying for it, not by uploading a row.
 _IMPORTABLE_DAY_TYPES = tuple(
     (value, label)
     for value, label in AttendanceDay.DayType.choices
@@ -207,7 +208,7 @@ class AttendanceBatchResult(BatchResult):
 _SNAPSHOT_FIELDS = (
     "workplace_id",
     "day_type",
-    "leave_application_id_ref",
+    "leave_application_id",
     "time_in",
     "time_out",
     "unpaid_break_minutes",

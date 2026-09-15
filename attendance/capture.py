@@ -91,7 +91,8 @@ def capture(
     time_out: datetime.time | None = None,
     unpaid_break_minutes: int = 0,
     is_standby: bool = False,
-    leave_application_id_ref: int | None = None,
+    leave_application=None,
+    leave_day_portion: Decimal = Decimal(1),
     source: str = AttendanceDay.Source.MANUAL,
     comment: str = "",
     import_batch=None,
@@ -145,6 +146,7 @@ def capture(
             hours_worked=hours_worked,
             scheduled_start_time=schedule_day.start_time if schedule_day else None,
             scheduled_end_time=schedule_day.end_time if schedule_day else None,
+            leave_day_portion=leave_day_portion,
         )
         result = bucket_day(day_input, rules)
 
@@ -154,7 +156,7 @@ def capture(
             "work_date": work_date,
             "workplace": workplace,
             "day_type": day_type,
-            "leave_application_id_ref": leave_application_id_ref,
+            "leave_application": leave_application,
             "time_in": time_in,
             "time_out": time_out,
             "unpaid_break_minutes": unpaid_break_minutes,

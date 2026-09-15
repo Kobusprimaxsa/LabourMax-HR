@@ -248,6 +248,17 @@ def terminate(
         refresh_current_state(engagement.employee, on_date=timezone.localdate())
         engagement.refresh_from_db(fields=["is_current"])
 
+        # Deferred import: leave.cycles imports current_engagement from this
+        # very module at ITS OWN module level, so a top-level import here
+        # would be a circular import at Python's own load time, not merely a
+        # layering preference. Closing the engagement's own open leave
+        # cycles HERE, where termination actually happens, is P6 chunk 2's
+        # own D-172 — the lazy backstop in leave/cycles.py::ensure_cycles()
+        # still exists for whatever this call does not reach.
+        from leave.cycles import close_cycles_at_termination
+
+        close_cycles_at_termination(engagement)
+
     return engagement
 
 

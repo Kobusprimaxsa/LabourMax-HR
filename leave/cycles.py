@@ -165,24 +165,69 @@ def entitlement_quantity_for(
     return base + additional
 
 
+def _close_cycle(cycle: LeaveCycle, *, termination_date: datetime.date) -> None:
+    """Truncate one cycle's date range to end the day after termination, and
+    mark it CLOSED. Never touches a balance column — only the date range and
+    status, so whatever the cycle held stays exactly as it was (D-B).
+    """
+    new_end = termination_date + datetime.timedelta(days=1)
+    if new_end < cycle.cycle_start:
+        new_end = cycle.cycle_start
+    if new_end < cycle.cycle_end:
+        cycle.cycle_end = new_end
+    cycle.status = LeaveCycle.Status.CLOSED
+    cycle.closed_at = timezone.now()
+    cycle.save(update_fields=["cycle_end", "status", "closed_at", "updated_at"])
+
+
+def close_cycles_at_termination(engagement: EmployeeEngagement) -> list[LeaveCycle]:
+    """Close every one of THIS engagement's own open leave cycles, right
+    where the event happens (D-172, task 5).
+
+    Chunk 1 only ever closed a prior engagement's cycle LAZILY, the next
+    time ``ensure_cycles`` ran for a re-hire — which meant the boundary
+    between "this engagement's service" and "closed" moved to whenever
+    somebody next happened to look, exactly the D-132 lesson CLAUDE.md
+    already states about cached and boundary-dependent facts: a value that
+    is only ever recomputed on demand is wrong for however long nothing asks.
+    Call this from ``employees.engagements.terminate()`` instead, so the
+    cycle closes the moment service actually ends.
+
+    ``ensure_cycles``'s own lazy call (now via this same function, for OTHER
+    engagements) stays as the BACKSTOP, not the mechanism — for any cycle
+    that predates this function existing, or a termination recorded through
+    a path that does not yet call it.
+    """
+    if engagement.termination_date is None:
+        return []
+
+    closed: list[LeaveCycle] = []
+    with transaction.atomic(), tenant_context_of(engagement):
+        open_cycles = LeaveCycle.objects.filter(
+            engagement=engagement, status=LeaveCycle.Status.OPEN
+        )
+        for cycle in open_cycles:
+            _close_cycle(cycle, termination_date=engagement.termination_date)
+            closed.append(cycle)
+    return closed
+
+
 def _close_cycles_from_other_engagements(
     employee: Employee, leave_type: LeaveType, current: EmployeeEngagement
 ) -> None:
-    """Truncate a PRIOR engagement's own open cycle to end at its
-    termination, so a re-hire's fresh cycle 1 does not calendar-overlap it.
+    """THE BACKSTOP, not the mechanism (task 5). ``terminate()`` now closes
+    an engagement's own cycles the moment service ends
+    (``close_cycles_at_termination``) — this lazy path only still matters for
+    a cycle that predates that call, or a termination recorded by a path
+    that does not go through ``employees.engagements.terminate()``.
 
     Decision B's own docstring on ``LeaveCycle`` says a re-hire's old cycles
-    "close at termination and are never revived" — but nothing made that
-    true at the row level until now. The EXCLUDE constraint is scoped to
-    ``(employee, leave_type)`` exactly as task 2 asks ("cycles never overlap
-    for one employee and type"), not to the engagement — so a prior
-    engagement's cycle, left at its full nominal 12 (or 36) months, still
-    calendar-overlaps a re-hire that starts inside that window, and the
-    constraint correctly refuses it. The fix is not to weaken the
-    constraint; it is to make the prior cycle's own date range reflect what
-    actually happened: it stopped being open the day service stopped.
-
-    Only ever shortens a cycle whose owning engagement has ALREADY
+    "close at termination and are never revived" — the EXCLUDE constraint is
+    scoped to ``(employee, leave_type)`` exactly as task 2 asks ("cycles
+    never overlap for one employee and type"), not to the engagement — so a
+    prior engagement's cycle, left open, still calendar-overlaps a re-hire
+    starting inside its nominal window, and the constraint correctly refuses
+    it. Only ever touches a cycle whose owning engagement has ALREADY
     terminated — ``engage()`` itself refuses a second open engagement, so by
     the time this runs, every OTHER engagement of this employee necessarily
     has a ``termination_date``.
@@ -195,15 +240,7 @@ def _close_cycles_from_other_engagements(
         termination_date = stale.engagement.termination_date
         if termination_date is None:
             continue  # pragma: no cover — engage() refuses this state; defensive only.
-
-        new_end = termination_date + datetime.timedelta(days=1)
-        if new_end < stale.cycle_start:
-            new_end = stale.cycle_start
-        if new_end < stale.cycle_end:
-            stale.cycle_end = new_end
-        stale.status = LeaveCycle.Status.CLOSED
-        stale.closed_at = timezone.now()
-        stale.save(update_fields=["cycle_end", "status", "closed_at", "updated_at"])
+        _close_cycle(stale, termination_date=termination_date)
 
 
 def ensure_cycles(

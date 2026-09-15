@@ -13,10 +13,11 @@ from django.db import DatabaseError, IntegrityError, transaction
 from attendance.capture import LockedDayError, capture
 from attendance.models import AttendanceDay
 from calculators.attendance import DayType
-from core.managers import tenant_context
+from core.managers import platform_context, tenant_context
 from core.models import Tenant
 from employees.models import Employee, WorkSchedule, WorkScheduleDay
 from employers.models import Employer
+from leave.models import LeaveApplication, LeaveType
 from statutory.models import Sector, WorkingTimeRuleSet
 
 pytestmark = pytest.mark.django_db
@@ -53,6 +54,23 @@ def employee(db, tenant, employer):
             mobile_number="+27820000001",
             email="thandi@example.com",
             id_number="9001015009086",
+        )
+
+
+@pytest.fixture
+def leave_application(db, tenant, employee):
+    with platform_context():
+        annual = LeaveType.objects.create(
+            code=LeaveType.Code.ANNUAL, name="Annual leave", is_system=True
+        )
+    with tenant_context(tenant.pk):
+        return LeaveApplication.objects.create(
+            tenant=tenant,
+            employee=employee,
+            reference="LV-2026-00001",
+            leave_type=annual,
+            start_date=MONDAY,
+            end_date=MONDAY,
         )
 
 
@@ -228,7 +246,9 @@ def test_the_check_refuses_a_leave_day_with_no_leave_application(employee):
     assert "attendance_day_leave_needs_a_leave_application" in str(raised.value)
 
 
-def test_the_check_refuses_a_non_leave_day_that_names_a_leave_application(employee):
+def test_the_check_refuses_a_non_leave_day_that_names_a_leave_application(
+    employee, leave_application
+):
     with (
         tenant_context(employee.tenant_id),
         pytest.raises(IntegrityError) as raised,
@@ -239,20 +259,20 @@ def test_the_check_refuses_a_non_leave_day_that_names_a_leave_application(employ
             employee=employee,
             work_date=MONDAY,
             day_type=DayType.ORDINARY,
-            leave_application_id_ref=1,
+            leave_application=leave_application,
         )
 
     assert "attendance_day_leave_needs_a_leave_application" in str(raised.value)
 
 
-def test_a_leave_day_with_a_leave_application_reference_is_accepted(employee):
+def test_a_leave_day_with_a_leave_application_reference_is_accepted(employee, leave_application):
     with tenant_context(employee.tenant_id):
         day = AttendanceDay.objects.create(
             tenant=employee.tenant,
             employee=employee,
             work_date=MONDAY,
             day_type=DayType.LEAVE,
-            leave_application_id_ref=1,
+            leave_application=leave_application,
         )
 
-    assert day.leave_application_id_ref == 1
+    assert day.leave_application_id == leave_application.pk

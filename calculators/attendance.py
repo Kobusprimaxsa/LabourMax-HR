@@ -74,9 +74,12 @@ estimate, not a reconstruction of an unrecorded fact, and is worth knowing
 before this figure is relied on for the night allowance to the cent.
 
 **``days_worked_equivalent`` is not obvious either, and is D-149.** The rule
-chosen: 1.000 for ``leave``/``absent_paid`` (a paid day off still counts as a
-full day for daily-rate pay and leave accrual — the person is being paid for
-it); 0.000 for ``absent_unpaid``; and for every day with hours in it —
+chosen: for ``leave``, the application's own ``leave_day_portion`` (1.000 for
+a full day, 0.500 for a half day — P6 chunk 2's part-day support, D-171); for
+``absent_paid``, always 1.000 (a paid day off still counts as a full day for
+daily-rate pay and leave accrual — the person is being paid for it, and
+``absent_paid`` has no part-day concept the way a leave application does);
+0.000 for ``absent_unpaid``; and for every day with hours in it —
 ``ordinary``, ``rest_day``, ``sunday``, ``public_holiday``,
 ``no_work_available`` — the ratio of hours actually paid (worked hours plus
 the SD1 guarantee) to the employee's own scheduled ordinary hours for that
@@ -126,15 +129,11 @@ WORKED_DAY_TYPES = frozenset(
     {DayType.ORDINARY, DayType.REST_DAY, DayType.SUNDAY, DayType.PUBLIC_HOLIDAY}
 )
 
-#: Day types that still count as a full day for daily-rate pay and leave
-#: accrual despite zero hours worked — see the days_worked_equivalent choice
-#: (D-149) in the module docstring.
-#:
-#: HOLDS ONLY WHILE LEAVE IS WHOLE-DAY (D-149, amended). P6 introduces
-#: leave_application with part days, and a half day of annual leave must
-#: yield 0.500 here, not 1.000 — this flat lookup will need the part-day
-#: fraction as an input once one exists. P6 must revisit this before
-#: leave_application_id_ref becomes a real FK.
+#: Day types that still count toward daily-rate pay and leave accrual despite
+#: zero hours worked — see the days_worked_equivalent choice (D-149, D-171)
+#: in the module docstring. ``LEAVE`` uses the input's own
+#: ``leave_day_portion`` (D-171 resolved the part-day gap this set flagged);
+#: ``ABSENT_PAID`` is always a full day — it has no part-day concept.
 FULL_DAY_EQUIVALENT_TYPES = frozenset({DayType.LEAVE, DayType.ABSENT_PAID})
 
 
@@ -215,6 +214,10 @@ class AttendanceDayInput:
     #: itself works from the CAPTURED time_in/time_out, never the schedule's.
     scheduled_start_time: datetime.time | None = None
     scheduled_end_time: datetime.time | None = None
+    #: D-171. Used only when day_type is LEAVE — the leave_application_day's
+    #: own day_portion (1.000 full day, 0.500 half day). Ignored for every
+    #: other day type, ABSENT_PAID included, which has no part-day concept.
+    leave_day_portion: Decimal = Decimal(1)
 
 
 @dataclass(frozen=True)
@@ -431,7 +434,9 @@ def bucket_day(day: AttendanceDayInput, rules: RuleFigures) -> AttendanceDayResu
 def _days_worked_equivalent(
     day: AttendanceDayInput, rules: RuleFigures, *, worked_total: Decimal, guarantee: Decimal
 ) -> Decimal:
-    """D-149. See the module docstring for the rule and why it is a choice."""
+    """D-149 (D-171 for the LEAVE part-day case). See the module docstring."""
+    if day.day_type == DayType.LEAVE:
+        return day.leave_day_portion
     if day.day_type in FULL_DAY_EQUIVALENT_TYPES:
         return Decimal(1)
     if day.day_type == DayType.ABSENT_UNPAID:

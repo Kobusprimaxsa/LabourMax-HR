@@ -34,13 +34,21 @@ def post_transaction(
     calculation_basis: str = "",
     reason: str = "",
     created_by=None,
-    leave_application_id_ref: int | None = None,
+    leave_application=None,
     payroll_run_id_ref: int | None = None,
 ) -> LeaveTransaction:
     """Write one ledger row. The sign convention (stated on the model) is
     enforced by the database CHECK, not repeated here — a caller that gets
     the sign wrong is refused at ``full_clean()``, naming the mismatch.
+
+    Caller still speaks ``quantity`` + ``unit`` (chunk 1's own API, unchanged
+    by D-170's reconciliation) — this function is where that gets split onto
+    the table's own two physical columns, ``days`` and ``hours``, exactly one
+    populated per row.
     """
+    days = quantity if unit == LeaveCycle.Unit.DAYS else None
+    hours = quantity if unit == LeaveCycle.Unit.HOURS else None
+
     with transaction.atomic(), tenant_context_of(employee):
         txn = LeaveTransaction(
             tenant=employee.tenant,
@@ -49,12 +57,12 @@ def post_transaction(
             leave_type=leave_type,
             transaction_date=transaction_date,
             transaction_type=transaction_type,
-            quantity=quantity,
-            unit=unit,
+            days=days,
+            hours=hours,
             calculation_basis=calculation_basis,
             reason=reason,
             created_by_user=created_by,
-            leave_application_id_ref=leave_application_id_ref,
+            leave_application=leave_application,
             payroll_run_id_ref=payroll_run_id_ref,
         )
         txn.full_clean()
@@ -91,8 +99,9 @@ def reverse_transaction(
             leave_type_id=original.leave_type_id,
             transaction_date=transaction_date or original.transaction_date,
             transaction_type=TransactionType.REVERSAL,
-            quantity=-original.quantity,
-            unit=original.unit,
+            days=-original.days if original.days is not None else None,
+            hours=-original.hours if original.hours is not None else None,
+            leave_application_id=original.leave_application_id,
             reverses_transaction=original,
             reason=reason,
             created_by_user=created_by,

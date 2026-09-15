@@ -54,7 +54,7 @@ def test_twelve_months_of_accrual_sums_exactly_to_the_ledger(
         cycle = LeaveCycle.objects.get(employee=employee, leave_type=annual_type, cycle_number=1)
         ledger_total = LeaveTransaction.objects.filter(
             leave_cycle=cycle, transaction_type=TransactionType.ACCRUAL
-        ).aggregate(total=Sum("quantity"))["total"]
+        ).aggregate(total=Sum("days"))["total"]
 
     recomputed = recompute_cycle(cycle)
 
@@ -149,8 +149,8 @@ def test_hourly_employee_accrues_hours_never_days(
         txn = accrue_employee(person, annual_type, as_at=datetime.date(2026, 3, 28))
 
     assert txn is not None
-    assert txn.unit == LeaveCycle.Unit.HOURS
-    assert txn.quantity == Decimal("1.000"), "17 hours worked / 17-hour ratio = 1 hour accrued."
+    assert txn.hours == Decimal("1.000"), "17 hours worked / 17-hour ratio = 1 hour accrued."
+    assert txn.days is None
 
 
 def test_monthly_employee_accrues_days_never_hours(
@@ -160,8 +160,8 @@ def test_monthly_employee_accrues_days_never_hours(
         txn = accrue_employee(employee, annual_type, as_at=datetime.date(2026, 3, 28))
 
     assert txn is not None
-    assert txn.unit == LeaveCycle.Unit.DAYS
-    assert txn.quantity == Decimal("1.250")
+    assert txn.days == Decimal("1.250")
+    assert txn.hours is None
 
 
 # ------------------------------------------------ THE NEGATIVE TEST THAT MATTERS

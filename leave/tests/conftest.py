@@ -20,11 +20,18 @@ from core.managers import platform_context, tenant_context
 from core.models import Tenant
 from employees.engagements import MINIMUM_AGE_PARAMETER, engage
 from employees.identity import luhn_check_digit
-from employees.models import Employee, WorkSchedule
+from employees.models import Employee, WorkSchedule, WorkScheduleDay
 from employers.models import Employer
+from leave.evidence import SICK_CERTIFICATE_THRESHOLD_PARAMETER, seed_system_evidence_types
 from leave.models import LeaveType
 from leave.types import seed_system_leave_types
-from statutory.models import LeaveRuleSet, Sector, StatutoryParameter
+from statutory.models import (
+    LeaveRuleSet,
+    PublicHoliday,
+    Sector,
+    StatutoryParameter,
+    WorkingTimeRuleSet,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -129,22 +136,113 @@ def annual_type(db):
 @pytest.fixture
 def schedule_5day(tenant, employee):
     with tenant_context(tenant.pk):
-        return WorkSchedule.objects.create(
+        made = WorkSchedule.objects.create(
             tenant=tenant,
             employee=employee,
             days_per_week=Decimal("5"),
             ordinary_hours_per_week=Decimal("40"),
             effective_from=START,
         )
+        for cycle_day in range(7):
+            WorkScheduleDay.objects.create(
+                tenant=tenant,
+                work_schedule=made,
+                cycle_day=cycle_day,
+                is_working_day=cycle_day < 5,  # Monday-Friday
+                ordinary_hours=Decimal("8") if cycle_day < 5 else Decimal("0"),
+            )
+        return made
 
 
 @pytest.fixture
 def schedule_6day(tenant, employee):
     with tenant_context(tenant.pk):
-        return WorkSchedule.objects.create(
+        made = WorkSchedule.objects.create(
             tenant=tenant,
             employee=employee,
             days_per_week=Decimal("6"),
             ordinary_hours_per_week=Decimal("48"),
             effective_from=START,
         )
+        for cycle_day in range(7):
+            WorkScheduleDay.objects.create(
+                tenant=tenant,
+                work_schedule=made,
+                cycle_day=cycle_day,
+                is_working_day=cycle_day < 6,  # Monday-Saturday
+                ordinary_hours=Decimal("8") if cycle_day < 6 else Decimal("0"),
+            )
+        return made
+
+
+@pytest.fixture
+def sick_certificate_threshold(db):
+    return StatutoryParameter.objects.create(
+        parameter_code=SICK_CERTIFICATE_THRESHOLD_PARAMETER,
+        value_numeric=Decimal("2.000000"),
+        unit=StatutoryParameter.Unit.DAYS,
+        effective_from=datetime.date(1997, 12, 1),
+        source_reference="Basic Conditions of Employment Act 75 of 1997, s23(1)",
+    )
+
+
+@pytest.fixture
+def sick_type(db):
+    """The seeded, shared SICK leave type."""
+    seed_system_leave_types()
+    with platform_context():
+        return LeaveType.objects.get(code=LeaveType.Code.SICK, tenant__isnull=True)
+
+
+@pytest.fixture
+def evidence_types(sick_type, sick_certificate_threshold):
+    created = seed_system_evidence_types()
+    return {e.code: e for e in created}
+
+
+@pytest.fixture
+def public_holiday_wednesday(db):
+    """A public holiday inside the fixture Monday-Friday week starting
+    2026-03-02 — used to prove a week's leave over it costs four days."""
+    return PublicHoliday.objects.create(
+        holiday_date=datetime.date(2026, 3, 4),
+        name="Test public holiday",
+        is_statutory=True,
+        source_reference="Test fixture",
+    )
+
+
+@pytest.fixture
+def working_time_rules(db):
+    """Needed by ``attendance.capture.capture()`` — task 3/4's approve()
+    writes an attendance_day row for every working day it grants leave for,
+    and capture() refuses to bucket a day with no rule set loaded."""
+    return WorkingTimeRuleSet.objects.create(
+        sector=None,
+        effective_from=datetime.date(1997, 12, 1),
+        source_reference="Test fixture",
+        ordinary_hours_per_week=Decimal("45"),
+        ordinary_hours_per_day_5day=Decimal("9"),
+        ordinary_hours_per_day_6day=Decimal("8"),
+        overtime_multiplier=Decimal("1.5"),
+        max_overtime_hours_per_day=Decimal("3"),
+        max_overtime_hours_per_week=Decimal("10"),
+        sunday_multiplier_ordinary=Decimal("1.5"),
+        sunday_multiplier_non_ordinary=Decimal("2.0"),
+        public_holiday_worked_multiplier=Decimal("2.0"),
+        public_holiday_not_worked_paid=True,
+        night_work_start_time=datetime.time(18, 0),
+        night_work_end_time=datetime.time(6, 0),
+        night_allowance_type="percentage",
+        night_allowance_value=Decimal("10"),
+        standby_allowance_per_shift=Decimal("50.00"),
+        standby_window_start=datetime.time(18, 0),
+        standby_window_end=datetime.time(6, 0),
+        standby_hours_before_overtime=Decimal("2"),
+        min_paid_hours_per_day=Decimal("6"),
+        meal_interval_after_hours=Decimal("5"),
+        meal_interval_minutes=60,
+        daily_rest_hours=12,
+        weekly_rest_hours=36,
+        accommodation_deduction_max_pct=Decimal("10"),
+    )

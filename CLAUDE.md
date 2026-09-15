@@ -975,9 +975,9 @@ gateway), so starting it means stopping to ask.
 **Statutory figures are never invented.** If a rate is needed and cannot be cited, say so and
 stop. That applies to filling in a fixture as much as to writing code.
 
-**P6 — Leave: chunk 1 of three built** (15 September 2026). 1001 tests green. The leave
-catalogue, cycles, the append-only ledger and the accrual engine are in — applications and
-authorisation are chunk 2, and forfeiture *capture* is chunk 3, and neither is stubbed here.
+**P6 — Leave: chunks 1 and 2 of three built** (15 September 2026). 1048 tests green. The leave
+catalogue, cycles, the append-only ledger, the accrual engine, evidence, applications and
+authorisation are in — forfeiture *capture* is chunk 3, and it is not stubbed here.
 
 `leave_type` is seeded via `manage.py seedleavetypes` (`--list` shows the catalogue without
 touching the database), in the `seedcomponents` mould: idempotent, never updates, and every
@@ -1014,10 +1014,10 @@ negation of the row it corrects. `core/db/rls.py::append_only()` backs the table
 same lesson P0 already learned about a table's owner not being bound by `REVOKE`.
 `leave/ledger.py::reverse_transaction()` refuses a reversal of a reversal by name — the reversal
 IS the correction, so there is nothing further to undo. **Deviates from this chunk's own brief,
-in the workbook's favour (D-167)**: the ledger carries `quantity` + `unit` rather than a bare day
-count (D-164 requires it), and `TransactionType` carries the workbook's seven values —
+in the workbook's favour (D-167)**: `TransactionType` carries the workbook's seven values —
 `opening_balance` and `payout` where the brief said only `termination_payout` — not the brief's
-six.
+six. Its physical shape changed again in chunk 2 — see D-170 below; the sign convention and the
+seven-value enum are unaffected.
 
 **The accrual engine is scoped to `ANNUAL` only this chunk (D-168).** Calling it for `SICK`, or
 any other `accrues=True` type, raises `AccrualNotSupportedError` naming the gap: BCEA s22(2)'s
@@ -1050,8 +1050,78 @@ providing none at all. Found by the generated isolation suite exactly as it is m
 new model the day it is written, and fixed in migration `0005` without touching `0003`'s own
 `append_only()` trigger.
 
-Still open in this chunk: nothing — chunk 1's own seven tasks are complete and green. Chunks 2
-(applications, authorisation) and 3 (forfeiture capture) are unstarted.
+**Chunk 2 opened by reconciling `leave_transaction` against sheet 02 BEFORE building anything on
+top of it (task 0, D-170).** Sheet 02 names a NOT NULL `days` and a nullable `hours`; read
+literally, every row would need a days figure, which for an hourly-accrual employee can only come
+from converting hours against the employee's own schedule — exactly the silent conversion D-164
+exists to prevent. Both `days` and `hours` are nullable instead, with a CHECK proving exactly one
+is ever populated — sheet 02's own column names, chunk 1's own data shape. **The sign-check CHECK
+needed an explicit `__isnull=False` guard on every branch**, because PostgreSQL treats a CHECK
+expression that evaluates to NULL as SATISFIED, not violated — an unguarded
+`Q(transaction_type="accrual", hours__gt=0)` on a row whose `hours` IS NULL evaluates NULL, and
+ORed against another FALSE branch leaves the whole CHECK NULL, which passes a wrong-signed row
+through silently. `leave_transaction.leave_application` and `attendance_day.leave_application` both
+become real FKs this chunk too (D-175), now that `leave_application` exists.
+
+**`leave_evidence_type` (task 1) carries no tenant field and inherits none of the three tenant
+bases (D-173)** — pure reference data, `sector`'s own shape, not `leave_type`'s. Guarded by
+`core/db/rls.py::no_delete()` regardless, since `leave_application` (FORCE RLS) points at it —
+D-76's lesson, applied on arrival rather than found by accident afterward. Its one figure, BCEA
+s23(1)'s "more than two consecutive days" certificate threshold, is a new `statutory_parameter`
+row (`SICK_CERTIFICATE_MAX_CONSECUTIVE_DAYS`), read through `statutory.resolve` — D-100/D-101's
+own precedent for a single citable threshold, not a whole rule set and not a Python literal
+either. **Evidence gates PAY, never LEAVE**: BCEA s23 conditions the employer's right to withhold
+pay on an unevidenced absence beyond the threshold, never the right to take the leave at all, so
+`leave/evidence.py` and everything built on it decide `is_paid`, never whether the application
+exists. `DOCTOR_NOTE`/`CLINIC_NOTE` pay regardless of length; `SELF_CERTIFIED`/`NO_NOTE` pay only
+within the threshold. FLAGGED: the exact boundary between `SELF_CERTIFIED` and `NO_NOTE` is a
+per-application computation, not fixed by the catalogue row alone.
+
+**`leave_application` / `leave_application_day` (task 2) carry three settled rules together
+(D-174).** Evidence gates pay, restated at the application layer: a sick application with no
+certificate, however long, always reaches `submitted` — never refused. **An overdrawn application
+is never refused either** — `leave/applications.py::submit_application()` caps the deduction at
+what the ledger actually holds and marks the uncovered days `is_paid=False` /
+`deducted_from_balance=False`, recording `exceeds_balance` and `unpaid_days` rather than paying
+what is not there. **A week's leave over a public holiday costs four days, not five** —
+`is_working_day` is FALSE for a rest day AND a public holiday inside the span, and neither
+deducts; both still get their own row so the audit can show why. Half days are the minimum
+increment for a salaried basis (`day_portion`); an hourly-accrual employee's application deducts
+`hours` instead and never converts (D-164, still). FLAGGED in the module's own docstring: a
+`balance_source='parent'` type (`ANNUAL_UNAUTHORISED`) is not resolved to its parent's cycle here,
+and an hourly employee's own overdraw has no `unpaid_hours` column to summarise into.
+
+**Self-approval is BLOCKED and escalates to the owner (task 3, D-174).** Only where the deciding
+user IS the owner AND no other approver (owner or admin) exists for the tenant may
+`self_approved` be TRUE — and then only with a mandatory `self_approval_reason`, visible in the
+leave register and never hidden; `leave/authorisation.py::approve()` refuses outright otherwise,
+naming who may decide instead. **Approval writes the `taken` ledger transaction and the
+`attendance_day` row together, in one transaction** — refusing, naming the date, if a day in the
+span is already captured as worked (nobody is both at work and on leave), and refusing, naming
+the run, if a day is locked by a finalised payroll run (`attendance/capture.py`'s own guard, not
+duplicated). **Cancelling REVERSES the ledger and removes the attendance days it wrote — it never
+edits or deletes a ledger row** (invariant 4), permitted even after the leave was already taken:
+the employer may have to explain a late cancellation, and that is exactly what the trail is for.
+
+**A real, substantive gap surfaced and was closed while building part-day applications
+(D-171).** `calculators/attendance.py`'s `days_worked_equivalent` for a `LEAVE` day used to be a
+flat `Decimal(1)` regardless of length — D-149 (chunk 1's own hardening pass) had already flagged
+this exact gap and said P6 must revisit it before the leave FK became real. `AttendanceDayInput`
+now carries `leave_day_portion` (default 1, every existing caller unaffected), and a half day of
+approved annual leave correctly yields `0.500`, not `1.000`, for both daily-rate pay and leave
+accrual.
+
+**Cycle-closing moved to where the event happens (task 5, D-172).** Chunk 1 only ever closed a
+prior engagement's open cycle LAZILY, the next time `ensure_cycles()` ran for a re-hire —
+D-132's own lesson restated: a boundary that moves when somebody happens to look is one that is
+wrong in between. `employees/engagements.py::terminate()` now calls
+`leave/cycles.py::close_cycles_at_termination()` directly, via a deferred (function-body) import
+— `leave.cycles` already imports from this same module at ITS OWN top level, so a top-level
+import here would be a circular import at Python's own load time, not merely a layering
+preference. The lazy path stays as the backstop, not the mechanism.
+
+Still open in this chunk: nothing — chunk 2's own seven tasks are complete and green. Chunk 3
+(forfeiture capture) is unstarted.
 
 See `docs/PHASES.md` for the task breakdown.
 

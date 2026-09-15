@@ -252,23 +252,27 @@ completed prerequisite, not the outcome the "Done when" clause actually asks for
 
 ## P6 — Leave Management · 5 weeks · 8 tables
 
-**Chunk 1 of 3 done** (15 September 2026): the catalogue, cycles, the ledger and the
-accrual engine for annual leave. Chunks 2 (applications, authorisation) and 3 (forfeiture
-capture) are unstarted — see the P6 section of CLAUDE.md and D-162 to D-169 for the detail.
+**Chunks 1 and 2 of 3 done** (15 September 2026): the catalogue, cycles, the ledger, the
+accrual engine, evidence, applications and authorisation. Chunk 3 (forfeiture capture) is
+unstarted — see the P6 section of CLAUDE.md and D-162 to D-175 for the detail.
 
-- [x] `leave_type` **table built in P4** (D-127) — seeded this chunk via `manage.py
-      seedleavetypes`, all ten codes; two shapes FLAGGED (`STUDY`, `COMPASSIONATE`) rather
-      than settled. No separate `leave_evidence_type` table was built — `requires_evidence`
-      on `leave_type` itself is the shape this chunk needed; a richer evidence-type table,
-      if the workbook still calls for one, is chunk 2/3's to revisit against the
-      application flow that will actually use it
-- [ ] `leave_evidence_type`
+- [x] `leave_type` **table built in P4** (D-127) — seeded via `manage.py seedleavetypes`,
+      all ten codes; two shapes FLAGGED (`STUDY`, `COMPASSIONATE`) rather than settled
+- [x] `leave_evidence_type` — built chunk 2 (D-173), scoped to the four sick-leave variants.
+      No tenant field, no RLS — pure reference data, guarded by `no_delete()` since
+      `leave_application` points at it. `max_consecutive_days_without_note` is read from a
+      new `statutory_parameter` row (BCEA s23(1)), never a literal. One shape FLAGGED:
+      `NO_NOTE`'s exact boundary against `SELF_CERTIFIED` is a per-application computation
 - [x] `leave_cycle` — anchored to the CURRENT engagement's own start date (D-163, not the
       workbook's own unique — deviation recorded), lazy, idempotent, non-overlapping by
-      EXCLUDE. 12-month annual is exercised; 36-month sick is supported by the table shape
-      but not exercised, since nothing generates a SICK cycle yet (see the accrual line below)
+      EXCLUDE. Closed at TERMINATION itself as of chunk 2 (D-172), not lazily on re-hire.
+      12-month annual is exercised; 36-month sick is supported by the table shape but not
+      exercised, since the accrual engine does not generate SICK cycles yet (see below)
 - [x] `leave_transaction` append-only ledger — sign convention enforced by CHECK, trigger
-      backs append-only, reversal-of-reversal refused (D-164, D-167)
+      backs append-only, reversal-of-reversal refused (D-164, D-167). RECONCILED against
+      sheet 02 in chunk 2 (D-170): `days`/`hours`, both nullable, exactly one populated —
+      sheet 02's own column names, kept nullable against D-164's own settled decision.
+      `leave_application` is now a real FK (D-175)
 - [x] Accrual engine, ANNUAL ONLY this chunk: monthly straight-line, per 17 days, per 17
       hours all implemented and tested. **Sick leave's first-six-months rule is deliberately
       NOT implemented** (D-168) — the accrual RATIO is loaded but the SIX-MONTH THRESHOLD
@@ -276,8 +280,19 @@ capture) are unstarted — see the P6 section of CLAUDE.md and D-162 to D-169 fo
       `AccrualNotSupportedError` names the gap for every other `accrues=True` type
 - [x] `leave_accrual_run` — idempotent per employee per leave type per period, proven by
       running the engine twice and asserting the ledger unchanged
-- [ ] `leave_application` + `leave_application_day` with part days and holidays inside a span
-- [ ] Employer authorisation; self-approval blocked, escalating to the owner
+- [x] `leave_application` + `leave_application_day` with part days and holidays inside a span
+      — built chunk 2 (D-174). A public holiday or a rest day inside a span is never
+      deducted; a half day deducts 0.500; an hourly employee's application deducts hours and
+      never converts. An overdrawn application is never refused — the excess is capped
+      against the ledger and falls to unpaid. Evidence gates pay, never the leave itself.
+      FLAGGED: `ANNUAL_UNAUTHORISED` (`balance_source='parent'`) is not resolved to its
+      parent's cycle; an hourly employee's own overdraw has no `unpaid_hours` column
+- [x] Employer authorisation; self-approval blocked, escalating to the owner — built chunk 2
+      (D-174). Only the sole owner, with no other approver, may self-approve, and only with
+      a mandatory reason visible in the leave register. Approval refuses a day already
+      captured as worked (naming the date) or locked by a payroll run (naming the run), and
+      writes the ledger transaction and the attendance day together. Cancelling REVERSES the
+      ledger and removes the attendance days it wrote, even after the leave was taken
 - [ ] Forfeiture job writing explicit transactions — **will never be built as a job** (D-165,
       Kobus's decision): forfeiture is captured by the employer BY HAND in chunk 3, and no
       job, task or engine path in this codebase may write a forfeiture transaction. Chunk 3
@@ -285,8 +300,9 @@ capture) are unstarted — see the P6 section of CLAUDE.md and D-162 to D-169 fo
 - [ ] `public_holiday_observance` overrides
 
 **Done when:** every employee's balance reconciles to their ledger in every scenario,
-with no drift. **Chunk 1's own share of this is met**: twelve months of accrual sum
-exactly to the ledger with no drift, proven in `leave/tests/test_accrual.py`.
+with no drift. **Chunks 1 and 2's own share of this is met**: twelve months of accrual sum
+exactly to the ledger with no drift, and cancelling an approved application returns the
+balance to its exact prior figure, both proven in the test suite.
 
 ---
 

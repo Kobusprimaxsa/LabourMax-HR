@@ -61,7 +61,11 @@ def recompute_cycle(cycle: LeaveCycle) -> LeaveCycle:
         totals = dict.fromkeys(set(_COLUMN_FOR_TYPE.values()), ZERO)
         for row in rows:
             column = _COLUMN_FOR_TYPE[row.transaction_type]
-            totals[column] += row.quantity
+            # Exactly one of the two is ever populated (D-170) — whichever it
+            # is IS the row's own signed value, regardless of which physical
+            # column happens to hold it.
+            value = row.days if row.days is not None else row.hours
+            totals[column] += value
 
         balance = (
             totals["carried_in_quantity"]

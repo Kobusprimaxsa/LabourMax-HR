@@ -3,20 +3,20 @@
 One row per employee per work date: what kind of day it was, the hours worked
 and how they bucket, and whether a payroll run has since frozen it.
 
-**Two forward references, both to tables that do not exist yet** — the same
-house pattern ``core.TenantMembership.employee_id_ref`` already uses for
-``employee`` ahead of P4: a nullable ``BigIntegerField`` named for what it
-becomes, so the eventual FK migration is a type change on an existing column
-rather than a new one.
+**One forward reference is now a real FK; one still waits** — the house
+pattern ``core.TenantMembership.employee_id_ref`` already uses for
+``employee`` ahead of P4: a nullable placeholder named for what it becomes,
+so the eventual FK migration is a type change on an existing column rather
+than a new one.
 
-- ``leave_application_id_ref`` becomes a real FK to ``leave_application`` in
-  P6. Sheet 03's CHECK — ``(day_type='leave') = (leave_application_id IS NOT
-  NULL)`` — is kept exactly, against this placeholder column. That makes a
-  leave day impossible to create until P6 exists, which is honest: this
-  system cannot yet say what leave was taken, so it should not let a day
-  claim to be one.
-- ``locked_by_payroll_run_id_ref`` becomes a real FK to ``payroll_run`` in P7,
-  same treatment.
+- ``leave_application`` is now a real FK to ``leave.LeaveApplication`` (P6
+  chunk 2) — it was ``leave_application_id_ref``, a ``BigIntegerField``,
+  until that table existed. Sheet 03's CHECK — ``(day_type='leave') =
+  (leave_application_id IS NOT NULL)`` — is kept exactly, now against the
+  real column. Only ``leave/authorisation.py`` approving an application ever
+  sets it; nothing else writes a ``day_type='leave'`` row.
+- ``locked_by_payroll_run_id_ref`` stays a placeholder — becomes a real FK to
+  ``payroll_run`` in P7.
 
 ``import_batch`` (FK to ``attendance_import_batch``) arrives in chunk 3, once
 that table exists. Unlike the two forward references above, this one is a real
@@ -82,11 +82,15 @@ class AttendanceDay(AuditedModel, TenantScopedModel):
     day_type = models.CharField(
         max_length=25, choices=DayType.choices, default=DayType.ORDINARY, db_index=True
     )
-    # P6. See module docstring — the house pattern for a forward reference.
-    leave_application_id_ref = models.BigIntegerField(
+    # P6 chunk 2. See module docstring — a real FK now, was a BigIntegerField
+    # placeholder through P5 and P6 chunk 1.
+    leave_application = models.ForeignKey(
+        "leave.LeaveApplication",
         null=True,
         blank=True,
-        help_text="Becomes a real FK to leave_application in P6. Set only when day_type='leave'.",
+        on_delete=models.PROTECT,
+        related_name="attendance_days",
+        help_text="Set only when day_type='leave', by leave/authorisation.py's approve().",
     )
 
     time_in = models.TimeField(null=True, blank=True)
@@ -209,15 +213,13 @@ class AttendanceDay(AuditedModel, TenantScopedModel):
                 ),
                 name="attendance_day_hours_are_not_negative",
             ),
-            # A leave day names the leave it is; nothing else may. Kept against
-            # the P6 placeholder deliberately - see the module docstring.
+            # A leave day names the leave it is; nothing else may. Sheet 03's
+            # CHECK, now against the real FK (P6 chunk 2) rather than the
+            # placeholder it was kept against through P5 and P6 chunk 1.
             models.CheckConstraint(
                 condition=(
-                    models.Q(day_type="leave", leave_application_id_ref__isnull=False)
-                    | (
-                        ~models.Q(day_type="leave")
-                        & models.Q(leave_application_id_ref__isnull=True)
-                    )
+                    models.Q(day_type="leave", leave_application__isnull=False)
+                    | (~models.Q(day_type="leave") & models.Q(leave_application__isnull=True))
                 ),
                 name="attendance_day_leave_needs_a_leave_application",
             ),

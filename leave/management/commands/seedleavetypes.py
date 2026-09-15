@@ -11,12 +11,14 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from core.managers import platform_context
-from leave.models import LeaveType
+from leave.evidence import FLAGGED_CODES as EVIDENCE_FLAGGED_CODES
+from leave.evidence import SYSTEM_EVIDENCE_TYPES, seed_system_evidence_types
+from leave.models import LeaveEvidenceType, LeaveType
 from leave.types import FLAGGED_CODES, SYSTEM_LEAVE_TYPES, seed_system_leave_types
 
 
 class Command(BaseCommand):
-    help = "Create any missing system leave type. Never updates an existing one."
+    help = "Create any missing system leave type or evidence type. Never updates an existing one."
 
     def add_arguments(self, parser):
         parser.add_argument("--list", action="store_true", help="Show the catalogue and stop.")
@@ -52,6 +54,31 @@ class Command(BaseCommand):
                 )
             )
 
+        evidence_created = seed_system_evidence_types()
+        evidence_total = LeaveEvidenceType.objects.count()
+
+        for evidence_type in evidence_created:
+            self.stdout.write(f"  + {evidence_type.code:<24} {evidence_type.name}")
+
+        if not evidence_created:
+            self.stdout.write("Nothing to create — the evidence catalogue is already stocked.")
+        else:
+            self.stdout.write(
+                self.style.SUCCESS(f"Created {len(evidence_created)} evidence types.")
+            )
+
+        self.stdout.write(
+            f"The evidence catalogue holds {evidence_total} of "
+            f"{len(SYSTEM_EVIDENCE_TYPES)} evidence types."
+        )
+        if EVIDENCE_FLAGGED_CODES:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Shape flagged rather than settled, see leave/evidence.py: "
+                    f"{', '.join(EVIDENCE_FLAGGED_CODES)}."
+                )
+            )
+
     def _list(self):
         for spec in SYSTEM_LEAVE_TYPES:
             flag = "  [FLAGGED]" if spec.flagged else ""
@@ -59,4 +86,12 @@ class Command(BaseCommand):
             self.stdout.write(
                 f"{spec.display_order:>4}  {spec.code:<24}{parent:<14} "
                 f"{spec.balance_source:<8} cycle={spec.cycle_months:>3}mo{flag}"
+            )
+        self.stdout.write("")
+        for spec in SYSTEM_EVIDENCE_TYPES:
+            flag = "  [FLAGGED]" if spec.flagged else ""
+            self.stdout.write(
+                f"{spec.display_order:>4}  {spec.code:<24} "
+                f"paid_by_default={spec.is_paid_by_default!s:<5} "
+                f"attachment={spec.requires_attachment!s:<5}{flag}"
             )

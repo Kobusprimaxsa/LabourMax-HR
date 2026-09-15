@@ -42,7 +42,8 @@ def test_post_transaction_writes_a_positive_accrual(employee, annual_type, cycle
     )
 
     assert txn.pk is not None
-    assert txn.quantity == Decimal("1.250")
+    assert txn.days == Decimal("1.250")
+    assert txn.hours is None
 
 
 def test_a_wrong_signed_accrual_is_refused_by_the_check(employee, annual_type, cycle):
@@ -96,11 +97,88 @@ def test_a_wrong_signed_transaction_is_refused_at_the_database_too(employee, ann
             leave_type=annual_type,
             transaction_date=datetime.date(2026, 3, 31),
             transaction_type=TransactionType.ACCRUAL,
-            quantity=Decimal("-1.250"),
-            unit=LeaveCycle.Unit.DAYS,
+            days=Decimal("-1.250"),
         )
 
     assert "sign_matches_type" in str(raised.value)
+
+
+def test_a_wrong_signed_transaction_with_the_other_field_null_is_still_refused(
+    employee, annual_type, cycle
+):
+    """THE GUARD THAT ACTUALLY MATTERS FOR THIS CHECK'S SHAPE.
+
+    PostgreSQL treats a CHECK expression that evaluates to NULL as
+    satisfied, not violated. A naive per-branch ``hours__gt=0`` (with no
+    ``isnull`` guard) evaluates NULL on this exact row — hours IS null here —
+    and ORed against the days branch's definite FALSE, the whole expression
+    would go NULL and the row would be silently accepted. This is the
+    failing case that guard exists for; watching it actually refuse is what
+    proves the guard is there; watching it pass would mean the CHECK's
+    isnull guards regressed.
+    """
+    with tenant_context_of(employee), pytest.raises(IntegrityError) as raised, transaction.atomic():
+        LeaveTransaction.objects.create(
+            tenant_id=employee.tenant_id,
+            employee=employee,
+            leave_cycle=cycle,
+            leave_type=annual_type,
+            transaction_date=datetime.date(2026, 3, 31),
+            transaction_type=TransactionType.ACCRUAL,
+            days=Decimal("-1.250"),
+            hours=None,
+        )
+
+    assert "sign_matches_type" in str(raised.value)
+
+
+def test_both_days_and_hours_populated_is_refused(employee, annual_type, cycle):
+    with tenant_context_of(employee), pytest.raises(IntegrityError) as raised, transaction.atomic():
+        LeaveTransaction.objects.create(
+            tenant_id=employee.tenant_id,
+            employee=employee,
+            leave_cycle=cycle,
+            leave_type=annual_type,
+            transaction_date=datetime.date(2026, 3, 31),
+            transaction_type=TransactionType.ACCRUAL,
+            days=Decimal("1.250"),
+            hours=Decimal("1.000"),
+        )
+
+    assert "exactly_one_of_days_or_hours" in str(raised.value)
+
+
+def test_neither_days_nor_hours_populated_is_refused(employee, annual_type, cycle):
+    with tenant_context_of(employee), pytest.raises(IntegrityError) as raised, transaction.atomic():
+        LeaveTransaction.objects.create(
+            tenant_id=employee.tenant_id,
+            employee=employee,
+            leave_cycle=cycle,
+            leave_type=annual_type,
+            transaction_date=datetime.date(2026, 3, 31),
+            transaction_type=TransactionType.ACCRUAL,
+        )
+
+    assert "exactly_one_of_days_or_hours" in str(raised.value)
+
+
+def test_a_transaction_in_the_wrong_unit_for_its_cycle_is_refused(employee, annual_type, cycle):
+    """The second, independent guard: ``LeaveTransaction.clean()`` catches a
+    unit mismatch the CHECK cannot see, since a CHECK is one row, one table,
+    and ``leave_cycle.unit`` lives on a different row entirely."""
+    txn = LeaveTransaction(
+        tenant_id=employee.tenant_id,
+        employee=employee,
+        leave_cycle=cycle,
+        leave_type=annual_type,
+        transaction_date=datetime.date(2026, 3, 31),
+        transaction_type=TransactionType.ACCRUAL,
+        hours=Decimal("1.000"),
+    )
+    with tenant_context_of(employee), pytest.raises(ValidationError) as raised:
+        txn.full_clean()
+
+    assert "denominated in DAYS" in str(raised.value)
 
 
 def test_an_adjustment_needs_a_reason(employee, annual_type, cycle):
@@ -131,7 +209,7 @@ def test_the_ledger_refuses_an_update_by_trigger(employee, annual_type, cycle):
     )
 
     with tenant_context_of(txn), pytest.raises(DatabaseError) as raised, transaction.atomic():
-        LeaveTransaction.objects.filter(pk=txn.pk).update(quantity=Decimal("9.000"))
+        LeaveTransaction.objects.filter(pk=txn.pk).update(days=Decimal("9.000"))
 
     assert "append-only" in str(raised.value).lower()
 
@@ -170,11 +248,12 @@ def test_a_reversal_is_the_exact_opposite_and_restores_the_balance(employee, ann
     reversal = reverse_transaction(original, reason="Captured against the wrong cycle")
 
     assert reversal.transaction_type == TransactionType.REVERSAL
-    assert reversal.quantity == -original.quantity
+    assert reversal.days == -original.days
+    assert reversal.hours is None
     assert reversal.reverses_transaction_id == original.pk
 
     after = recompute_cycle(cycle).balance_quantity
-    assert after == before - original.quantity
+    assert after == before - original.days
 
 
 def test_a_reversal_of_a_reversal_is_refused(employee, annual_type, cycle):
@@ -204,8 +283,7 @@ def test_a_reversal_names_what_it_reverses(employee, annual_type, cycle):
             leave_type=annual_type,
             transaction_date=datetime.date(2026, 4, 1),
             transaction_type=TransactionType.REVERSAL,
-            quantity=Decimal("1.000"),
-            unit=LeaveCycle.Unit.DAYS,
+            days=Decimal("1.000"),
             reverses_transaction=None,
         )
 

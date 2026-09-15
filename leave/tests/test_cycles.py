@@ -106,6 +106,30 @@ def test_ensure_cycles_stops_at_termination_date(
     assert created[0].cycle_number == 1
 
 
+def test_terminating_closes_the_open_cycle_immediately_not_at_the_next_rehire(
+    employee, engagement, minimum_age, leave_rules, annual_type, schedule_5day
+):
+    """Task 5: the event closes the cycle where it happens — ``terminate()``
+    — not lazily, the next time somebody happens to call ``ensure_cycles``
+    for a re-hire. D-132's own lesson: a boundary that moves when somebody
+    happens to look is one that is wrong in between.
+    """
+    ensure_cycles(employee, annual_type, horizon=datetime.date(2026, 6, 1))
+    with tenant_context_of(employee):
+        cycle = LeaveCycle.objects.get(employee=employee, engagement=engagement, cycle_number=1)
+    assert cycle.status == LeaveCycle.Status.OPEN
+
+    termination_date = datetime.date(2026, 8, 31)
+    terminate(engagement, termination_date=termination_date, reason_code="resigned")
+
+    with tenant_context_of(employee):
+        cycle.refresh_from_db()
+    assert cycle.status == LeaveCycle.Status.CLOSED, (
+        "Closed by terminate() itself — no re-hire, no second ensure_cycles call."
+    )
+    assert cycle.cycle_end == termination_date + datetime.timedelta(days=1)
+
+
 def test_current_cycle_returns_none_before_generation(
     employee, engagement, leave_rules, annual_type
 ):

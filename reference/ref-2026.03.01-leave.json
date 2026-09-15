@@ -1,0 +1,18 @@
+{
+  "version_label": "REF-2026.03.01-LEAVE",
+  "applies_from": "2026-03-01",
+  "description": "Leave evidence thresholds not carried by leave_rule_set. Researched 15 September 2026 from the Basic Conditions of Employment Act. NOT verified.",
+  "tables": {
+    "statutory_parameter": [
+      {
+        "parameter_code": "SICK_CERTIFICATE_MAX_CONSECUTIVE_DAYS",
+        "value_numeric": "2.000000",
+        "unit": "days",
+        "effective_from": "1997-12-01",
+        "source_reference": "Basic Conditions of Employment Act 75 of 1997, s23(1). Commencement of Chapter 6.",
+        "source_url": "https://www.labour.gov.za/DocumentCenter/Acts/Basic%20Conditions%20of%20Employment/Act%20-%20Basic%20Conditions%20of%20Employment.pdf",
+        "notes": "s23(1): an employer is not required to pay an employee in accordance with s22 (sick leave) if the employee has been absent from work for more than TWO consecutive days, or on more than two occasions during an eight-week period, and, on request, does not produce a medical certificate. The Act does NOT make a certificate a condition of taking the leave itself \u2014 it conditions PAY. This figure is the consecutive-day limb only; the two-occasions-in-eight-weeks limb is not yet modelled anywhere in this schema and leave/evidence.py's own module docstring flags that gap rather than silently only checking the day count."
+      }
+    ]
+  }
+}

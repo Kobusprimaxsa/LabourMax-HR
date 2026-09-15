@@ -43,7 +43,7 @@ from django.db import models
 from django.utils import timezone
 
 from core.audit import AuditedModel
-from core.models import TenantScopedModel, TenantSharedModel
+from core.models import AuditMixin, TenantScopedModel, TenantSharedModel
 from statutory.models import DateRange
 
 
@@ -226,6 +226,105 @@ class LeaveType(AuditedModel, TenantSharedModel):
                     )
                 }
             )
+
+
+class LeaveEvidenceType(AuditedModel, AuditMixin):
+    """The four ways sick leave can be evidenced — or not (P6 chunk 2, task 1).
+
+    **Evidence gates PAY, not leave.** BCEA s23 does NOT make a certificate a
+    condition of TAKING sick leave — it permits the employer to WITHHOLD PAY
+    where the employee was absent more than the permitted consecutive days
+    (or occasions in a window) and produces no certificate on request. So
+    nothing in this codebase may refuse or block a leave application for
+    want of evidence: this table decides ``is_paid``, and it decides which
+    evidence would have made the day paid. Refusing the leave itself would
+    impose a condition the Act does not — a leave application against this
+    catalogue is TAKEN either way; only whether it is PAID depends on the
+    evidence.
+
+    **No tenant field, on purpose, exactly as sheet 02 gives it none.**
+    Unlike ``leave_type`` (``TenantSharedModel``, extendable per employer),
+    this table has no ``is_system`` column and no tenant-facing write path —
+    it is pure reference data, the same shape as ``Sector`` or
+    ``PublicHoliday``, and inherits none of the three tenant bases
+    accordingly. ``core/db/rls.py::no_delete()`` guards it in the creating
+    migration regardless, because ``leave_application`` — a
+    ``TenantScopedModel`` under FORCE ROW LEVEL SECURITY — points at it, and
+    D-76 already found what happens when a reference table a tenant table
+    references has no such guard: a session with no tenant pinned deletes
+    the row, the referencing table's own RLS hides the rows that would have
+    protected it, and nothing raises.
+
+    **``max_consecutive_days_without_note`` is BCEA s23(1)'s own THRESHOLD,
+    never a literal.** Seeded from ``SICK_CERTIFICATE_MAX_CONSECUTIVE_DAYS``
+    via ``statutory.resolve.parameter_value()`` — the same
+    ``statutory_parameter`` mechanism D-100/D-101 already use for the s43
+    minimum employment age, because this is the same SHAPE of figure: one
+    citable statutory number, not a whole rule set, and not a property of
+    the leave cycle the way ``cycle_months`` is. ``test_no_hardcoded_rates``
+    would not catch a literal ``2`` here either — it is an ``int``, not a
+    ``Decimal`` — so the rule is enforced by reading the reference, not by
+    the scanner.
+
+    **Scoped to ``SICK`` only, this chunk.** ``FAMILY_RESPONSIBILITY`` and
+    ``ADOPTION`` also carry ``leave_type.requires_evidence = TRUE``
+    (chunk 1), but neither has a graded evidence catalogue like sick leave's
+    four variants — s27(4)'s "reasonable proof" is a single yes/no, not a
+    doctor's-note-vs-self-certified spectrum with its own pay consequence.
+    Building evidence-type rows for them without a cited shape to seed would
+    be inventing structure sheet 02 does not ask for.
+    """
+
+    class Code(models.TextChoices):
+        DOCTOR_NOTE = "DOCTOR_NOTE", "Doctor's note"
+        CLINIC_NOTE = "CLINIC_NOTE", "Clinic note"
+        NO_NOTE = "NO_NOTE", "No note produced"
+        SELF_CERTIFIED = "SELF_CERTIFIED", "Self-certified"
+
+    leave_type = models.ForeignKey(
+        LeaveType, on_delete=models.PROTECT, related_name="evidence_types"
+    )
+    code = models.CharField(max_length=40, choices=Code.choices)
+    name = models.CharField(max_length=100)
+    requires_attachment = models.BooleanField(default=False)
+    is_paid_by_default = models.BooleanField(
+        default=True,
+        help_text="BCEA s23 allows pay to be withheld without a certificate in defined cases.",
+    )
+    max_consecutive_days_without_note = models.SmallIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "BCEA s23(1): beyond this many consecutive days with no certificate, pay "
+            "may be withheld. Read from SICK_CERTIFICATE_MAX_CONSECUTIVE_DAYS via "
+            "statutory.resolve, never invented here. NULL where the variant already "
+            "carries its own proof and the threshold does not apply."
+        ),
+    )
+    display_order = models.SmallIntegerField(default=0)
+
+    class Meta:
+        db_table = "leave_evidence_type"
+        ordering = ["leave_type_id", "display_order"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["leave_type", "code"], name="uniq_leave_evidence_type_per_leave_type"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    code__in=["DOCTOR_NOTE", "CLINIC_NOTE", "NO_NOTE", "SELF_CERTIFIED"]
+                ),
+                name="leave_evidence_type_code_is_known",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(max_consecutive_days_without_note__isnull=True)
+                | models.Q(max_consecutive_days_without_note__gt=0),
+                name="leave_evidence_type_threshold_is_positive",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.leave_type_id} {self.code}"
 
 
 class LeaveCycle(AuditedModel, TenantScopedModel):
@@ -419,16 +518,46 @@ class LeaveTransaction(AuditedModel, TenantScopedModel):
     Reversing a reversal is refused by ``leave/ledger.py`` — a reversal IS
     the correction, and there is nothing further to undo.
 
-    **Unit, not just a signed number** (D-C). ``quantity`` is signed and
-    counted in ``unit`` — days or hours, whichever the accrual that produced
-    THIS employee's balance for THIS leave type actually produced. Nothing
-    in this codebase converts between them here; that reading needs the
-    employee's own work schedule, is lossy, and is P7's problem at payout.
+    **Two physical columns, ``days`` and ``hours``, exactly one populated per
+    row — reconciled against sheet 02 in chunk 2 (D-170).** Chunk 1 first
+    built this as a single ``quantity`` + a ``unit`` discriminator. Sheet 02
+    instead names ``days`` NOT NULL and ``hours`` nullable ("populated for
+    hourly-accrual employees") — read literally, EVERY row states a DAYS
+    figure, which for an hourly-accrual employee can only be produced by
+    converting their hours into a days-equivalent using the employee's own
+    work schedule. That is precisely the silent, schedule-dependent,
+    lossy conversion D-164 (decision C) exists to prevent — an hourly
+    worker's leave "quietly becoming somebody's rounded guess" is D-164's own
+    wording for exactly this failure mode. Reconciled by keeping BOTH
+    columns NULLABLE instead: whichever field matches the unit the accrual
+    that produced this row actually used is populated, and the other stays
+    NULL — the data shape chunk 1 already committed to (one unit, never
+    converted, never both), spelled with sheet 02's own column names instead
+    of an enum. The one point of genuine conflict — sheet 02's ``days`` being
+    NOT NULL — is decided in D-164's favour, a settled Kobus decision this
+    specific reconciliation raises explicitly rather than silently keeps
+    diverging from sheet 02 without saying so (see D-170 in DECISIONS.md).
 
-    Two placeholders follow the house pattern used everywhere a table this
-    one points at does not exist yet (``core.TenantMembership.employee_id_ref``,
-    ``attendance_day``'s two): ``leave_application_id_ref`` becomes a real FK
-    to ``leave_application`` in chunk 2; ``payroll_run_id_ref`` becomes a real
+    A CHECK enforces exactly one of the two is set
+    (``leave_transaction_exactly_one_of_days_or_hours``), and the sign CHECK
+    below tests the SET one — written with an explicit ``__isnull=False``
+    guard on each branch, because PostgreSQL treats a CHECK expression that
+    evaluates to NULL (not FALSE) as SATISFIED: a naive
+    ``Q(transaction_type="accrual", hours__gt=0)`` branch, evaluated on a row
+    where ``hours`` IS NULL, produces NULL rather than FALSE, and ORing that
+    against another FALSE branch yields NULL for the whole expression — which
+    PostgreSQL then treats as passing, exactly the wrong-signed row this
+    CHECK exists to catch. ``LeaveCycle.clean()`` (called via
+    ``leave/ledger.py::post_transaction()``) additionally refuses a row whose
+    populated field does not match its own ``leave_cycle.unit`` — a second,
+    independent guard against a caller passing the wrong field for the cycle
+    it is posting against.
+
+    ``leave_application`` is now a real FK (P6 chunk 2, task 0/4) — it was
+    ``leave_application_id_ref``, a placeholder ``BigIntegerField``, through
+    chunk 1. ``payroll_run_id_ref`` stays a placeholder, following the same
+    house pattern ``core.TenantMembership.employee_id_ref`` and
+    ``attendance_day.locked_by_payroll_run_id_ref`` use — it becomes a real
     FK to ``payroll_run`` in P7, set only for a payout processed in a run.
     """
 
@@ -440,10 +569,6 @@ class LeaveTransaction(AuditedModel, TenantScopedModel):
         FORFEITURE = "forfeiture", "Forfeiture"
         ADJUSTMENT = "adjustment", "Adjustment"
         REVERSAL = "reversal", "Reversal"
-
-    class Unit(models.TextChoices):
-        DAYS = "days", "Days"
-        HOURS = "hours", "Hours"
 
     #: Types whose quantity must be POSITIVE, and types whose quantity must be
     #: NEGATIVE — read by ``leave/ledger.py`` so the sign rule is stated once
@@ -466,15 +591,31 @@ class LeaveTransaction(AuditedModel, TenantScopedModel):
     transaction_type = models.CharField(
         max_length=30, choices=TransactionType.choices, db_index=True
     )
-    quantity = models.DecimalField(
+    days = models.DecimalField(
         max_digits=8,
         decimal_places=3,
-        help_text="Signed. See the model docstring's sign convention.",
+        null=True,
+        blank=True,
+        help_text=(
+            "Signed. Populated when this row's own unit is DAYS. See the model "
+            "docstring's sign convention and D-170's reconciliation against sheet 02."
+        ),
     )
-    unit = models.CharField(max_length=10, choices=Unit.choices)
+    hours = models.DecimalField(
+        max_digits=8,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text="Signed. Populated when this row's own unit is HOURS (D-170). Never both.",
+    )
 
-    leave_application_id_ref = models.BigIntegerField(
-        null=True, blank=True, help_text="Becomes a real FK to leave_application in chunk 2."
+    leave_application = models.ForeignKey(
+        "LeaveApplication",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="leave_transactions",
+        help_text="Set by leave/authorisation.py's approve() and reverse_transaction() on cancel.",
     )
     payroll_run_id_ref = models.BigIntegerField(
         null=True,
@@ -522,19 +663,38 @@ class LeaveTransaction(AuditedModel, TenantScopedModel):
                 ),
                 name="leave_transaction_type_is_known",
             ),
-            models.CheckConstraint(
-                condition=models.Q(unit__in=["days", "hours"]),
-                name="leave_transaction_unit_is_known",
-            ),
-            # THE sign convention, as data the database itself enforces rather
-            # than a rule only the service layer remembers.
+            # Exactly one of days/hours — D-170's reconciliation. Both NULL and
+            # both set are refused equally; which one is legitimate depends on
+            # the accrual that produced this row, never on this table alone.
             models.CheckConstraint(
                 condition=(
-                    models.Q(transaction_type="accrual", quantity__gt=0)
-                    | models.Q(transaction_type="opening_balance", quantity__gt=0)
-                    | models.Q(transaction_type="taken", quantity__lt=0)
-                    | models.Q(transaction_type="payout", quantity__lt=0)
-                    | models.Q(transaction_type="forfeiture", quantity__lt=0)
+                    models.Q(days__isnull=False, hours__isnull=True)
+                    | models.Q(days__isnull=True, hours__isnull=False)
+                ),
+                name="leave_transaction_exactly_one_of_days_or_hours",
+            ),
+            # THE sign convention, as data the database itself enforces rather
+            # than a rule only the service layer remembers. Every branch below
+            # guards with an explicit `__isnull=False` before comparing sign —
+            # PostgreSQL treats a CHECK expression that evaluates to NULL as
+            # SATISFIED, not violated, so `hours__gt=0` alone on a row whose
+            # `hours` IS NULL would evaluate NULL rather than FALSE, and OR
+            # against another FALSE branch would leave the whole CHECK NULL —
+            # passing a wrong-signed row through silently. The `isnull=False`
+            # guard makes that branch resolve to a definite FALSE instead,
+            # exactly as the model docstring explains.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(transaction_type="accrual", days__isnull=False, days__gt=0)
+                    | models.Q(transaction_type="accrual", hours__isnull=False, hours__gt=0)
+                    | models.Q(transaction_type="opening_balance", days__isnull=False, days__gt=0)
+                    | models.Q(transaction_type="opening_balance", hours__isnull=False, hours__gt=0)
+                    | models.Q(transaction_type="taken", days__isnull=False, days__lt=0)
+                    | models.Q(transaction_type="taken", hours__isnull=False, hours__lt=0)
+                    | models.Q(transaction_type="payout", days__isnull=False, days__lt=0)
+                    | models.Q(transaction_type="payout", hours__isnull=False, hours__lt=0)
+                    | models.Q(transaction_type="forfeiture", days__isnull=False, days__lt=0)
+                    | models.Q(transaction_type="forfeiture", hours__isnull=False, hours__lt=0)
                     | models.Q(transaction_type="adjustment")
                     | models.Q(transaction_type="reversal")
                 ),
@@ -556,7 +716,41 @@ class LeaveTransaction(AuditedModel, TenantScopedModel):
         ]
 
     def __str__(self):
-        return f"{self.employee_id} {self.leave_type_id} {self.transaction_type} {self.quantity}"
+        value = self.days if self.days is not None else self.hours
+        return f"{self.employee_id} {self.leave_type_id} {self.transaction_type} {value}"
+
+    def clean(self):
+        super().clean()
+
+        # A second, independent guard alongside the CHECK above: the CHECK
+        # proves exactly one of days/hours is set and correctly signed; it
+        # cannot see leave_cycle.unit, since a CHECK is one row, one table.
+        # This is what stops a caller posting an hours transaction against a
+        # days-unit cycle (or the reverse) — a mismatch the CHECK alone
+        # cannot catch, and exactly the kind of silent unit confusion D-164
+        # exists to prevent.
+        if self.leave_cycle_id is not None:
+            cycle_unit = self.leave_cycle.unit
+            if cycle_unit == LeaveCycle.Unit.DAYS and self.hours is not None:
+                raise ValidationError(
+                    {
+                        "hours": (
+                            "This cycle is denominated in DAYS, but this transaction "
+                            "carries an HOURS figure. Post it as days, or check that "
+                            "this is really the right cycle."
+                        )
+                    }
+                )
+            if cycle_unit == LeaveCycle.Unit.HOURS and self.days is not None:
+                raise ValidationError(
+                    {
+                        "days": (
+                            "This cycle is denominated in HOURS, but this transaction "
+                            "carries a DAYS figure. Post it as hours, or check that "
+                            "this is really the right cycle."
+                        )
+                    }
+                )
 
 
 class LeaveAccrualRun(AuditedModel, TenantScopedModel):
@@ -608,3 +802,254 @@ class LeaveAccrualRun(AuditedModel, TenantScopedModel):
 
     def __str__(self):
         return f"Leave accrual {self.employer_id} {self.leave_type_id} as at {self.accrual_as_at}"
+
+
+class LeaveApplication(AuditedModel, TenantScopedModel):
+    """One employee's request for leave, over a span of dates (P6 chunk 2, task 2).
+
+    **Status transitions are enforced in ``leave/applications.py`` and
+    ``leave/authorisation.py`` as well as by the CHECK below** — the CHECK
+    proves a value is one of the six known ones, never that a given MOVE
+    between them was legal (the same distinction D-145 already draws for
+    ``employee_import_batch``). ``draft -> submitted -> approved -> taken``
+    and ``... -> declined`` / ``... -> cancelled`` are the only paths the
+    service layer allows.
+
+    **``reference`` is per tenant, human-facing, and never reused.**
+    ``LV-{year}-{sequence}`` — see ``leave/applications.py::_next_reference()``.
+
+    **No overlapping APPROVED applications, per employee** — a partial
+    EXCLUDE, restricted to ``status='approved'`` by its own ``condition``
+    (PostgreSQL exclusion constraints support a ``WHERE`` predicate exactly
+    like a partial index): a draft or a declined application may legitimately
+    share dates with another, but two approved ones covering the same day
+    would double-book the same leave. Both ends of ``[start_date,
+    end_date]`` are INCLUSIVE here, unlike ``leave_cycle``'s half-open
+    convention — an application "from Monday to Friday" means five days
+    including Friday, not four.
+
+    **An overdrawn application is never refused** (task 2, Kobus's own
+    framing). Approving one sets ``exceeds_balance`` and ``unpaid_days``
+    rather than declining outright — see ``leave/authorisation.py::approve()``
+    for exactly how the excess is capped at the ledger rather than let it
+    run the balance negative.
+
+    **Self-approval is visible, never hidden** (task 3). ``self_approved``
+    is TRUE only where the owner is also the applicant and no other approver
+    exists in the chain; the CHECK below requires ``self_approval_reason``
+    whenever it is, and the leave register reads both columns directly —
+    there is no separate "hide this" flag.
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        SUBMITTED = "submitted", "Submitted"
+        APPROVED = "approved", "Approved"
+        DECLINED = "declined", "Declined"
+        CANCELLED = "cancelled", "Cancelled"
+        TAKEN = "taken", "Taken"
+
+    employee = models.ForeignKey(
+        "employees.Employee", on_delete=models.PROTECT, related_name="leave_applications"
+    )
+    reference = models.CharField(max_length=20, help_text="Human reference, e.g. LV-2026-00042.")
+    leave_type = models.ForeignKey(LeaveType, on_delete=models.PROTECT, related_name="applications")
+    leave_evidence_type = models.ForeignKey(
+        LeaveEvidenceType,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="applications",
+        help_text="Which of the four sick-leave variants, if any.",
+    )
+
+    start_date = models.DateField(db_index=True)
+    end_date = models.DateField(db_index=True)
+    total_days = models.DecimalField(
+        max_digits=7,
+        decimal_places=3,
+        default=0,
+        help_text="Working days only, from the work schedule.",
+    )
+    total_hours = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
+    is_part_day = models.BooleanField(default=False)
+    reason = models.CharField(max_length=500, blank=True)
+
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.DRAFT, db_index=True
+    )
+    submitted_by_user = models.ForeignKey(
+        "core.AppUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        editable=False,
+    )
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    decided_by_user = models.ForeignKey(
+        "core.AppUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        editable=False,
+        help_text="The employer authorisation.",
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decision_comment = models.CharField(max_length=500, blank=True)
+    evidence_file = models.ForeignKey(
+        "core.FileObject",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="+",
+        help_text="Medical certificate.",
+    )
+
+    balance_at_submission = models.DecimalField(
+        max_digits=8,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text="Snapshot for the audit trail.",
+    )
+    exceeds_balance = models.BooleanField(
+        default=False, help_text="Overdrawn days fall to unpaid unless overridden."
+    )
+    unpaid_days = models.DecimalField(
+        max_digits=7, decimal_places=3, default=0, help_text="Portion that will be unpaid."
+    )
+    cancelled_reason = models.CharField(max_length=255, blank=True)
+
+    self_approved = models.BooleanField(
+        default=False,
+        help_text="TRUE only where the owner is also the applicant and no other approver exists.",
+    )
+    self_approval_reason = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Mandatory when self_approved — visible in the leave register, never hidden.",
+    )
+
+    class Meta:
+        db_table = "leave_application"
+        ordering = ["-start_date", "-id"]
+        indexes = [
+            models.Index(fields=["employee", "start_date"]),
+            models.Index(fields=["tenant", "status"]),
+            models.Index(fields=["start_date", "end_date"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "reference"], name="uniq_leave_application_reference"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(end_date__gte=models.F("start_date")),
+                name="leave_application_end_after_start",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    status__in=["draft", "submitted", "approved", "declined", "cancelled", "taken"]
+                ),
+                name="leave_application_status_is_known",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(status="approved") | models.Q(decided_by_user__isnull=False),
+                name="leave_application_approval_names_the_approver",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(self_approved=True) | ~models.Q(self_approval_reason=""),
+                name="leave_application_self_approval_states_a_reason",
+            ),
+            # Partial EXCLUDE: only rows that are actually approved compete for a
+            # date. A draft or a declined application legitimately shares dates
+            # with another — only two APPROVED ones double-book the same leave.
+            ExclusionConstraint(
+                name="leave_application_no_overlapping_approved",
+                expressions=[
+                    (
+                        DateRange(
+                            "start_date",
+                            "end_date",
+                            RangeBoundary(inclusive_lower=True, inclusive_upper=True),
+                        ),
+                        RangeOperators.OVERLAPS,
+                    ),
+                    ("employee", RangeOperators.EQUAL),
+                ],
+                condition=models.Q(status="approved"),
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.reference} {self.employee_id} {self.status}"
+
+
+class LeaveApplicationDay(AuditedModel, TenantScopedModel):
+    """One calendar date inside a ``leave_application``'s span (task 2).
+
+    A row exists for EVERY calendar date from ``start_date`` to ``end_date``
+    inclusive — including a rest day or a public holiday inside the span —
+    because the audit needs to show WHY a day inside a five-day application
+    only deducted four: ``is_working_day`` is FALSE for both, and
+    ``deducted_from_balance`` stays FALSE alongside it. A week's leave over
+    a public holiday costs four days, not five; getting this backwards takes
+    a day of leave the employee keeps under the Act.
+
+    **``day_portion`` is the salaried-basis figure** — 1.000 for a full
+    working day, 0.500 for a half day, the minimum increment for a salaried
+    basis. **``hours`` is the hourly-accrual figure** — populated only when
+    the employee's own accrual method is per-hours-worked, carrying that
+    day's scheduled hours (or half of them for a part day) rather than a
+    day-equivalent conversion, per D-164: nothing here converts one to the
+    other. A salaried employee's ``hours`` stays NULL; an hourly employee's
+    ``day_portion`` is still set (1.000/0.500, describing the SHAPE of the
+    day — a whole day off or a half day off) but is not itself what is
+    deducted from their HOURS balance.
+
+    **``is_paid`` is FALSE where the balance is exhausted or the evidence
+    rule withholds pay** (task 2) — never where the leave itself was
+    refused, because it never is. **``deducted_from_balance`` is the audit
+    of what actually left the ledger**: TRUE for a working day the balance
+    could actually cover, FALSE for a rest day, a public holiday, or the
+    portion of an overdrawn application beyond what the ledger held.
+    """
+
+    leave_application = models.ForeignKey(
+        LeaveApplication, on_delete=models.CASCADE, related_name="days"
+    )
+    leave_date = models.DateField(db_index=True)
+    day_portion = models.DecimalField(
+        max_digits=4,
+        decimal_places=3,
+        default=1,
+        help_text="1.000 full day, 0.500 half day.",
+    )
+    hours = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
+    is_working_day = models.BooleanField(
+        default=True, help_text="FALSE for rest days and public holidays — not deducted."
+    )
+    is_public_holiday = models.BooleanField(default=False)
+    is_paid = models.BooleanField(
+        default=True, help_text="FALSE where the balance is exhausted or evidence withholds pay."
+    )
+    deducted_from_balance = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "leave_application_day"
+        ordering = ["leave_application_id", "leave_date"]
+        indexes = [models.Index(fields=["tenant", "leave_date"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["leave_application", "leave_date"],
+                name="uniq_leave_application_day_per_application",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(day_portion__gt=0, day_portion__lte=1),
+                name="leave_application_day_portion_in_range",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.leave_application_id} {self.leave_date}"
