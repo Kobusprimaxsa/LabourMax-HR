@@ -251,6 +251,21 @@ def terminate(
     return engagement
 
 
+def current_engagement(employee: Employee) -> EmployeeEngagement | None:
+    """The employee's most recent engagement — a re-hire's, once one exists.
+
+    Highest ``engagement_number`` rather than ``is_current``, deliberately: a
+    termination captured in advance (D-132) leaves ``is_current`` true until
+    the date arrives, but the row is still the one every other engagement-scoped
+    answer — service length, leave cycles — must anchor to. There is exactly
+    one answer to "which engagement" regardless of whether today is before or
+    after that date.
+    """
+    return (
+        EmployeeEngagement.objects.filter(employee=employee).order_by("-engagement_number").first()
+    )
+
+
 def continuous_service_days(employee: Employee, on_date: datetime.date) -> int:
     """Days of service in the CURRENT engagement only.
 
@@ -259,9 +274,7 @@ def continuous_service_days(employee: Employee, on_date: datetime.date) -> int:
     start again from the new engagement. Summing every engagement would be a
     different function with a different name, and it is not this one.
     """
-    current = (
-        EmployeeEngagement.objects.filter(employee=employee).order_by("-engagement_number").first()
-    )
+    current = current_engagement(employee)
     if current is None:
         return 0
     return current.service_days_to(on_date)

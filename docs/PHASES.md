@@ -252,20 +252,41 @@ completed prerequisite, not the outcome the "Done when" clause actually asks for
 
 ## P6 — Leave Management · 5 weeks · 8 tables
 
-- [ ] `leave_type` **table built in P4** (D-127) — P6 seeds it with both annual variants
-      and all four sick-leave evidence types
+**Chunk 1 of 3 done** (15 September 2026): the catalogue, cycles, the ledger and the
+accrual engine for annual leave. Chunks 2 (applications, authorisation) and 3 (forfeiture
+capture) are unstarted — see the P6 section of CLAUDE.md and D-162 to D-169 for the detail.
+
+- [x] `leave_type` **table built in P4** (D-127) — seeded this chunk via `manage.py
+      seedleavetypes`, all ten codes; two shapes FLAGGED (`STUDY`, `COMPASSIONATE`) rather
+      than settled. No separate `leave_evidence_type` table was built — `requires_evidence`
+      on `leave_type` itself is the shape this chunk needed; a richer evidence-type table,
+      if the workbook still calls for one, is chunk 2/3's to revisit against the
+      application flow that will actually use it
 - [ ] `leave_evidence_type`
-- [ ] `leave_cycle` — 12-month annual, 36-month sick, anchored to engagement anniversary
-- [ ] `leave_transaction` append-only ledger
-- [ ] Accrual engine: monthly straight-line, per 17 days, per 17 hours, first-six-months sick
-- [ ] `leave_accrual_run` — idempotent per employee per month
+- [x] `leave_cycle` — anchored to the CURRENT engagement's own start date (D-163, not the
+      workbook's own unique — deviation recorded), lazy, idempotent, non-overlapping by
+      EXCLUDE. 12-month annual is exercised; 36-month sick is supported by the table shape
+      but not exercised, since nothing generates a SICK cycle yet (see the accrual line below)
+- [x] `leave_transaction` append-only ledger — sign convention enforced by CHECK, trigger
+      backs append-only, reversal-of-reversal refused (D-164, D-167)
+- [x] Accrual engine, ANNUAL ONLY this chunk: monthly straight-line, per 17 days, per 17
+      hours all implemented and tested. **Sick leave's first-six-months rule is deliberately
+      NOT implemented** (D-168) — the accrual RATIO is loaded but the SIX-MONTH THRESHOLD
+      itself has no home yet in `leave_rule_set`, and this codebase does not guess it.
+      `AccrualNotSupportedError` names the gap for every other `accrues=True` type
+- [x] `leave_accrual_run` — idempotent per employee per leave type per period, proven by
+      running the engine twice and asserting the ledger unchanged
 - [ ] `leave_application` + `leave_application_day` with part days and holidays inside a span
 - [ ] Employer authorisation; self-approval blocked, escalating to the owner
-- [ ] Forfeiture job writing explicit transactions
+- [ ] Forfeiture job writing explicit transactions — **will never be built as a job** (D-165,
+      Kobus's decision): forfeiture is captured by the employer BY HAND in chunk 3, and no
+      job, task or engine path in this codebase may write a forfeiture transaction. Chunk 3
+      builds the manual capture path and the warnings that lead up to it, not an automated one
 - [ ] `public_holiday_observance` overrides
 
 **Done when:** every employee's balance reconciles to their ledger in every scenario,
-with no drift.
+with no drift. **Chunk 1's own share of this is met**: twelve months of accrual sum
+exactly to the ledger with no drift, proven in `leave/tests/test_accrual.py`.
 
 ---
 

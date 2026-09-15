@@ -975,6 +975,84 @@ gateway), so starting it means stopping to ask.
 **Statutory figures are never invented.** If a rate is needed and cannot be cited, say so and
 stop. That applies to filling in a fixture as much as to writing code.
 
+**P6 — Leave: chunk 1 of three built** (15 September 2026). 1001 tests green. The leave
+catalogue, cycles, the append-only ledger and the accrual engine are in — applications and
+authorisation are chunk 2, and forfeiture *capture* is chunk 3, and neither is stubbed here.
+
+`leave_type` is seeded via `manage.py seedleavetypes` (`--list` shows the catalogue without
+touching the database), in the `seedcomponents` mould: idempotent, never updates, and every
+shared row a system row (D-134's own CHECK pair). Two shapes are FLAGGED rather than settled —
+`STUDY` and `COMPASSIONATE` are not BCEA leave at all, so every one of their shape flags is a
+discretionary default — and two more are flagged at the field level inside otherwise-settled
+rows: `FAMILY_RESPONSIBILITY.requires_evidence` and `ADOPTION.requires_evidence`, because s27(4)
+and s25B condition proof on the employer asking rather than mandating it outright. `leave/types.py`
+carries the full reasoning per code, cited against the Act section that produced it.
+
+Five decisions were settled with Kobus ahead of this chunk and are recorded as D-162 to D-166:
+the rule set's accrual method applies unless `employee_leave_entitlement.accrual_method` says
+otherwise, since two of BCEA s20(2)'s three methods need agreement (D-162); `leave_cycle`
+anchors to the CURRENT engagement's own start date, and a re-hire starts fresh at cycle 1 with
+the prior engagement's cycle never revived (D-163); a balance is stored in whatever unit its own
+accrual produced — days or hours — and nothing in `leave/` ever converts between them (D-164);
+forfeiture is never automatic anywhere in this codebase, the transaction type exists for enum
+completeness only, and there is correspondingly no cap on carried leave (D-165); and this chunk
+computes days and hours, never money — the leave rate is P7's (D-166).
+
+**D-163 required a real fix, not only a docstring.** `leave_cycle`'s EXCLUDE constraint is
+correctly scoped to `(employee, leave_type)`, not to the engagement — so a re-hire's fresh cycle
+1 calendar-overlaps a prior engagement's own still-open 12-month cycle unless that prior cycle's
+date range is itself truncated at termination. `leave/cycles.py::_close_cycles_from_other_engagements()`
+does this lazily, the next time `ensure_cycles()` runs: it shortens the old cycle to end the day
+after its engagement's termination date and marks it CLOSED, never touching its balance columns.
+Found by a failing re-hire test written before the mechanism existed — the same lesson D-131
+taught the first time an EXCLUDE constraint's actual scope did not match what a decision assumed.
+
+**`leave_transaction` is the append-only ledger, and its sign convention is enforced by a CHECK,
+not only stated in a docstring**: `accrual`/`opening_balance` positive, `taken`/`payout`/
+`forfeiture` negative, `adjustment` either sign with a mandatory reason, `reversal` the exact
+negation of the row it corrects. `core/db/rls.py::append_only()` backs the table by trigger, the
+same lesson P0 already learned about a table's owner not being bound by `REVOKE`.
+`leave/ledger.py::reverse_transaction()` refuses a reversal of a reversal by name — the reversal
+IS the correction, so there is nothing further to undo. **Deviates from this chunk's own brief,
+in the workbook's favour (D-167)**: the ledger carries `quantity` + `unit` rather than a bare day
+count (D-164 requires it), and `TransactionType` carries the workbook's seven values —
+`opening_balance` and `payout` where the brief said only `termination_payout` — not the brief's
+six.
+
+**The accrual engine is scoped to `ANNUAL` only this chunk (D-168).** Calling it for `SICK`, or
+any other `accrues=True` type, raises `AccrualNotSupportedError` naming the gap: BCEA s22(2)'s
+"first six months" sick accrual genuinely accrues off attendance the same way the per-17-hours
+annual method does, but the SIX ITSELF is a threshold with no home yet in `leave_rule_set` —
+only the accrual ratio is stored, not the duration of the window it governs — and "resolve raises
+when a figure is missing" is applied here to the threshold a rule would need, not only to a rate.
+Straight-line monthly, per-days-worked and per-hours-worked are all implemented in full for
+annual leave, read from `leave_rule_set` through `statutory.resolve`, keyed off the employee's
+own 5-day/6-day schedule or off P5's attendance rows — this is why P5 had to come before P6.
+`leave_accrual_run`'s own `UNIQUE (employer, leave_type, accrual_as_at)` is the idempotency
+guarantee; `run_monthly_accrual()` checks for an existing COMPLETED run first so the ordinary
+case never reaches the constraint at all.
+
+**THE NEGATIVE TEST THAT MATTERS is named exactly that in `leave/tests/test_accrual.py`** —
+`test_no_forfeiture_transaction_is_ever_written_automatically` runs the engine eighteen months
+forward, six months past cycle 1's own twelve-month end, and asserts zero forfeiture
+transactions exist anywhere and cycle 1's balance is exactly its full accrual, untouched. It is
+the guard that catches a regression the moment anything in a future chunk tries to make
+forfeiture automatic, and per Kobus's own instruction it is named so nobody deletes it by
+accident.
+
+**`leave_cycle`, `leave_transaction` and `leave_accrual_run` shipped with RLS ENABLED ON NONE OF
+THEM (D-169) — a sixth instance of the exact failure the Non-negotiables section above already
+lists five of.** Every test written against the three tables up to that point ran inside one
+pinned tenant context and read back exactly the row it had just written, which is
+indistinguishable from correct isolation until a second tenant is in the room — RLS with no
+policy denies every row rather than exposing any of them, so the tables read as isolated while
+providing none at all. Found by the generated isolation suite exactly as it is meant to catch a
+new model the day it is written, and fixed in migration `0005` without touching `0003`'s own
+`append_only()` trigger.
+
+Still open in this chunk: nothing — chunk 1's own seven tasks are complete and green. Chunks 2
+(applications, authorisation) and 3 (forfeiture capture) are unstarted.
+
 See `docs/PHASES.md` for the task breakdown.
 
 Nothing is deployed. There is no customer data. This is the right moment to be rigid
