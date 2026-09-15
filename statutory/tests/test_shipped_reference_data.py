@@ -252,7 +252,10 @@ def test_the_domestic_sector_overrides_the_bcea_where_sd7_differs(notice_bands_l
     assert resolve.working_time_rules(domestic, on).max_overtime_hours_per_week == Decimal("15.00")
     assert resolve.working_time_rules(None, on).max_overtime_hours_per_week == Decimal("10.00")
 
-    started = datetime.date(2025, 12, 1)  # exactly six months before `on`
+    # One day more than six months before `on` — BCEA s37(1)(a) and SD7 both put
+    # EXACTLY six months in the lower band (D-158, corrected), so this has to be
+    # past it to tell the two sectors' upper bands apart.
+    started = datetime.date(2025, 11, 30)
     assert resolve.notice_band(domestic, on, employment_start_date=started).notice_value == 4
     assert resolve.notice_band(None, on, employment_start_date=started).notice_value == 2
 

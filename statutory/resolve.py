@@ -242,6 +242,30 @@ def _boundary_date(start: datetime.date, value: Decimal, unit: str) -> datetime.
     return start + relativedelta(**{unit: float(value)})
 
 
+def _band_contains(
+    band: TerminationNoticeBand, start: datetime.date, on_date: datetime.date
+) -> bool:
+    """Whether ``on_date`` falls inside ``band``'s own service-length range,
+    honouring that band's own stated inclusivity at each end (D-158,
+    corrected) — never a fixed inclusive/exclusive convention applied to
+    every boundary alike, because the statutes do not use one.
+    """
+    from_date = _boundary_date(start, band.service_from_value, band.service_from_unit)
+    if band.service_from_inclusive:
+        if on_date < from_date:
+            return False
+    elif on_date <= from_date:
+        return False
+
+    if band.service_to_value is None:
+        return True
+
+    to_date = _boundary_date(start, band.service_to_value, band.service_to_unit)
+    if band.service_to_inclusive:
+        return on_date <= to_date
+    return on_date < to_date
+
+
 def notice_band(
     sector: Sector | None, on_date: datetime.date, *, employment_start_date: datetime.date
 ) -> TerminationNoticeBand:
@@ -251,12 +275,16 @@ def notice_band(
     Computes nothing about what the boundaries themselves are — those are
     read off the rule set in force on ``on_date`` (falling back to the BCEA
     default the same way every other rule set does), and each band's own
-    ``service_from`` is converted to a calendar date from
+    ``service_from``/``service_to`` are converted to calendar dates from
     ``employment_start_date`` before being compared against ``on_date``.
 
-    A service length landing exactly on a boundary resolves to the band that
-    STARTS there (D-158) — among every band whose start has been reached,
-    the one with the latest start wins, which is exactly that convention.
+    Which side of an exact boundary a service length falls on is DATA, read
+    per band from ``service_from_inclusive``/``service_to_inclusive`` (D-158,
+    corrected) — not a rule this function applies uniformly. Trusts that
+    ``statutory/checks.py::check_notice_bands()`` has already proved the
+    loaded bands touch with no gap or overlap; it does not re-verify that
+    here, so an inconsistent load could in principle match zero or more than
+    one band. Zero is still caught, below.
     """
     rule_set = termination_rules(sector, on_date)
     bands = list(rule_set.notice_bands.all())
@@ -267,22 +295,13 @@ def notice_band(
             f"reference data does not cover this."
         )
 
-    reached = [
-        band
-        for band in bands
-        if _boundary_date(employment_start_date, band.service_from_value, band.service_from_unit)
-        <= on_date
-    ]
-    if not reached:
-        raise StatutoryValueMissingError(
-            f"No notice band covers an employee who started {employment_start_date:%d %B %Y}, "
-            f"as at {on_date:%d %B %Y}. Every rule set's bands must start at zero service."
-        )
-    return max(
-        reached,
-        key=lambda band: _boundary_date(
-            employment_start_date, band.service_from_value, band.service_from_unit
-        ),
+    for band in bands:
+        if _band_contains(band, employment_start_date, on_date):
+            return band
+
+    raise StatutoryValueMissingError(
+        f"No notice band covers an employee who started {employment_start_date:%d %B %Y}, "
+        f"as at {on_date:%d %B %Y}. Every rule set's bands must start at zero service."
     )
 
 

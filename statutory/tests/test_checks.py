@@ -11,6 +11,7 @@ The figures below are structurally shaped like a real PAYE table but are not one
 from __future__ import annotations
 
 import datetime
+import json
 from decimal import Decimal
 
 import pytest
@@ -325,3 +326,92 @@ def test_run_all_stays_out_of_it_so_a_version_can_be_verified_in_any_order(db):
     what verifystatutory calls - reports only on the rows that exist.
     """
     assert checks.run_all() == []
+
+
+# ------------------------------------------------- the fixture checksum guard
+
+
+@pytest.mark.statutory
+def test_a_fixture_matching_what_was_loaded_reports_nothing(db, tmp_path):
+    from statutory.loader import load_reference_data
+
+    document = {
+        "version_label": "REF-TEST-CHECKSUM",
+        "applies_from": "2026-03-01",
+        "tables": {
+            "statutory_parameter": [
+                {
+                    "parameter_code": "TEST_PARAMETER",
+                    "value_numeric": "1.000000",
+                    "unit": "percent",
+                    "effective_from": "2026-03-01",
+                    "source_reference": "Test fixture, not a real gazette",
+                }
+            ]
+        },
+    }
+    path = tmp_path / "ref-test.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    load_reference_data(document)
+
+    assert checks.check_fixture_checksums(directory=tmp_path) == []
+
+
+@pytest.mark.statutory
+def test_a_fixture_edited_after_loading_is_caught(db, tmp_path):
+    """PROVE THE GUARD FAILS FIRST. The loader's own checksum comparison
+    only ever fires as a side effect of ATTEMPTING to reload a version
+    label — it does not stand guard on its own. This mutates one byte of an
+    already-loaded fixture, on disk, without ever calling loadstatutory
+    again, and watches this check catch it anyway.
+    """
+    from statutory.loader import load_reference_data
+
+    document = {
+        "version_label": "REF-TEST-CHECKSUM-2",
+        "applies_from": "2026-03-01",
+        "tables": {
+            "statutory_parameter": [
+                {
+                    "parameter_code": "TEST_PARAMETER_2",
+                    "value_numeric": "1.000000",
+                    "unit": "percent",
+                    "effective_from": "2026-03-01",
+                    "source_reference": "Test fixture, not a real gazette",
+                }
+            ]
+        },
+    }
+    path = tmp_path / "ref-test.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    load_reference_data(document)
+
+    # The database now believes ref-test.json describes a 1.000000 parameter.
+    # Edit the file in place — no new version label, no reload — exactly the
+    # shape of what happened to ref-2026.03.01-rules.json and
+    # ref-2026.03.01-sd1.json in the commit that closed D-68.
+    mutated = json.loads(path.read_text(encoding="utf-8"))
+    mutated["tables"]["statutory_parameter"][0]["value_numeric"] = "2.000000"
+    path.write_text(json.dumps(mutated), encoding="utf-8")
+
+    issues = checks.check_fixture_checksums(directory=tmp_path)
+
+    assert issues and all(issue.blocking for issue in issues)
+    assert "REF-TEST-CHECKSUM-2" in issues[0].where
+    assert "no longer matches" in issues[0].message
+
+
+@pytest.mark.statutory
+def test_a_fixture_for_a_label_never_loaded_is_ignored(db, tmp_path):
+    """Nothing to compare against yet is not a finding — that is
+    check_something_is_loaded's job, not this one's.
+    """
+    document = {
+        "version_label": "REF-TEST-NEVER-LOADED",
+        "applies_from": "2026-03-01",
+        "tables": {"statutory_parameter": []},
+    }
+    path = tmp_path / "ref-test.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    assert checks.check_fixture_checksums(directory=tmp_path) == []

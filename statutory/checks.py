@@ -23,13 +23,16 @@ arithmetic, and the golden tests will fail it on published worked examples.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from decimal import Decimal
+from pathlib import Path
 
 from statutory.models import (
     Bank,
     MinimumWageRate,
     PayeRebate,
+    ReferenceDataVersion,
     SarsSourceCode,
     StatutoryParameter,
     TaxYear,
@@ -319,13 +322,26 @@ def check_notice_bands() -> list[Issue]:
     overlap, and have exactly one open-ended top band — the same shape
     ``check_paye_brackets`` already proves for PAYE (D-68).
 
+    "Touch with no gap or overlap" is now a statement about inclusivity as
+    well as value (D-158, corrected): two bands sharing a boundary value
+    touch cleanly only if EXACTLY ONE of "the lower band's
+    ``service_to_inclusive``" and "the upper band's
+    ``service_from_inclusive``" is true. Both true means the boundary value
+    belongs to both bands — an OVERLAP of exactly one instant, but a real
+    one, because ``resolve.notice_band()`` returns whichever band it reaches
+    first rather than raising on an ambiguous match. Both false means it
+    belongs to neither — a GAP of exactly one instant, and a service length
+    landing precisely there raises ``StatutoryValueMissingError`` in the
+    middle of whatever called ``resolve.notice_band()``.
+
     Deliberately does NOT convert between units to compare adjacent
-    boundaries. A rule set's own bands touch in the SAME unit on both sides
-    by construction (``tools/build_notice_band_fixture.py``'s own discipline
-    — a band's ``service_to`` and the next band's ``service_from`` are
-    always written as the identical (value, unit) pair), so a plain equality
-    check is both correct and honest: it does not pretend "26 weeks" and "6
-    months" are the same thing, it insists the data never makes it ask.
+    boundary VALUES. A rule set's own bands touch in the SAME unit on both
+    sides by construction (``tools/build_notice_band_fixture.py``'s own
+    discipline — a band's ``service_to`` and the next band's
+    ``service_from`` are always written as the identical (value, unit)
+    pair), so a plain equality check is both correct and honest: it does
+    not pretend "26 weeks" and "6 months" are the same thing, it insists
+    the data never makes it ask.
     """
     issues = []
     for rule_set in TerminationRuleSet.objects.select_related("sector").all():
@@ -337,13 +353,14 @@ def check_notice_bands() -> list[Issue]:
             issues.append(Issue(True, where_set, "has no notice bands loaded"))
             continue
 
-        if bands[0].service_from_value != 0:
+        if bands[0].service_from_value != 0 or not bands[0].service_from_inclusive:
             issues.append(
                 Issue(
                     True,
                     f"{where_set} band {bands[0].sequence}",
-                    f"starts at {bands[0].service_from_value} {bands[0].service_from_unit}, "
-                    f"not 0. A service length below that would resolve to no band at all.",
+                    f"starts at {bands[0].service_from_value} {bands[0].service_from_unit} "
+                    f"(inclusive={bands[0].service_from_inclusive}), not zero and inclusive. "
+                    f"A service length of zero would resolve to no band at all.",
                 )
             )
 
@@ -389,6 +406,34 @@ def check_notice_bands() -> list[Issue]:
                         f"but the band below ends at {previous.service_to_value} "
                         f"{previous.service_to_unit}. Bands must touch exactly, in the same "
                         f"unit.",
+                    )
+                )
+                continue
+
+            claimed_by_both = previous.service_to_inclusive and current.service_from_inclusive
+            claimed_by_neither = (
+                not previous.service_to_inclusive and not current.service_from_inclusive
+            )
+            if claimed_by_both:
+                issues.append(
+                    Issue(
+                        True,
+                        where,
+                        f"OVERLAPS band {previous.sequence} at exactly "
+                        f"{current.service_from_value} {current.service_from_unit}: both "
+                        f"claim it inclusively (band {previous.sequence}.service_to_inclusive "
+                        f"and this band's service_from_inclusive are both true).",
+                    )
+                )
+            elif claimed_by_neither:
+                issues.append(
+                    Issue(
+                        True,
+                        where,
+                        f"leaves a GAP at exactly {current.service_from_value} "
+                        f"{current.service_from_unit}: neither band {previous.sequence} nor "
+                        f"this one claims it inclusively, so a service length landing "
+                        f"exactly there resolves to no band at all.",
                     )
                 )
 
@@ -449,6 +494,64 @@ def check_something_is_loaded() -> list[Issue]:
             f"fixtures in reference/ first.",
         )
     ]
+
+
+def check_fixture_checksums(directory: str | Path | None = None) -> list[Issue]:
+    """Every loaded ``reference_data_version``'s checksum against the fixture
+    file that produced it, as that file reads RIGHT NOW — not only at the
+    moment somebody happens to attempt a reload.
+
+    ``statutory/loader.py`` fingerprints a fixture and compares it against
+    ``reference_data_version.checksum`` — but only inside
+    ``load_reference_data()``, as a side effect of trying to load a version
+    label that already exists. Nobody runs that comparison as a standing
+    fact about the database; it only fires if a load is attempted. A fixture
+    edited in place after loading — exactly what happened to
+    ``ref-2026.03.01-rules.json`` and ``ref-2026.03.01-sd1.json`` in the
+    commit that closed D-68 — therefore drifts from what the database holds,
+    silently, for as long as nobody tries to reload it. This check makes
+    that comparison a standing one: it reads every fixture on disk, and for
+    any whose ``version_label`` has already been loaded, recomputes the
+    fingerprint and compares it to what is stored.
+
+    Matches fixtures to versions by the ``version_label`` INSIDE each file,
+    the same field ``load_reference_data`` itself keys on — never by
+    filename, which is a convention nothing enforces.
+    """
+    from statutory.loader import FIXTURE_DIRECTORY, fingerprint
+
+    base = Path(directory) if directory else Path(FIXTURE_DIRECTORY)
+    issues = []
+    for path in sorted(base.glob("*.json")):
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError, OSError:
+            continue
+        label = document.get("version_label")
+        tables = document.get("tables")
+        if not label or tables is None:
+            continue
+
+        version = ReferenceDataVersion.objects.filter(version_label=label).first()
+        if version is None or not version.checksum:
+            continue
+
+        current = fingerprint(tables)
+        if current != version.checksum:
+            issues.append(
+                Issue(
+                    True,
+                    f"reference_data_version {label}",
+                    f"the fixture at {path.name} no longer matches what was loaded "
+                    f"(checksum {current[:12]} vs stored {version.checksum[:12]}). Either "
+                    f"the file was edited after loading without a new version label, or "
+                    f"the database has not been reloaded since the file changed. "
+                    f"Reference data is never edited in place for a VALUE change (D-56, "
+                    f"D-57) — issue a new version if the figures changed, or reload this "
+                    f"exact file if the database is simply behind a structural fix.",
+                )
+            )
+    return issues
 
 
 def run_all(year: TaxYear | None = None) -> list[Issue]:

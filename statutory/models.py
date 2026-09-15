@@ -1193,12 +1193,24 @@ class TerminationNoticeBand(AuditedModel, AuditMixin, CitedStatutoryModel):
     as given; converting a day into hours or rand reads the EMPLOYEE's own
     schedule and is payroll's job (P7), not this table's.
 
-    ``service_from``/``service_to`` are the half-open range this band covers,
-    in the same INCLUSIVE-START, EXCLUSIVE-END convention as every other
-    effective-dated range in this schema (``EffectiveDatedModel``) — a
-    service length landing exactly on a boundary belongs to the band that
-    STARTS there, not the one that ends there (D-158). ``service_to`` is
-    NULL only for the top band; every rule set must have exactly one.
+    ``service_from``/``service_to`` are the range this band covers, and
+    **inclusivity is DATA, not a global convention** (D-158, corrected).
+    Unlike every effective-dated range elsewhere in this schema, a fixed
+    inclusive-start/exclusive-end rule does not survive contact with the
+    actual statutes: BCEA s37(1)(a) gives one week for service of "SIX
+    MONTHS OR LESS" — the boundary belongs to the LOWER band — while s37(1)
+    (b)/(c)(i) together make the one-year boundary belong to the UPPER band
+    ("not more than one year" / "one year or more" both name it, and four
+    weeks is the reading that survives). Two boundaries in the same rule
+    set, resolved in opposite directions by the Act's own wording. So
+    ``service_from_inclusive`` and ``service_to_inclusive`` are stored per
+    band, read from each statute's own words, never assumed: exactly one of
+    "this band's ``service_to_inclusive``" and "the next band's
+    ``service_from_inclusive``" must be true at every shared boundary, which
+    is what ``statutory/checks.py::check_notice_bands()`` reconciles.
+    ``service_to_value``/``service_to_unit``/``service_to_inclusive`` are
+    NULL only for the top, open-ended band; every rule set must have exactly
+    one.
     """
 
     class ServiceUnit(models.TextChoices):
@@ -1218,10 +1230,22 @@ class TerminationNoticeBand(AuditedModel, AuditMixin, CitedStatutoryModel):
 
     service_from_value = models.DecimalField(max_digits=6, decimal_places=2)
     service_from_unit = models.CharField(max_length=10, choices=ServiceUnit.choices)
+    service_from_inclusive = models.BooleanField(
+        help_text=(
+            "Does this band include a service length of exactly service_from? True "
+            "for every band except one whose lower boundary the band below already "
+            "claims inclusively."
+        )
+    )
     service_to_value = models.DecimalField(
         max_digits=6, decimal_places=2, null=True, blank=True, help_text="NULL = open-ended."
     )
     service_to_unit = models.CharField(max_length=10, choices=ServiceUnit.choices, blank=True)
+    service_to_inclusive = models.BooleanField(
+        null=True,
+        blank=True,
+        help_text="NULL for the open-ended top band. Read from the statute's own wording.",
+    )
 
     notice_value = models.DecimalField(max_digits=6, decimal_places=2)
     notice_unit = models.CharField(max_length=10, choices=NoticeUnit.choices)
@@ -1247,14 +1271,20 @@ class TerminationNoticeBand(AuditedModel, AuditMixin, CitedStatutoryModel):
                 condition=models.Q(notice_value__gt=0),
                 name="termination_notice_band_notice_positive",
             ),
-            # Paired nullability: an open-ended band names no unit either,
-            # the same shape workplace.sector_area/area_resolved_on already
-            # uses for "both or neither".
+            # Paired nullability: an open-ended band names no unit and no
+            # inclusivity either, the same shape workplace.sector_area/
+            # area_resolved_on already uses for "both or neither" — now
+            # three columns wide instead of two.
             models.CheckConstraint(
-                condition=models.Q(service_to_value__isnull=True, service_to_unit="")
+                condition=models.Q(
+                    service_to_value__isnull=True,
+                    service_to_unit="",
+                    service_to_inclusive__isnull=True,
+                )
                 | models.Q(
                     service_to_value__isnull=False,
                     service_to_unit__in=["days", "weeks", "months", "years"],
+                    service_to_inclusive__isnull=False,
                 ),
                 name="termination_notice_band_service_to_paired",
             ),

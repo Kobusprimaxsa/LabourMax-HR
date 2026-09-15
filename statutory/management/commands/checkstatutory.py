@@ -30,7 +30,11 @@ class Command(BaseCommand):
             if year is None:
                 raise CommandError(f"No tax year '{options['tax_year']}'.")
 
-        issues = checks.check_something_is_loaded() + checks.run_all(year)
+        issues = (
+            checks.check_something_is_loaded()
+            + checks.check_fixture_checksums()
+            + checks.run_all(year)
+        )
         blocking = [issue for issue in issues if issue.blocking]
         warnings = [issue for issue in issues if not issue.blocking]
 

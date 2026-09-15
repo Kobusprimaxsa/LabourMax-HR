@@ -915,18 +915,46 @@ the working week, and contract cleaning is exactly the sector that runs six-day 
 The replacement is a cited child table, `(service_from, service_to, notice_value)` each
 with its own unit, built by `tools/build_notice_band_fixture.py` and resolved by
 `statutory/resolve.py::notice_band()` — which computes nothing itself: it converts each
-band's own `(value, unit)` to a calendar date via `dateutil.relativedelta` and picks the
-band whose start has most recently been reached, never a day/week/month/year count
-written in the module (D-158). An exact boundary match resolves to the band that STARTS
-there, matching every other effective-dated range in this schema's own inclusive-start/
-exclusive-end convention — flagged for the labour law review in case a more literal
-reading of clause 23(1)(b) is wanted instead. `statutory/checks.py::check_notice_bands()`
-reconciles every rule set's bands the same way PAYE brackets are reconciled: they start
-at zero, touch with no gap or overlap, and have exactly one open-ended top band.
-Nothing reads SD1's own pay-in-lieu-of-notice formula yet — clause 23(1)(d) gives figures
-for one working day and for two weeks, and no band in the determination is two weeks, so
-P7 must not encode a reading of the four-week case until the labour law review answers
-it (O-06).
+band's own `(value, unit)` to a calendar date via `dateutil.relativedelta`, never a
+day/week/month/year count written in the module.
+
+**Which side of an exact boundary a service length falls on is DATA, per boundary, not
+a global convention** (D-158, corrected the day after it was first written). The first
+version put every exact boundary in the upper band, reasoning that this matched
+`EffectiveDatedModel`'s own inclusive-start/exclusive-end convention. That was wrong
+against the statutes themselves, not against a hypothetical: BCEA s37(1)(a) gives one
+week for "six months **or less**" and SD1 clause 23(1)(a) gives one working day "**during
+the first four weeks**" — both name the boundary as the LOWER band's, in so many words,
+and the upper-band reading gave a resigning employee less protection than the Act
+requires. Notice is symmetric (SD1 clause 23(1)(c) forbids an employee owing more notice
+than the employer does), so over-stating the period is not a safe direction the way it
+looks — it holds a resigning employee in employment longer than the law permits. Caught
+by three failing tests, one per sector, written before the fix. `service_from_inclusive`
+and `service_to_inclusive` now sit on every band, read from each clause's own wording;
+`statutory/checks.py::check_notice_bands()` reconciles that exactly one of "the lower
+band's `service_to_inclusive`" and "the upper band's `service_from_inclusive`" is true at
+every shared boundary — both true is an overlap, both false is a gap, and a plain
+value-equality check catches neither. BCEA's one-year mark is the one boundary that is
+genuinely a judgement call: s37(1)(b) "not more than one year" and s37(1)(c)(i) "one year
+or more" both name it, and four weeks is the reading loaded, flagged for the labour law
+review rather than asserted as settled (O-06). Nothing reads SD1's own
+pay-in-lieu-of-notice formula yet either — clause 23(1)(d) gives figures for one working
+day and for two weeks, and no band in the determination is two weeks, so P7 must not
+encode a reading of the four-week case until the labour law review answers it (O-06).
+
+**The fixture checksum guards a reload, not the time in between** (D-161). The loader
+fingerprints a fixture and refuses to reload a version label under different content —
+but that comparison only ever fires as a side effect of attempting a reload.
+`statutory/checks.py::check_fixture_checksums()`, run by `checkstatutory`, makes it a
+standing fact instead: every loaded version's checksum against its fixture file as that
+file reads right now, so an in-place edit is caught even if nobody ever tries to reload
+it. Closing D-158 also surfaced a real question this codebase has not answered: a
+structural fix to a cited table (as D-68 and D-158 both were) currently requires deleting
+`reference_data_version` rows by hand to make room for the edited fixture, which is fine
+on a dev database where nothing is verified and impossible once a version's rows are the
+audit record of what a real payslip was computed against. Recorded as O-21, before P11 and
+before any deployment — the fixture files currently serve as both build input and audit
+record, and those two roles are what collide.
 
 **What remains in P2:**
 
