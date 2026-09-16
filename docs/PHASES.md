@@ -256,7 +256,11 @@ completed prerequisite, not the outcome the "Done when" clause actually asks for
 accrual engine (now ANNUAL, SICK and FAMILY_RESPONSIBILITY), evidence, applications,
 authorisation, manual forfeiture capture, the forfeiture deadline warning, public
 holiday observance, the negative balance report, and `ANNUAL_UNAUTHORISED`'s parent
-balance. See the P6 section of CLAUDE.md and D-162 to D-185 for the detail. **Chunk 5 —
+balance. **Chunk 4b** (16 September 2026, D-186 to D-190): s22(4) as an employer election,
+the statutory data commands in CI, `unpaid_hours`, s27(1) eligibility enforced, and the
+property test extended through the real engine to SICK and FAMILY_RESPONSIBILITY — where it
+found two defects, both fixed. See the P6 section of CLAUDE.md and D-162 to D-190 for the
+detail. **Chunk 5 —
 maternity, parental leave under the Van Wyk interim reading, and adoption — is not yet
 started.** Read the honest "Done when" assessment at the bottom of this section before
 treating any part of the phase as fully proven — it is not, in specific and stated ways,
@@ -286,7 +290,12 @@ that statement rather than merely take it on faith.
       s22 accrual — an attendance-driven ratio in cycle 1's first six months, then ONE
       top-up transaction to the full six-week-equivalent LESS what was taken, proven as the
       TOTAL rather than the delta (D-181); FAMILY_RESPONSIBILITY's single upfront grant per
-      cycle, no carry-over, never paid out (D-183). A quantization defect shared by ANNUAL's
+      cycle, no carry-over, never paid out (D-183). **Chunk 4b:** D-181's reasoning corrected
+      (one entitlement, availability restricted for six months — arithmetic unchanged) and
+      s22(4)'s "may" made the employer's election, `SICK_FIRST_CYCLE_REDUCTION`, default TRUE
+      (D-186); the transition now nets reversed accruals, and SICK / FAMILY_RESPONSIBILITY
+      cycles are always in days whatever an entitlement row's method says (both D-190, found
+      by the property test); the family responsibility grant waits for s27(1) (D-189). A quantization defect shared by ANNUAL's
       own per-days/per-hours-worked methods and SICK's new ratio phase was found and fixed
       in the same pass (D-182). `AccrualNotSupportedError` still names the gap for
       MATERNITY, PARENTAL and ADOPTION — chunk 5's own work
@@ -300,8 +309,13 @@ that statement rather than merely take it on faith.
       against the ledger and falls to unpaid. Evidence gates pay, never the leave itself.
       `ANNUAL_UNAUTHORISED` (`balance_source='parent'`) now resolves to ANNUAL's own cycle
       and balance (chunk 4, D-180) — an unauthorised absence measurably costs the employee
-      annual leave, proven by a dedicated test. STILL FLAGGED: an hourly employee's own
-      overdraw has no `unpaid_hours` column
+      annual leave, proven by a dedicated test. **Chunk 4b:** `unpaid_hours` exists (D-188) —
+      NOT NULL, `>= 0`, and the unpaid portion is held in the application's own unit, now for
+      every reason a day is unpaid, not only the overdraw. Days-basis applications are NOT
+      converted to hours (the brief's premise, refused — see D-188). STILL A LIMITATION: the
+      overdraw falls unpaid a whole day at a time, so part of a day the balance could cover
+      is unpaid too. A family responsibility application is REFUSED, naming the failing limb
+      and its figure, unless BCEA s27(1)'s both limbs hold (D-189)
 - [x] Employer authorisation; self-approval blocked, escalating to the owner — built chunk 2
       (D-174). Only the sole owner, with no other approver, may self-approve, and only with
       a mandatory reason visible in the leave register. Approval refuses a day already
@@ -346,17 +360,20 @@ that statement rather than merely take it on faith.
       subtract it automatically**
 
 **Done when:** every employee's balance reconciles to their ledger in every scenario,
-with no drift. **PROVEN, not merely asserted, for the scope this phase actually built** —
-`leave/tests/test_reconciliation_property.py` generates random sequences (Hypothesis,
-40 examples, up to 12 actions each, run against BOTH a DAYS-denominated and an
-HOURS-denominated cycle as of chunk 4 — task 5) of accruals across multiple cycles,
-applications approved and cancelled (full day and part day), adjustments with reasons,
-forfeitures and reversals of any of them, and after EVERY step confirms the balance
-equals an independent sum of the ledger exactly, that `leave/balances.py`'s own
-staleness-driven cache agrees with that independent sum, and — chunk 4's own correction —
-that whenever the balance IS negative, `leave/negative_balances.py` reports that exact
-cycle, with that exact balance, and at least one transaction to show for it. Zero
-unexplained drift found across every run, in either denomination.
+with no drift. **PROVEN for ANNUAL, SICK and FAMILY_RESPONSIBILITY; NOT for MATERNITY,
+PARENTAL or ADOPTION, which have no accrual yet (chunk 5).**
+`leave/tests/test_reconciliation_property.py` (Hypothesis) generates random sequences — up
+to 16 actions, any of the three leave types, DAYS or HOURS, either s22(4) election — of
+manual accruals, adjustments, applications approved and cancelled (full and part day),
+forfeitures, reversals of any row, attendance captured through `capture()`, jumps of up to
+40 months, and runs of the REAL accrual engine. After every step it confirms the balance
+equals an independent ledger sum, the cache agrees, and any negative balance is reported by
+`leave/negative_balances.py` with its rows; and it checks each engine row against its rule
+(D-190). As of chunk 4b the ledger reconciles, and the engine's rows hold, across 400- and
+1,000-example local runs with every engine path reached — **after** fixing the two defects
+this extension found (D-190): a day entitlement written into an hours cycle, and a reversed
+accrual still deducted from the six-month sick top-up. Neither was visible to reconciliation
+alone: both left a ledger that summed.
 
 **D-176, corrected as D-184 (chunk 4).** Chunk 3's original fix to what the property test
 found — reversing an EARLIER transaction (say, an accrual) after a LATER adjustment or
@@ -374,22 +391,19 @@ understand causality between independent rows — only the response to the findi
 wrong the first time.
 
 **What this proof does NOT cover, stated plainly rather than implied by a tick:**
-- **SICK and FAMILY_RESPONSIBILITY are implemented and tested (chunk 4), but NOT by the
-  property test itself.** `leave/tests/test_accrual_chunk4.py` proves their accrual,
-  transition and grant logic with table-driven tests — the attendance-driven ratio phase,
-  the six-month transition asserted as a total, the upfront grant with no carry-over — but
-  the property test's own action generator still only drives an ANNUAL cycle. A
-  property-based proof that SICK's two-phase accrual and FAMILY_RESPONSIBILITY's grant
-  compose correctly with applications, forfeiture and reversals over long random sequences
-  is future work, not done here. MATERNITY, PARENTAL and ADOPTION have no accrual at all
-  yet — chunk 5.
-- **HOURS-denominated balances are now covered by the property test** (chunk 4, task 5) —
-  the same generator runs against both a DAYS- and an HOURS-denominated ANNUAL cycle.
-  SICK and FAMILY_RESPONSIBILITY's own dedicated tests exercise DAYS only, consistent
-  with the property test's own remaining ANNUAL-only scope noted above.
-- **`ANNUAL_UNAUTHORISED` is now resolved** (chunk 4, D-180) — a `leave_transaction`
-  against it reduces ANNUAL's own balance, proven directly. The property test still does
-  not exercise it; only `leave/tests/test_accrual_chunk4.py` does.
+- **CI runs 40 examples.** The rarer paths — the 36-month sick boundary, a transition after
+  a reversed accrual — were each reached in well under 1% of examples at 400, so a single CI
+  run exercises them only occasionally. The local runs are the evidence for them;
+  `LEAVE_PROPERTY_EXAMPLES` raises the count.
+- **`ANNUAL_UNAUTHORISED` is resolved** (chunk 4, D-180) and its unpaid hours are captured
+  (D-188), but the property test does not generate it; `test_accrual_chunk4.py` and
+  `test_applications.py` do.
+- **An entitlement row may still RECORD a per-hours-worked method against SICK or
+  FAMILY_RESPONSIBILITY.** It is ignored, not refused at capture (D-190) — a decision for
+  Kobus, not taken here.
+- **Part-day overdraw** — see `unpaid_hours` above: whole days only.
+- **SD7 and SD1's own clause wording for s27(1)'s boundary was not re-read** (D-189); the
+  strict "longer than" reading rests on the BCEA and the loaded rule sets' notes.
 - **Termination payout — P7's job, with a constraint now recorded ahead of it (D-185).** A
   terminated employee's closed cycle balance is proven untouched at termination (chunk 2's
   own tests) but paying it out is not this phase's work, and when P7 does it, it must
