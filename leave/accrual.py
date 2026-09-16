@@ -306,15 +306,9 @@ def _accrue_sick(
 
     reduce_by_taken = bool(setting_value(employee.employer, SICK_FIRST_CYCLE_REDUCTION_SETTING))
 
-    accrued_so_far = (
-        LeaveTransaction.objects.filter(
-            leave_cycle=cycle, transaction_type=LeaveTransaction.TransactionType.ACCRUAL
-        ).aggregate(total=Sum(cycle.unit))["total"]
-        or ZERO
-    )
     quantity = sick_first_cycle_top_up(
         entitlement=cycle.entitlement_quantity,
-        accrued=accrued_so_far,
+        accrued=_net_accrued(cycle),
         taken=_taken_before(cycle, transition_date),
         reduce_by_taken=reduce_by_taken,
     )
@@ -350,6 +344,27 @@ def _accrue_sick(
         calculation_basis=basis,
         reason=reason,
     )
+
+
+def _net_accrued(cycle) -> Decimal:
+    """Every ACCRUAL row on this cycle, net of any reversal of one. An accrual
+    posted in error and reversed was never accrued; summing ACCRUAL rows alone
+    subtracted it from the six-month top-up anyway, and the employee reached
+    six months short by exactly the reversed amount (D-190, found by the
+    property generator)."""
+    accrual_rows = LeaveTransaction.objects.filter(
+        leave_cycle=cycle, transaction_type=LeaveTransaction.TransactionType.ACCRUAL
+    )
+    accrued = accrual_rows.aggregate(total=Sum(cycle.unit))["total"] or ZERO
+    reversed_back = (
+        LeaveTransaction.objects.filter(
+            leave_cycle=cycle,
+            transaction_type=LeaveTransaction.TransactionType.REVERSAL,
+            reverses_transaction__in=accrual_rows,
+        ).aggregate(total=Sum(cycle.unit))["total"]
+        or ZERO
+    )
+    return accrued + reversed_back
 
 
 def _taken_before(cycle, before: datetime.date) -> Decimal:

@@ -133,8 +133,16 @@ def accrual_method_for(
     """
     leave_type = resolve_balance_leave_type(leave_type)
     entitlement = current_entitlement(employee, leave_type, on_date)
-    method = entitlement.accrual_method if entitlement else AccrualMethod.MONTHLY
-    return method, entitlement
+    # The agreed method is s20(2)'s, and s20(2) is ANNUAL leave. SICK (s22(2))
+    # and FAMILY_RESPONSIBILITY (s27(2)) are entitlements in DAYS that no
+    # agreement re-denominates, and their accrual is prescribed, never agreed.
+    # Honouring accrual_method for them made an HOURS cycle the engine then
+    # filled with day figures — reconciling, and wrong (D-190, found by the
+    # property generator). The entitlement row itself still applies: its
+    # additional or replacement days are read by entitlement_quantity_for().
+    if entitlement is None or leave_type.code != LeaveType.Code.ANNUAL:
+        return AccrualMethod.MONTHLY, entitlement
+    return entitlement.accrual_method, entitlement
 
 
 def unit_for_method(method: str) -> str:

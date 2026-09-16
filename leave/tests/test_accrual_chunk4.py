@@ -761,3 +761,95 @@ def test_negative_balance_query_reports_nothing_for_a_healthy_balance(
         )
 
     assert negative_balances(employer) == []
+
+
+# ------------------------------------------------- units: SICK and FAMILY (D-190)
+
+
+@pytest.mark.parametrize("code", ["SICK", "FAMILY_RESPONSIBILITY"])
+def test_a_per_hours_worked_agreement_never_makes_a_day_entitlement_an_hours_cycle(
+    employee,
+    engagement,
+    minimum_age,
+    leave_rules,
+    sick_type,
+    family_type,
+    sick_first_period,
+    working_time_rules,
+    schedule_5day,
+    code,
+):
+    """Found by the property generator (D-190). BCEA s20(2)'s per-hours-worked
+    method is an ANNUAL leave agreement. s22(2) and s27(2) state their
+    entitlements in days, and the engine computes days for them — so an
+    entitlement row carrying PER_HOURS_WORKED for either used to produce an
+    HOURS cycle, and the engine then wrote day figures into the hours column:
+    the ledger still summed, so nothing reconciling it could see."""
+    from employees.models import EmployeeLeaveEntitlement
+
+    leave_type = sick_type if code == "SICK" else family_type
+    with tenant_context_of(employee):
+        EmployeeLeaveEntitlement.objects.create(
+            tenant=employee.tenant,
+            employee=employee,
+            leave_type=leave_type,
+            accrual_method=EmployeeLeaveEntitlement.AccrualMethod.PER_HOURS_WORKED,
+            effective_from=START,
+        )
+        cycle = ensure_cycles(employee, leave_type, horizon=START)[0]
+
+    assert cycle.unit == LeaveCycle.Unit.DAYS, f"{code} is an entitlement in days, got {cycle.unit}"
+
+
+def test_a_reversed_accrual_is_not_deducted_from_the_six_month_top_up(
+    employer,
+    employee,
+    engagement,
+    minimum_age,
+    leave_rules,
+    sick_type,
+    sick_first_period,
+    working_time_rules,
+    schedule_5day,
+):
+    """Found by the property generator (D-190). A ratio accrual posted in
+    error and reversed was never accrued. The transition summed GROSS
+    accruals, so the reversed 2 days were still subtracted from the top-up:
+    one real day accrued, nothing drawn, and the employee reached six months
+    holding E - 2. Default election — the D-181 test above is untouched."""
+    from dateutil.relativedelta import relativedelta
+
+    with tenant_context_of(employee):
+        cycle = ensure_cycles(employee, sick_type, horizon=START)[0]
+        mistaken = post_transaction(
+            employee=employee,
+            leave_cycle=cycle,
+            leave_type=sick_type,
+            transaction_type=TransactionType.ACCRUAL,
+            quantity=Decimal("2.000"),
+            unit=LeaveCycle.Unit.DAYS,
+            transaction_date=datetime.date(2026, 3, 28),
+            calculation_basis="per_26_days_first_6m",
+        )
+        reverse_transaction(mistaken, reason="accrued against the wrong month")
+        post_transaction(
+            employee=employee,
+            leave_cycle=cycle,
+            leave_type=sick_type,
+            transaction_type=TransactionType.ACCRUAL,
+            quantity=Decimal("1.000"),
+            unit=LeaveCycle.Unit.DAYS,
+            transaction_date=datetime.date(2026, 4, 28),
+            calculation_basis="per_26_days_first_6m",
+        )
+        txn = accrue_employee(
+            employee, sick_type, as_at=cycle.cycle_start + relativedelta(months=6)
+        )
+        recomputed = recompute_cycle(cycle)
+
+    assert txn.calculation_basis == SICK_TRANSITION_BASIS
+    assert txn.days == recomputed.entitlement_quantity - Decimal("1.000"), txn.days
+    assert recomputed.balance_quantity == recomputed.entitlement_quantity, (
+        f"nothing was drawn, so the whole entitlement ({recomputed.entitlement_quantity}) "
+        f"must be available — got {recomputed.balance_quantity}"
+    )
