@@ -24,26 +24,49 @@ reversal go through mechanically even though a later transaction already
 relied on the reversed one's contribution still being there. The balance
 that results is the mathematically honest answer: an account in debt. The
 first fix suppressed exactly this sequence in the generator, which removed
-the coverage instead of closing the gap — in production the sequence still
-runs and the balance still goes negative, and nothing told anyone. This
-version restores the generator (the ``reverse`` action no longer skips a
-reversal that would take a balance below zero) and replaces the false
-invariant with the one that is actually true: the balance always equals
-the ledger sum exactly, and every negative balance is fully attributable to
-identifiable rows — proven here by checking it against
-``leave/negative_balances.py``, the same query an employer is shown.
+the coverage instead of closing the gap. The invariant that is actually
+true replaced the false one: the balance always equals the ledger sum
+exactly, and every negative balance is fully attributable to identifiable
+rows — proven here against ``leave/negative_balances.py``, the same query an
+employer is shown.
 
-**Both denominations, not just days (P6 chunk 4, task 5).** The whole
-sequence above is generated twice — once against a DAYS-denominated cycle
-(the ordinary case) and once against an HOURS-denominated one, produced by
-giving the employee an ``EmployeeLeaveEntitlement`` override with
-``accrual_method=PER_HOURS_WORKED`` before any cycle is generated, which is
-the one thing that flips ``leave/cycles.py::unit_for_method()``'s answer.
-No conversion between the two is ever performed — D-164 still holds — every
-action posts and reads whichever physical column (``days`` or ``hours``)
-the cycle it is touching actually carries, via ``cycle.unit`` itself, never
-a hardcoded ``LeaveCycle.Unit.DAYS``. A test that converted between them
-would quietly bless the exact thing D-164 forbids.
+**Both denominations, not just days (P6 chunk 4, task 5).** Every example
+samples DAYS or HOURS; HOURS gives the employee an ``EmployeeLeaveEntitlement``
+override with ``accrual_method=PER_HOURS_WORKED`` before any cycle is
+generated. No conversion between the two is ever performed (D-164) — every
+action posts and reads whichever column the cycle it touches carries.
+
+**Three leave types, and the REAL ENGINE (P6 chunk 4b, D-190).** Every example
+samples ANNUAL, SICK or FAMILY_RESPONSIBILITY, and the actions run along ONE
+timeline — a cursor that only moves forward — so the sequence can reach what
+SICK and FAMILY_RESPONSIBILITY actually bring:
+
+- ``work`` captures real attendance through ``attendance.capture.capture``,
+  which is what SICK's first-six-months ratio accrues from
+- ``advance`` jumps months, across the six-month transition, s27(1)'s four
+  months and the 36-month sick cycle boundary
+- ``engine`` runs ``leave.accrual.accrue_employee`` itself as at the cursor —
+  the ratio, the transition, cycle two's upfront grant, the eligibility-gated
+  family responsibility grant — not a hand-posted stand-in for them
+
+and the s22(4) election is sampled too. Beyond reconciliation, every row the
+engine writes is checked against what its rule says it must be:
+
+- a SICK or FAMILY_RESPONSIBILITY row is in DAYS — both entitlements are
+  stated in days (s22(2) six weeks of working days, s27(2) days), so a row in
+  an hours cycle is a day figure in the wrong column, which reconciliation
+  alone can never see: the wrong figure still sums
+- after SICK's six-month transition the cycle's NET accrual — every accrual
+  less every reversal of one — is exactly E, or E plus what was drawn when
+  s22(4) is not exercised (D-181, D-186): one entitlement per cycle
+- cycle two onward's upfront sick grant is exactly E
+- a family responsibility grant only happens once s27(1) is met, dated the
+  first eligible day (D-189); an ineligible application is refused naming
+  s27(1), and writes nothing
+
+D-176 IS THE RULE FOR WHAT HAPPENS WHEN THIS FAILS: the invariant or the
+code is fixed, and the strategy is never narrowed to stop producing the
+sequence.
 
 Decimal arithmetic throughout, matching every other ledger figure in this
 codebase — a float here would be exactly the bug invariant 6 exists to
@@ -54,10 +77,12 @@ from __future__ import annotations
 
 import datetime
 import itertools
+import os
 from decimal import Decimal
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from dateutil.relativedelta import relativedelta
+from hypothesis import HealthCheck, event, given, settings
 from hypothesis import strategies as st
 
 from core.managers import tenant_context
@@ -65,14 +90,22 @@ from core.models import AppUser, Tenant
 from employees.engagements import engage
 from employees.identity import luhn_check_digit
 from employees.models import Employee, EmployeeLeaveEntitlement, WorkSchedule, WorkScheduleDay
-from employers.models import Employer
-from leave.applications import submit_application
+from employers.models import Employer, EmployerSetting
+from leave.accrual import (
+    FAMILY_RESPONSIBILITY_BASIS,
+    SICK_TRANSITION_BASIS,
+    SICK_TRANSITION_UNREDUCED_BASIS,
+    SICK_UPFRONT_BASIS,
+    accrue_employee,
+)
+from leave.applications import FamilyResponsibilityIneligibleError, submit_application
 from leave.authorisation import approve, cancel
 from leave.balances import balance_as_at
 from leave.cycles import ensure_cycles
+from leave.eligibility import family_responsibility_eligibility
 from leave.forfeiture import ForfeitureRefusedError, capture_forfeiture
 from leave.ledger import post_transaction, reverse_transaction
-from leave.models import LeaveCycle, LeaveTransaction
+from leave.models import LeaveApplication, LeaveCycle, LeaveTransaction, LeaveType
 from leave.negative_balances import negative_balances
 from statutory.models import Sector
 
@@ -83,6 +116,10 @@ BORN = datetime.date(1990, 1, 1)
 START = datetime.date(2026, 3, 1)  # a Sunday; the first Monday is 2026-03-02
 
 TransactionType = LeaveTransaction.TransactionType
+
+# 40 keeps CI's run short. Raise it locally to hunt, e.g.
+# LEAVE_PROPERTY_EXAMPLES=400 pytest leave/tests/test_reconciliation_property.py
+MAX_EXAMPLES = int(os.environ.get("LEAVE_PROPERTY_EXAMPLES", "40"))
 
 _counter = itertools.count(1)
 
@@ -97,15 +134,15 @@ def owner_user(db):
     return AppUser.objects.create_user(email="property-owner@example.com", password="x" * 16)
 
 
-def _fresh_employee_with_two_cycles(annual_type, unit: str = LeaveCycle.Unit.DAYS):
+def _fresh_employee_with_two_cycles(leave_type, unit: str, *, reduce_by_taken: bool = True):
     """A brand-new tenant, employer, employee, schedule and engagement, with
-    TWO annual leave cycles already ensured — "accruals over multiple
-    cycles" needs somewhere to land.
+    TWO of ``leave_type``'s own cycles already ensured — "accruals over
+    multiple cycles" needs somewhere to land.
 
     ``unit="hours"`` gives the employee a ``PER_HOURS_WORKED``
-    ``EmployeeLeaveEntitlement`` override BEFORE any cycle is generated —
-    the one thing ``leave/cycles.py::unit_for_method()`` reads to decide a
-    cycle's own denomination (task 5).
+    ``EmployeeLeaveEntitlement`` override for ``leave_type`` BEFORE any cycle
+    is generated. Returns the cycles as generated; which unit they carry is
+    for the test to assert, not this builder.
     """
     n = next(_counter)
     tenant = Tenant.objects.create(trading_name=f"Household {n}")
@@ -126,6 +163,15 @@ def _fresh_employee_with_two_cycles(annual_type, unit: str = LeaveCycle.Unit.DAY
             email=f"property{n}@example.com",
             id_number=_make_id(n),
         )
+        if not reduce_by_taken:
+            EmployerSetting.objects.create(
+                tenant=tenant,
+                employer=employer,
+                setting_key="SICK_FIRST_CYCLE_REDUCTION",
+                value_type=EmployerSetting.ValueType.BOOLEAN,
+                value_boolean=False,
+                set_by_employer=True,
+            )
     engage(employee, start_date=START, job_title="Domestic worker")
     with tenant_context(tenant.pk):
         schedule = WorkSchedule.objects.create(
@@ -147,19 +193,33 @@ def _fresh_employee_with_two_cycles(annual_type, unit: str = LeaveCycle.Unit.DAY
             EmployeeLeaveEntitlement.objects.create(
                 tenant=tenant,
                 employee=employee,
-                leave_type=annual_type,
+                leave_type=leave_type,
                 accrual_method=EmployeeLeaveEntitlement.AccrualMethod.PER_HOURS_WORKED,
                 effective_from=START,
             )
 
-    cycles = ensure_cycles(employee, annual_type, horizon=datetime.date(2027, 6, 1))
+    # Exactly two cycles: a horizon 1.5x cycle_months out always falls inside
+    # cycle 2's own span, whatever cycle_months is — read, never a literal.
+    horizon = START + relativedelta(months=int(leave_type.cycle_months * 1.5))
+    cycles = ensure_cycles(employee, leave_type, horizon=horizon)
     assert len(cycles) == 2, "Two cycles, up front, for 'accruals over multiple cycles'."
-    for cycle in cycles:
-        assert cycle.unit == unit, f"expected a {unit}-denominated cycle, got {cycle.unit}"
     return employee, cycles
 
 
+def _expected_unit(leave_type, unit: str) -> str:
+    """HOURS only where hours are a real basis: an agreed per-hours-worked
+    ANNUAL method (BCEA s20(2)). SICK (s22(2)) and FAMILY_RESPONSIBILITY
+    (s27(2)) are entitlements in days whatever an entitlement row says."""
+    if leave_type.code == LeaveType.Code.ANNUAL:
+        return unit
+    return LeaveCycle.Unit.DAYS
+
+
 # ------------------------------------------------------------- reconciliation
+
+
+def _quantity(txn) -> Decimal:
+    return txn.days if txn.days is not None else txn.hours
 
 
 def _independent_ledger_sum(cycle: LeaveCycle) -> Decimal:
@@ -167,20 +227,16 @@ def _independent_ledger_sum(cycle: LeaveCycle) -> Decimal:
     ``leave/balances.py::_COLUMN_FOR_TYPE`` — an independent computation
     path is what makes this a real check rather than the cache checking
     itself."""
-    total = ZERO
-    for txn in LeaveTransaction.objects.filter(leave_cycle_id=cycle.pk):
-        value = txn.days if txn.days is not None else txn.hours
-        total += value
-    return total
+    return sum(
+        (_quantity(txn) for txn in LeaveTransaction.objects.filter(leave_cycle_id=cycle.pk)), ZERO
+    )
 
 
 def _reconcile(employee, leave_type, cycle_start) -> LeaveCycle:
     """``balance_as_at`` is the system's own accessor — it recomputes when
     ITS OWN staleness detection (not this test) says to. Comparing its
     result against an independent ledger sum is precisely "the cache and a
-    from-scratch rebuild agree": if the staleness signal ever failed to
-    fire, or the recompute logic mis-summed a column, this is where it
-    would show up as a mismatch.
+    from-scratch rebuild agree".
     """
     cycle = balance_as_at(employee, leave_type, cycle_start)
     assert cycle is not None
@@ -192,9 +248,8 @@ def _reconcile(employee, leave_type, cycle_start) -> LeaveCycle:
     assert isinstance(cycle.balance_quantity, Decimal)
 
     if cycle.balance_quantity < 0:
-        # The replacement invariant (D-176, corrected): a negative balance is
-        # never asserted away — it is asserted to be FOUND, by the same
-        # read-only query an employer is shown, with the rows that caused it.
+        # D-176, corrected: a negative balance is asserted to be FOUND, by the
+        # same read-only query an employer is shown, with the rows behind it.
         reported = {n.cycle.pk: n for n in negative_balances(employee.employer)}
         found = reported.get(cycle.pk)
         assert found is not None, (
@@ -207,6 +262,84 @@ def _reconcile(employee, leave_type, cycle_start) -> LeaveCycle:
         )
 
     return cycle
+
+
+def _reconcile_every_cycle(employee, leave_type):
+    """Every cycle that exists, not only the two made up front — the cursor
+    can carry applications and the engine past cycle two's end."""
+    for cycle in LeaveCycle.objects.filter(employee=employee, leave_type=leave_type):
+        _reconcile(employee, leave_type, cycle.cycle_start)
+
+
+def _net_accrual(cycle) -> Decimal:
+    """Every ACCRUAL row less every reversal of one. Computed here, not by the
+    engine, so the transition invariant is not the engine checking itself."""
+    total = ZERO
+    for txn in LeaveTransaction.objects.filter(leave_cycle_id=cycle.pk):
+        if txn.transaction_type == TransactionType.ACCRUAL:
+            total += _quantity(txn)
+        elif (
+            txn.transaction_type == TransactionType.REVERSAL
+            and txn.reverses_transaction.transaction_type == TransactionType.ACCRUAL
+        ):
+            total += _quantity(txn)
+    return total
+
+
+def _drawn_before(cycle, before) -> Decimal:
+    """Positive: TAKEN rows dated before ``before``, net of their reversals."""
+    total = ZERO
+    for txn in LeaveTransaction.objects.filter(leave_cycle_id=cycle.pk):
+        if txn.transaction_type == TransactionType.TAKEN and txn.transaction_date < before:
+            total -= _quantity(txn)
+        elif (
+            txn.transaction_type == TransactionType.REVERSAL
+            and txn.reverses_transaction.transaction_type == TransactionType.TAKEN
+            and txn.reverses_transaction.transaction_date < before
+        ):
+            total -= _quantity(txn)
+    return total
+
+
+def _check_engine_row(employee, leave_type, txn, *, as_at, reduce_by_taken):
+    """What the engine wrote, against what its rule says it must be."""
+    if leave_type.code == LeaveType.Code.ANNUAL:
+        return
+
+    assert txn.days is not None and txn.hours is None, (
+        f"{leave_type.code} is an entitlement in DAYS, but the engine wrote "
+        f"days={txn.days} hours={txn.hours} ({txn.calculation_basis}) into a "
+        f"{txn.leave_cycle.unit} cycle — a day figure in the hours column, which the "
+        f"ledger sum cannot see"
+    )
+    cycle = txn.leave_cycle
+    entitlement = cycle.entitlement_quantity
+    # Coverage evidence, reported by --hypothesis-show-statistics: a green run
+    # only means something for the rows the sequences actually reached.
+    event(f"engine wrote {leave_type.code} {txn.calculation_basis}")
+    if LeaveTransaction.objects.filter(
+        leave_cycle=cycle,
+        transaction_type=TransactionType.REVERSAL,
+        reverses_transaction__transaction_type=TransactionType.ACCRUAL,
+    ).exists():
+        event(f"engine wrote {txn.calculation_basis} after an accrual was reversed")
+
+    if txn.calculation_basis in (SICK_TRANSITION_BASIS, SICK_TRANSITION_UNREDUCED_BASIS):
+        drawn = _drawn_before(cycle, txn.transaction_date)
+        expected = entitlement if reduce_by_taken else entitlement + drawn
+        assert _net_accrual(cycle) == expected, (
+            f"after the six-month transition cycle one's net accrual must be one "
+            f"entitlement, {entitlement}"
+            f"{'' if reduce_by_taken else f' plus {drawn} drawn (s22(4) not exercised)'}"
+            f" — got {_net_accrual(cycle)}"
+        )
+    elif txn.calculation_basis == SICK_UPFRONT_BASIS:
+        assert txn.days == entitlement
+    elif txn.calculation_basis == FAMILY_RESPONSIBILITY_BASIS:
+        eligibility = family_responsibility_eligibility(employee, as_at)
+        assert eligibility.is_eligible, eligibility.reasons
+        assert txn.transaction_date == max(cycle.cycle_start, eligibility.eligible_from)
+        assert txn.days == entitlement
 
 
 # ------------------------------------------------------------------ actions
@@ -253,31 +386,93 @@ _forfeit = st.fixed_dictionaries(
 _reverse = st.fixed_dictionaries(
     {"kind": st.just("reverse"), "pick": st.integers(min_value=0, max_value=999)}
 )
+_work = st.fixed_dictionaries(
+    {"kind": st.just("work"), "days": st.integers(min_value=1, max_value=10)}
+)
+_advance = st.fixed_dictionaries(
+    {"kind": st.just("advance"), "months": st.integers(min_value=1, max_value=40)}
+)
+_engine = st.fixed_dictionaries({"kind": st.just("engine")})
 
-action_strategy = st.one_of(_accrue, _adjust, _apply, _cancel, _forfeit, _reverse)
+action_strategy = st.one_of(
+    _accrue, _adjust, _apply, _cancel, _forfeit, _reverse, _work, _advance, _engine
+)
+
+
+def _capture_worked_days(employee, cursor: datetime.date, count: int) -> datetime.date:
+    """``count`` weekdays worked in full from ``cursor``; returns the day after
+    the last one. Through ``capture()``, the same path the grid and the
+    importer use, so ``days_worked_equivalent`` is the real figure."""
+    from attendance.capture import capture
+    from calculators.attendance import DayType
+
+    a_date = cursor
+    captured = 0
+    while captured < count:
+        if a_date.weekday() < 5:
+            capture(
+                employee,
+                work_date=a_date,
+                day_type=DayType.ORDINARY,
+                time_in=datetime.time(8, 0),
+                time_out=datetime.time(17, 0),
+                unpaid_break_minutes=60,
+            )
+            captured += 1
+        a_date += datetime.timedelta(days=1)
+    return a_date
 
 
 @settings(
-    max_examples=40,
+    max_examples=MAX_EXAMPLES,
     deadline=None,
     suppress_health_check=[HealthCheck.function_scoped_fixture, HealthCheck.too_slow],
 )
 @given(
-    actions=st.lists(action_strategy, min_size=3, max_size=12),
+    actions=st.lists(action_strategy, min_size=3, max_size=16),
     unit=st.sampled_from([LeaveCycle.Unit.DAYS, LeaveCycle.Unit.HOURS]),
+    leave_type_key=st.sampled_from(["ANNUAL", "SICK", "FAMILY_RESPONSIBILITY"]),
+    reduce_by_taken=st.booleans(),
 )
 def test_balance_reconciles_to_the_ledger_across_any_valid_sequence(
-    minimum_age, leave_rules, working_time_rules, annual_type, owner_user, actions, unit
+    minimum_age,
+    leave_rules,
+    working_time_rules,
+    sick_first_period,
+    sick_certificate_threshold,
+    evidence_types,
+    annual_type,
+    sick_type,
+    family_type,
+    owner_user,
+    actions,
+    unit,
+    leave_type_key,
+    reduce_by_taken,
 ):
-    employee, cycles = _fresh_employee_with_two_cycles(annual_type, unit)
-    cursor_date = START + datetime.timedelta(days=1)  # the first Monday
+    event(f"{leave_type_key} / {unit} / s22(4) {'exercised' if reduce_by_taken else 'not'}")
+    leave_type = {
+        "ANNUAL": annual_type,
+        "SICK": sick_type,
+        "FAMILY_RESPONSIBILITY": family_type,
+    }[leave_type_key]
+
+    employee, cycles = _fresh_employee_with_two_cycles(
+        leave_type, unit, reduce_by_taken=reduce_by_taken
+    )
+    expected_unit = _expected_unit(leave_type, unit)
+    for cycle in cycles:
+        assert cycle.unit == expected_unit, (
+            f"{leave_type.code} with a {unit} entitlement row must carry a {expected_unit} "
+            f"cycle, got {cycle.unit}"
+        )
+    cursor = START + datetime.timedelta(days=1)  # the first Monday; only ever moves forward
 
     applications: list[dict] = []  # {"application": obj, "cancelled": bool}
     reversible: list[dict] = []  # {"txn": obj, "cycle_start": date, "reversed": bool}
 
     with tenant_context(employee.tenant_id):
-        for cycle in cycles:
-            _reconcile(employee, annual_type, cycle.cycle_start)
+        _reconcile_every_cycle(employee, leave_type)
 
         for action in actions:
             kind = action["kind"]
@@ -287,7 +482,7 @@ def test_balance_reconciles_to_the_ledger_across_any_valid_sequence(
                 txn = post_transaction(
                     employee=employee,
                     leave_cycle=cycle,
-                    leave_type=annual_type,
+                    leave_type=leave_type,
                     transaction_type=TransactionType.ACCRUAL,
                     quantity=action["quantity"],
                     unit=cycle.unit,
@@ -298,7 +493,7 @@ def test_balance_reconciles_to_the_ledger_across_any_valid_sequence(
 
             elif kind == "adjust":
                 cycle = cycles[action["cycle_index"]]
-                current = _reconcile(employee, annual_type, cycle.cycle_start)
+                current = _reconcile(employee, leave_type, cycle.cycle_start)
                 if action["positive"]:
                     quantity = action["quantity"]
                 else:
@@ -308,7 +503,7 @@ def test_balance_reconciles_to_the_ledger_across_any_valid_sequence(
                 txn = post_transaction(
                     employee=employee,
                     leave_cycle=cycle,
-                    leave_type=annual_type,
+                    leave_type=leave_type,
                     transaction_type=TransactionType.ADJUSTMENT,
                     quantity=quantity,
                     unit=cycle.unit,
@@ -321,18 +516,31 @@ def test_balance_reconciles_to_the_ledger_across_any_valid_sequence(
             elif kind == "apply":
                 length = action["length"]
                 is_part_day = action["part_day"] and length == 1
-                start = cursor_date
+                start = cursor
                 end = start + datetime.timedelta(days=length - 1)
+                if leave_type.code == LeaveType.Code.FAMILY_RESPONSIBILITY:
+                    eligibility = family_responsibility_eligibility(employee, start)
+                    if not eligibility.is_eligible:
+                        before_count = LeaveApplication.objects.filter(employee=employee).count()
+                        with pytest.raises(FamilyResponsibilityIneligibleError) as refused:
+                            submit_application(
+                                employee, leave_type=leave_type, start_date=start, end_date=end
+                            )
+                        assert "s27(1)" in str(refused.value)
+                        after_count = LeaveApplication.objects.filter(employee=employee).count()
+                        assert after_count == before_count, "a refusal writes nothing"
+                        cursor = end + datetime.timedelta(days=1)
+                        continue
                 application = submit_application(
                     employee,
-                    leave_type=annual_type,
+                    leave_type=leave_type,
                     start_date=start,
                     end_date=end,
                     is_part_day=is_part_day,
                 )
                 approved = approve(application, decided_by=owner_user)
                 applications.append({"application": approved, "cancelled": False})
-                cursor_date = end + datetime.timedelta(days=8)  # clear of the next EXCLUDE
+                cursor = end + datetime.timedelta(days=8)  # clear of the next EXCLUDE
 
             elif kind == "cancel":
                 pending = [a for a in applications if not a["cancelled"]]
@@ -347,11 +555,11 @@ def test_balance_reconciles_to_the_ledger_across_any_valid_sequence(
                         transaction_type=TransactionType.TAKEN,
                     )
                 )
-                delta = sum((t.days if t.days is not None else t.hours for t in taken), ZERO)
-                before = _reconcile(employee, annual_type, cycle_start).balance_quantity
+                delta = sum((_quantity(t) for t in taken), ZERO)
+                before = _reconcile(employee, leave_type, cycle_start).balance_quantity
                 cancel(application, cancelled_reason="property test cancellation")
                 target["cancelled"] = True
-                after = _reconcile(employee, annual_type, cycle_start).balance_quantity
+                after = _reconcile(employee, leave_type, cycle_start).balance_quantity
                 assert after == before - delta, (
                     "cancelling must return the balance to precisely what it was "
                     "before the taken transaction(s) it reverses"
@@ -359,7 +567,7 @@ def test_balance_reconciles_to_the_ledger_across_any_valid_sequence(
 
             elif kind == "forfeit":
                 cycle = cycles[action["cycle_index"]]
-                current = _reconcile(employee, annual_type, cycle.cycle_start)
+                current = _reconcile(employee, leave_type, cycle.cycle_start)
                 if current.balance_quantity <= 0:
                     continue
                 quantity = min(action["quantity"], current.balance_quantity)
@@ -382,27 +590,43 @@ def test_balance_reconciles_to_the_ledger_across_any_valid_sequence(
                     continue
                 target = candidates[action["pick"] % len(candidates)]
                 txn = target["txn"]
-                delta = txn.days if txn.days is not None else txn.hours
-                before = _reconcile(employee, annual_type, target["cycle_start"]).balance_quantity
-                # A REAL FINDING from this property test, recorded as D-176
-                # and corrected in P6 chunk 4: reversing transaction T is a
-                # purely mechanical negation of T alone — it does not know
-                # that a LATER transaction (an adjustment or a forfeiture,
-                # both capped against the balance AT THE TIME they were
-                # posted) already relied on T's own contribution still being
-                # there. Reversing T after that is legitimate bookkeeping —
-                # the resulting negative balance is the mathematically
-                # honest answer, an account now in debt. No longer skipped:
-                # ``_reconcile`` now asserts the negative case is reported by
-                # ``leave/negative_balances.py`` rather than asserting it
-                # away, so this sequence stays IN the generator's coverage.
+                delta = _quantity(txn)
+                before = _reconcile(employee, leave_type, target["cycle_start"]).balance_quantity
+                # D-176, corrected in P6 chunk 4: reversing T is a mechanical
+                # negation of T alone, even when a later row relied on T's
+                # contribution. The negative balance that can follow is the
+                # honest answer, asserted FOUND by ``_reconcile`` — never
+                # skipped here, so the sequence stays in the generator.
                 reverse_transaction(txn, reason="property test reversal")
                 target["reversed"] = True
-                after = _reconcile(employee, annual_type, target["cycle_start"]).balance_quantity
+                after = _reconcile(employee, leave_type, target["cycle_start"]).balance_quantity
                 assert after == before - delta, (
                     "a reversal must return the balance to precisely what it was "
                     "before the transaction it reverses"
                 )
 
-            for cycle in cycles:
-                _reconcile(employee, annual_type, cycle.cycle_start)
+            elif kind == "work":
+                cursor = _capture_worked_days(employee, cursor, action["days"])
+
+            elif kind == "advance":
+                cursor = cursor + relativedelta(months=action["months"])
+
+            elif kind == "engine":
+                txn = accrue_employee(employee, leave_type, as_at=cursor)
+                if txn is not None:
+                    _check_engine_row(
+                        employee,
+                        leave_type,
+                        txn,
+                        as_at=cursor,
+                        reduce_by_taken=reduce_by_taken,
+                    )
+                    reversible.append(
+                        {
+                            "txn": txn,
+                            "cycle_start": txn.leave_cycle.cycle_start,
+                            "reversed": False,
+                        }
+                    )
+
+            _reconcile_every_cycle(employee, leave_type)
