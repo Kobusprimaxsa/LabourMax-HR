@@ -70,6 +70,11 @@ class ApplicationRefusedError(Exception):
     """The application may not be created this way. Nothing was written."""
 
 
+class FamilyResponsibilityIneligibleError(ApplicationRefusedError):
+    """BCEA s27(1) does not apply to this employee on this date. Names the limb
+    that failed and its figure. Nothing was written."""
+
+
 def _next_reference(tenant) -> str:
     """``LV-{year}-{sequence}``, per tenant. Never reused.
 
@@ -205,6 +210,16 @@ def submit_application(
         )
 
     with transaction.atomic(), tenant_context_of(employee):
+        if leave_type.code == LeaveType.Code.FAMILY_RESPONSIBILITY:
+            from leave.eligibility import family_responsibility_eligibility
+
+            eligibility = family_responsibility_eligibility(employee, start_date)
+            if not eligibility.is_eligible:
+                raise FamilyResponsibilityIneligibleError(
+                    f"Family responsibility leave from {start_date:%d %B %Y} refused: "
+                    + " ".join(eligibility.reasons)
+                )
+
         method, _entitlement = accrual_method_for(employee, leave_type, start_date)
         unit = unit_for_method(method)
 

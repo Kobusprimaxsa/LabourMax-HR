@@ -538,7 +538,7 @@ def test_sick_leave_beyond_the_threshold_is_taken_and_unpaid_not_refused_with_a_
 # --------------------------------------------------------- FAMILY_RESPONSIBILITY
 
 
-def test_family_responsibility_is_granted_at_cycle_start_as_one_transaction(
+def test_family_responsibility_is_granted_once_per_cycle_as_one_transaction(
     employer,
     employee,
     engagement,
@@ -548,18 +548,26 @@ def test_family_responsibility_is_granted_at_cycle_start_as_one_transaction(
     working_time_rules,
     schedule_5day,
 ):
+    # Granted once the employee is eligible under s27(1) (D-189) — longer than
+    # the rule set's four months — and dated that first eligible day, which in
+    # cycle one is later than cycle start.
+    from leave.eligibility import family_responsibility_eligibility
+
     with tenant_context_of(employee):
-        txn = accrue_employee(employee, family_type, as_at=START)
+        eligible_from = family_responsibility_eligibility(employee, START).eligible_from
+        txn = accrue_employee(employee, family_type, as_at=eligible_from)
 
     assert txn is not None
     assert txn.days == Decimal("3.000"), "leave_rule_set's own family_responsibility_days."
-    assert txn.transaction_date == START
+    assert txn.transaction_date == eligible_from
     assert txn.calculation_basis == FAMILY_RESPONSIBILITY_BASIS
     assert txn.transaction_type == TransactionType.ACCRUAL
 
     # Idempotent: a second call the same cycle grants nothing further.
     with tenant_context_of(employee):
-        again = accrue_employee(employee, family_type, as_at=START + datetime.timedelta(days=60))
+        again = accrue_employee(
+            employee, family_type, as_at=eligible_from + datetime.timedelta(days=60)
+        )
     assert again is None
 
     with tenant_context_of(employee):
@@ -587,7 +595,8 @@ def test_family_responsibility_does_not_carry_over_between_cycles(
 
     with tenant_context_of(employee):
         cycle_one = ensure_cycles(employee, family_type, horizon=START)[0]
-        accrue_employee(employee, family_type, as_at=START)
+        # After s27(1)'s four months (D-189) — before it nothing is granted.
+        assert accrue_employee(employee, family_type, as_at=datetime.date(2026, 7, 31))
         post_transaction(
             employee=employee,
             leave_cycle=cycle_one,
@@ -595,9 +604,10 @@ def test_family_responsibility_does_not_carry_over_between_cycles(
             transaction_type=TransactionType.TAKEN,
             quantity=Decimal("-2.000"),
             unit=LeaveCycle.Unit.DAYS,
-            transaction_date=datetime.date(2026, 3, 10),
+            transaction_date=datetime.date(2026, 8, 10),
             calculation_basis="manual",
         )
+        assert recompute_cycle(cycle_one).balance_quantity == Decimal("1.000")
 
     cycle_two_start = cycle_one.cycle_start + relativedelta(months=family_type.cycle_months)
     with tenant_context_of(employee):

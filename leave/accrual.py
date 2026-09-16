@@ -56,12 +56,9 @@ either: the full cycle entitlement (``family_responsibility_days``) is
 GRANTED once, upfront, at cycle start — never accrued monthly, never
 carried to the next cycle (each cycle simply starts its own grant fresh),
 and (``leave_type.payable_on_termination = False``, already seeded in
-chunk 1) never paid out. Eligibility conditions
-(``family_resp_min_service_months``, ``family_resp_min_days_per_week``) are
-read from the rule set and exist as columns, but are NOT enforced by this
-engine — flagged rather than half-built, since nothing in this chunk asked
-for or tested enforcement, and a leave application layer that checks
-eligibility before approval is a different, untested piece of work.
+chunk 1) never paid out. s27(1)'s two eligibility limbs are enforced
+(D-189, ``leave/eligibility.py``): nothing is granted until both hold, and
+an application is refused naming whichever fails.
 """
 
 from __future__ import annotations
@@ -405,11 +402,16 @@ def _accrue_family_responsibility(
     monthly, never carried to the next cycle (each cycle grants its own
     fresh amount, with no reference to what a prior cycle held).
 
-    Eligibility (``family_resp_min_service_months``,
-    ``family_resp_min_days_per_week``) is read from the rule set via
-    ``leave/cycles.py``'s own entitlement computation but NOT enforced
-    here — flagged, not silently guessed; see the module docstring.
+    BCEA s27(1) eligibility is enforced here too (D-189,
+    ``leave/eligibility.py``): nothing is granted while either limb fails, so
+    no balance is ever shown for leave the employee does not have. That is the
+    ordinary state of every new hire, so it returns None rather than raising —
+    the application layer is where a refusal names the limb. Once eligible the
+    grant is dated the later of cycle start and the first eligible day, never
+    backdated to before the leave existed.
     """
+    from leave.eligibility import family_responsibility_eligibility
+
     ensure_cycles(employee, leave_type, horizon=as_at)
     cycle = current_cycle(employee, leave_type, as_at)
     if cycle is None:
@@ -417,9 +419,14 @@ def _accrue_family_responsibility(
     if _any_accrual_posted(cycle):
         return None
 
+    eligibility = family_responsibility_eligibility(employee, as_at)
+    if not eligibility.is_eligible:
+        return None
+
     quantity = cycle.entitlement_quantity
     if quantity <= 0:
         return None
+    granted_on = max(cycle.cycle_start, eligibility.eligible_from)
 
     return post_transaction(
         employee=employee,
@@ -428,7 +435,7 @@ def _accrue_family_responsibility(
         transaction_type=LeaveTransaction.TransactionType.ACCRUAL,
         quantity=quantity,
         unit=cycle.unit,
-        transaction_date=cycle.cycle_start,
+        transaction_date=granted_on,
         calculation_basis=FAMILY_RESPONSIBILITY_BASIS,
     )
 
