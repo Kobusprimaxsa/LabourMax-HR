@@ -104,6 +104,39 @@ jobs:
       - name: Migrations are complete
         run: python manage.py makemigrations --check --dry-run
 
+      # The data commands below write into `labourmax` itself, not pytest's
+      # test_labourmax, and "makemigrations --check" above only proves no
+      # migration is MISSING - it never applies one. Nothing had ever put a
+      # table into this database before this step.
+      - name: Migrate
+        run: python manage.py migrate
+
+      # A guard that only runs when somebody remembers to run it is not a
+      # guard. These run as management commands under AUTOCOMMIT, which is
+      # exactly the path pytest's transaction wrapper hides (D-92): a command
+      # that writes inside a context block without opening atomic() first
+      # passes the whole suite and fails here.
+      #
+      # --all, never a shell glob: alphabetical order loads the rule set
+      # fixtures before the sectors they reference and the loader refuses
+      # them (D-75). --all is FIXTURE_ORDER, dependency order.
+      - name: Load statutory reference data
+        run: python manage.py loadstatutory --all
+
+      - name: Seed the shared payroll component catalogue
+        run: python manage.py seedcomponents
+
+      - name: Seed the shared leave type and evidence catalogues
+        run: python manage.py seedleavetypes
+
+      # AFTER the loads: over an empty database every check iterates no rows
+      # and would pass, so checkstatutory refuses instead (D-74) and this step
+      # would fail for the wrong reason. Includes check_fixture_checksums()
+      # (D-161), the standing form of the SHA-256 guard that otherwise only
+      # fires on a reload.
+      - name: Statutory reconciliation
+        run: python manage.py checkstatutory
+
       - name: Tenant isolation - must never fail
         run: pytest -m isolation -v
 
