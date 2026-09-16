@@ -23,6 +23,7 @@ from leave.accrual import (
     SICK_TRANSITION_BASIS,
     SICK_UPFRONT_BASIS,
     accrue_employee,
+    run_monthly_accrual,
 )
 from leave.applications import submit_application
 from leave.authorisation import approve
@@ -259,6 +260,206 @@ def test_sick_leave_transition_at_six_months_grants_the_full_entitlement_less_ta
     with tenant_context_of(employee):
         again = accrue_employee(employee, sick_type, as_at=transition_date)
     assert again is None
+
+
+def test_s22_4_not_exercised_makes_the_full_entitlement_available_with_no_deduction(
+    employer,
+    employee,
+    engagement,
+    minimum_age,
+    leave_rules,
+    sick_type,
+    sick_first_period,
+    working_time_rules,
+    schedule_5day,
+):
+    """SICK_FIRST_CYCLE_REDUCTION = FALSE: this employer has elected NOT to
+    exercise BCEA s22(4). At six months the FULL s22(2) entitlement becomes
+    available and the day already taken under s22(3) is NOT deducted — so
+    across cycle one the employee may draw E + A, not E.
+
+    The same ledger as the default-branch test above (2 accrued, 1 taken),
+    so the two figures differ by exactly the one day s22(4) is about. The
+    batch entry point is called with NOTHING pinned at the call site, the
+    way a Celery task arrives. Asserts on the basis and the reason as well
+    as the total, so a coincidentally-equal figure cannot pass it.
+    """
+    from dateutil.relativedelta import relativedelta
+
+    from employers.models import EmployerSetting
+    from leave.accrual import SICK_TRANSITION_UNREDUCED_BASIS
+
+    with tenant_context_of(employee):
+        EmployerSetting.objects.create(
+            tenant=employer.tenant,
+            employer=employer,
+            setting_key="SICK_FIRST_CYCLE_REDUCTION",
+            value_type=EmployerSetting.ValueType.BOOLEAN,
+            value_boolean=False,
+            set_by_employer=True,
+        )
+        cycle = ensure_cycles(employee, sick_type, horizon=START)[0]
+        post_transaction(
+            employee=employee,
+            leave_cycle=cycle,
+            leave_type=sick_type,
+            transaction_type=TransactionType.ACCRUAL,
+            quantity=Decimal("2.000"),
+            unit=LeaveCycle.Unit.DAYS,
+            transaction_date=datetime.date(2026, 3, 28),
+            calculation_basis="per_26_days_first_6m",
+        )
+        post_transaction(
+            employee=employee,
+            leave_cycle=cycle,
+            leave_type=sick_type,
+            transaction_type=TransactionType.TAKEN,
+            quantity=Decimal("-1.000"),
+            unit=LeaveCycle.Unit.DAYS,
+            transaction_date=datetime.date(2026, 4, 15),
+            calculation_basis="manual",
+        )
+
+    transition_date = cycle.cycle_start + relativedelta(months=6)
+    run = run_monthly_accrual(employer, sick_type, transition_date)
+    assert run.transactions_created == 1
+
+    with tenant_context_of(employee):
+        txn = LeaveTransaction.objects.get(leave_cycle=cycle, transaction_date=transition_date)
+        recomputed = recompute_cycle(cycle)
+
+    # E, from the rule set and the schedule — six weeks of a five-day week.
+    entitlement = leave_rules.sick_leave_weeks_equivalent * Decimal("5")
+    assert recomputed.entitlement_quantity == entitlement
+
+    assert txn.calculation_basis == SICK_TRANSITION_UNREDUCED_BASIS, (
+        f"the unreduced transition must say so in its basis, got {txn.calculation_basis!r}"
+    )
+    assert "s22(4) not exercised" in txn.reason, txn.reason
+    assert "SICK_FIRST_CYCLE_REDUCTION" in txn.reason, txn.reason
+    assert txn.days == entitlement - Decimal("1.000"), (
+        f"top-up must bring a balance of 1 to the full {entitlement}, got {txn.days}"
+    )
+    assert recomputed.balance_quantity == entitlement, (
+        f"election OFF: the full entitlement ({entitlement}) must be available with "
+        f"NO deduction for the one day taken under the ratio — got "
+        f"{recomputed.balance_quantity}."
+    )
+
+    # Idempotent: the unreduced transition is still THE transition.
+    with tenant_context_of(employee):
+        again = accrue_employee(employee, sick_type, as_at=transition_date)
+    assert again is None
+
+
+def test_the_s22_4_election_is_read_with_the_employers_tenant_pinned_by_the_resolver(
+    employer, sector
+):
+    """The default_sort() bug, guarded for this setting: read with NOTHING
+    pinned, a resolver that does not pin the tenant finds no row, falls back
+    to the registry default (TRUE) and is silently wrong for exactly the
+    employer who elected FALSE."""
+    from employers.models import EmployerSetting
+    from employers.onboarding import setting_value
+
+    with tenant_context_of(employer):
+        EmployerSetting.objects.create(
+            tenant=employer.tenant,
+            employer=employer,
+            setting_key="SICK_FIRST_CYCLE_REDUCTION",
+            value_type=EmployerSetting.ValueType.BOOLEAN,
+            value_boolean=False,
+            set_by_employer=True,
+        )
+
+    assert setting_value(employer, "SICK_FIRST_CYCLE_REDUCTION") is False
+
+
+@pytest.mark.parametrize(
+    ("reduce_by_taken", "accrued", "taken", "expected_top_up", "expected_balance"),
+    [
+        # E = 30 throughout. Balance going in is always accrued - taken.
+        (True, "2", "1", "28", "29"),  # s22(4) exercised: E - T
+        (False, "2", "1", "29", "30"),  # not exercised: E, T not deducted
+        (True, "4", "4", "26", "26"),  # took everything available: E - T
+        (False, "4", "4", "30", "30"),
+        (True, "3", "0", "27", "30"),  # nothing drawn: the election is inert
+        (False, "3", "0", "27", "30"),
+    ],
+)
+def test_sick_first_cycle_top_up_is_pure_arithmetic_over_one_entitlement(
+    reduce_by_taken, accrued, taken, expected_top_up, expected_balance
+):
+    """No database: the election arrives as a resolved boolean. Where nothing
+    was drawn the two elections must agree — s22(4) only has anything to
+    act on when sick leave was actually taken under s22(3)."""
+    from leave.accrual import sick_first_cycle_top_up
+
+    top_up = sick_first_cycle_top_up(
+        entitlement=Decimal("30"),
+        accrued=Decimal(accrued),
+        taken=Decimal(taken),
+        reduce_by_taken=reduce_by_taken,
+    )
+    assert top_up == Decimal(expected_top_up)
+    assert Decimal(accrued) - Decimal(taken) + top_up == Decimal(expected_balance)
+
+
+def test_s22_4_not_exercised_does_not_add_back_a_sick_day_that_was_cancelled(
+    employer,
+    employee,
+    engagement,
+    minimum_age,
+    leave_rules,
+    sick_type,
+    sick_first_period,
+    working_time_rules,
+    schedule_5day,
+):
+    """A reversed TAKEN row was never drawn. Adding it back under the
+    unreduced election would hand the employee a day they already got back
+    when the application was cancelled — E + 1 rather than E."""
+    from dateutil.relativedelta import relativedelta
+
+    from employers.models import EmployerSetting
+
+    with tenant_context_of(employee):
+        EmployerSetting.objects.create(
+            tenant=employer.tenant,
+            employer=employer,
+            setting_key="SICK_FIRST_CYCLE_REDUCTION",
+            value_type=EmployerSetting.ValueType.BOOLEAN,
+            value_boolean=False,
+            set_by_employer=True,
+        )
+        cycle = ensure_cycles(employee, sick_type, horizon=START)[0]
+        post_transaction(
+            employee=employee,
+            leave_cycle=cycle,
+            leave_type=sick_type,
+            transaction_type=TransactionType.ACCRUAL,
+            quantity=Decimal("2.000"),
+            unit=LeaveCycle.Unit.DAYS,
+            transaction_date=datetime.date(2026, 3, 28),
+            calculation_basis="per_26_days_first_6m",
+        )
+        taken = post_transaction(
+            employee=employee,
+            leave_cycle=cycle,
+            leave_type=sick_type,
+            transaction_type=TransactionType.TAKEN,
+            quantity=Decimal("-1.000"),
+            unit=LeaveCycle.Unit.DAYS,
+            transaction_date=datetime.date(2026, 4, 15),
+            calculation_basis="manual",
+        )
+        reverse_transaction(taken, reason="application cancelled")
+
+        transition_date = cycle.cycle_start + relativedelta(months=6)
+        accrue_employee(employee, sick_type, as_at=transition_date)
+        recomputed = recompute_cycle(cycle)
+
+    assert recomputed.balance_quantity == recomputed.entitlement_quantity
 
 
 def test_sick_cycle_two_is_granted_upfront_with_no_ratio_phase(

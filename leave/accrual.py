@@ -39,6 +39,13 @@ goes through ``accrual_method_for()``/``AccrualMethod`` at all:
   employment — so it is granted the full six-week-equivalent UPFRONT, once,
   at cycle start.
 
+There is ONE entitlement per sick cycle. s22(3)'s ratio is a restriction on
+how much of it is AVAILABLE in the first six months, not a second
+entitlement; at six months the rest becomes available (D-181, amended).
+Whether sick leave already drawn in that time is then deducted is s22(4)'s
+"may" — the employer's election, ``SICK_FIRST_CYCLE_REDUCTION`` (D-186),
+resolved here and handed to the pure ``sick_first_cycle_top_up()``.
+
 See ``_accrue_sick()`` for exactly how the transition preserves what was
 already taken rather than doubling the entitlement or stranding it — the
 two wrong readings task 2 named explicitly — and D-181 in
@@ -97,6 +104,8 @@ SICK_FIRST_PERIOD_PARAMETER = "SICK_LEAVE_FIRST_PERIOD_MONTHS"
 #: calculation_basis markers for the two SICK-specific transaction shapes,
 #: read by tests and by anyone auditing a sick leave cycle's own history.
 SICK_TRANSITION_BASIS = "sick_six_month_transition"
+SICK_TRANSITION_UNREDUCED_BASIS = "sick_six_month_transition_unreduced"
+SICK_FIRST_CYCLE_REDUCTION_SETTING = "SICK_FIRST_CYCLE_REDUCTION"
 SICK_UPFRONT_BASIS = "sick_upfront_cycle"
 FAMILY_RESPONSIBILITY_BASIS = "family_responsibility_upfront"
 
@@ -290,10 +299,15 @@ def _accrue_sick(
 
     # At or past the transition: the one-time top-up, if not already done.
     already_transitioned = LeaveTransaction.objects.filter(
-        leave_cycle=cycle, calculation_basis=SICK_TRANSITION_BASIS
+        leave_cycle=cycle,
+        calculation_basis__in=[SICK_TRANSITION_BASIS, SICK_TRANSITION_UNREDUCED_BASIS],
     ).exists()
     if already_transitioned:
         return None
+
+    from employers.onboarding import setting_value
+
+    reduce_by_taken = bool(setting_value(employee.employer, SICK_FIRST_CYCLE_REDUCTION_SETTING))
 
     accrued_so_far = (
         LeaveTransaction.objects.filter(
@@ -301,22 +315,32 @@ def _accrue_sick(
         ).aggregate(total=Sum(cycle.unit))["total"]
         or ZERO
     )
-    # D-181's own derivation: target balance after the transition is
-    # entitlement MINUS days taken in the first six months (s22(2)'s own
-    # words). Days already taken are already reflected in the ledger's
-    # current balance, so topping up by (entitlement - accrued) — never
-    # re-touching what was taken — lands on exactly that target: if A is
-    # accrued and T is taken (both already in the ledger), the balance
-    # after posting (E - A) is (A - T) + (E - A) = E - T. Deliberately does
-    # NOT reduce the balance if the ratio phase somehow over-accrued beyond
-    # the full entitlement (quantity <= 0 below) — the ACCRUAL sign CHECK
-    # cannot carry a negative quantity, and manufacturing an ADJUSTMENT's
-    # reason for an automatic engine action would be inventing an
-    # explanation nobody gave. Flagged rather than solved; unreachable at
-    # the ratios this rule set actually loads.
-    quantity = cycle.entitlement_quantity - accrued_so_far
+    quantity = sick_first_cycle_top_up(
+        entitlement=cycle.entitlement_quantity,
+        accrued=accrued_so_far,
+        taken=_taken_before(cycle, transition_date),
+        reduce_by_taken=reduce_by_taken,
+    )
+    # Deliberately does NOT reduce the balance if the ratio phase somehow
+    # over-accrued beyond the full entitlement (quantity <= 0) — the ACCRUAL
+    # sign CHECK cannot carry a negative quantity, and manufacturing an
+    # ADJUSTMENT's reason for an automatic engine action would be inventing an
+    # explanation nobody gave. Unreachable at the ratios this rule set loads.
     if quantity <= 0:
         return None
+
+    if reduce_by_taken:
+        basis = SICK_TRANSITION_BASIS
+        reason = (
+            "BCEA s22(3) availability ends: balance of the s22(2) entitlement, less "
+            "sick leave already drawn (s22(4) exercised, SICK_FIRST_CYCLE_REDUCTION)"
+        )
+    else:
+        basis = SICK_TRANSITION_UNREDUCED_BASIS
+        reason = (
+            "BCEA s22(3) availability ends: full s22(2) entitlement, sick leave already "
+            "drawn not deducted (s22(4) not exercised, SICK_FIRST_CYCLE_REDUCTION)"
+        )
 
     return post_transaction(
         employee=employee,
@@ -326,8 +350,52 @@ def _accrue_sick(
         quantity=quantity,
         unit=cycle.unit,
         transaction_date=transition_date,
-        calculation_basis=SICK_TRANSITION_BASIS,
+        calculation_basis=basis,
+        reason=reason,
     )
+
+
+def _taken_before(cycle, before: datetime.date) -> Decimal:
+    """Sick leave drawn from this cycle before ``before``, as a POSITIVE
+    quantity: every TAKEN row, net of any reversal of one (a cancelled
+    application gives its days back, so they were never drawn)."""
+    taken_rows = LeaveTransaction.objects.filter(
+        leave_cycle=cycle,
+        transaction_type=LeaveTransaction.TransactionType.TAKEN,
+        transaction_date__lt=before,
+    )
+    drawn = taken_rows.aggregate(total=Sum(cycle.unit))["total"] or ZERO
+    returned = (
+        LeaveTransaction.objects.filter(
+            leave_cycle=cycle,
+            transaction_type=LeaveTransaction.TransactionType.REVERSAL,
+            reverses_transaction__in=taken_rows,
+        ).aggregate(total=Sum(cycle.unit))["total"]
+        or ZERO
+    )
+    return -(drawn + returned)
+
+
+def sick_first_cycle_top_up(
+    *, entitlement: Decimal, accrued: Decimal, taken: Decimal, reduce_by_taken: bool
+) -> Decimal:
+    """The one top-up at the end of s22(3)'s first six months. Pure: no ORM, no
+    settings — the election arrives as ``reduce_by_taken``, already resolved.
+
+    There is ONE entitlement per cycle, E (s22(2)). s22(3) does not create a
+    second one; it restricts how much of E is available during the first six
+    months to the ratio amount A (``accrued``). Days drawn in that time, T
+    (``taken``), are already in the ledger, so the balance going in is A - T.
+
+    - ``reduce_by_taken`` (s22(4) exercised, the default): the rest of E
+      becomes available, and what was drawn stays drawn. Top-up E - A; balance
+      out (A - T) + (E - A) = E - T.
+    - not exercised: the full E becomes available and T is not deducted, so the
+      employee may draw E + T across the cycle. Top-up E - A + T; balance out E.
+    """
+    if reduce_by_taken:
+        return entitlement - accrued
+    return entitlement - accrued + taken
 
 
 def _accrue_family_responsibility(

@@ -23,6 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
+from core.managers import tenant_context_of
 from employers.models import EmployerSetting
 
 DOMESTIC = "DOMESTIC"
@@ -91,6 +92,22 @@ SETTING_DEFINITIONS: list[SettingDefinition] = [
         default=True,
     ),
     SettingDefinition(
+        key="SICK_FIRST_CYCLE_REDUCTION",
+        value_type=EmployerSetting.ValueType.BOOLEAN,
+        description=(
+            "BCEA s22(4): during an employee's FIRST sick leave cycle the employer MAY "
+            "reduce the s22(2) entitlement by the sick leave taken under s22(3). There "
+            "is one entitlement per cycle; s22(3) only restricts how much of it is "
+            "available in the first six months. TRUE (the default): at six months the "
+            "balance of that one entitlement becomes available, less what was already "
+            "drawn. FALSE: the employer has elected not to exercise s22(4) - the full "
+            "entitlement becomes available at six months and nothing already taken is "
+            "deducted. Not a figure: the Act states the six weeks and the 26-day ratio, "
+            "both in leave_rule_set. An election of a discretion the Act grants (D-80)."
+        ),
+        default=True,
+    ),
+    SettingDefinition(
         key="GROUP_HEADER_MINIMUM",
         value_type=EmployerSetting.ValueType.NUMERIC,
         description=(
@@ -151,12 +168,20 @@ def seed_settings_for(employer) -> list[EmployerSetting]:
 def setting_value(employer, key: str):
     """One setting's value, or the registry default if the row is missing.
 
-    Falls back rather than raising because a missing row means "onboarding has not
-    seeded this yet", not "nobody knows" — unlike a statutory lookup, where a missing
+    Pins the employer's tenant itself (see the body). Falls back rather than
+    raising because a missing row means "onboarding has not seeded this yet",
+    not "nobody knows" — unlike a statutory lookup, where a missing
     row genuinely means the system does not know the rate and must refuse.
     """
     definition = BY_KEY[key]
-    row = EmployerSetting.objects.filter(employer=employer, setting_key=key).first()
+    # Pins the employer's own tenant, whatever the caller has pinned (or not).
+    # employer_setting is tenant-scoped: read with nothing pinned it returns no
+    # row, and the fallback below then answers with the registry default -
+    # right for every employer except the one who changed the setting. That was
+    # default_sort()'s bug; pinning here closes it for every setting and every
+    # caller, a Celery task or accrual run included, rather than per call site.
+    with tenant_context_of(employer):
+        row = EmployerSetting.objects.filter(employer=employer, setting_key=key).first()
     if row is None:
         return definition.default_for(employer.sector.code)
     return row.value
