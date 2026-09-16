@@ -11,8 +11,10 @@ always reaches ``submitted``; only ``is_paid`` on its days is affected.
 The excess is capped against the ledger — never let a balance run negative
 by paying what is not there — and the days beyond what the balance can
 cover are marked ``is_paid=False`` and ``deducted_from_balance=False``:
-they are taken, they are just unpaid. ``exceeds_balance`` and
-``unpaid_days`` carry the audit; ``leave/authorisation.py::approve()`` is
+they are taken, they are just unpaid. ``exceeds_balance`` carries the
+overdraw; ``unpaid_days`` or ``unpaid_hours`` — whichever is the
+application's own unit, the other staying zero — carries the whole unpaid
+portion, for whatever reason a day is unpaid (D-188); ``leave/authorisation.py::approve()`` is
 what actually warns and commits it to the ledger.
 
 **A week's leave over a public holiday costs four days, not five —
@@ -267,6 +269,15 @@ def submit_application(
             else None
         )
 
+        unpaid_total = sum(
+            (
+                d[quantity_field] or ZERO
+                for d in day_dicts
+                if d["is_working_day"] and not d["is_paid"]
+            ),
+            ZERO,
+        )
+
         application = LeaveApplication(
             tenant=employee.tenant,
             employee=employee,
@@ -284,14 +295,13 @@ def submit_application(
             submitted_at=timezone.now(),
             balance_at_submission=available,
             exceeds_balance=exceeds_balance,
-            # FLAGGED: sheet 02 gives leave_application one unpaid_days column,
-            # no unpaid_hours variant. An hourly-accrual employee's own overdraw
-            # (unpaid_units in HOURS) has nowhere to be recorded at the
-            # application level — exceeds_balance still flips, but the exact
-            # hour figure is only visible per-day (is_paid/deducted_from_balance
-            # on leave_application_day), not summarised here. Recorded rather
-            # than silently reporting zero as if nothing were overdrawn.
-            unpaid_days=unpaid_units if unit == LeaveCycle.Unit.DAYS else ZERO,
+            # D-188: the unpaid portion, in the application's own unit, for
+            # EVERY reason a working day is unpaid — beyond the balance, a type
+            # unpaid by nature, or sick pay withheld for want of evidence — not
+            # only the overdraw. The other unit's column stays zero; nothing
+            # here converts a day into hours (D-164).
+            unpaid_days=unpaid_total if unit == LeaveCycle.Unit.DAYS else ZERO,
+            unpaid_hours=unpaid_total if unit == LeaveCycle.Unit.HOURS else ZERO,
         )
         application.full_clean()
         application.save()

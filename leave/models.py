@@ -918,7 +918,19 @@ class LeaveApplication(AuditedModel, TenantScopedModel):
         default=False, help_text="Overdrawn days fall to unpaid unless overridden."
     )
     unpaid_days = models.DecimalField(
-        max_digits=7, decimal_places=3, default=0, help_text="Portion that will be unpaid."
+        max_digits=7,
+        decimal_places=3,
+        default=0,
+        help_text="Portion that will be unpaid, in days. Zero on an hours-basis application.",
+    )
+    unpaid_hours = models.DecimalField(
+        max_digits=8,
+        decimal_places=3,
+        default=0,
+        help_text=(
+            "Portion that will be unpaid, in hours: beyond the balance, unpaid by nature, "
+            "or withheld for want of evidence. Zero on a days-basis application (D-188)."
+        ),
     )
     cancelled_reason = models.CharField(max_length=255, blank=True)
 
@@ -961,6 +973,24 @@ class LeaveApplication(AuditedModel, TenantScopedModel):
             models.CheckConstraint(
                 condition=~models.Q(self_approved=True) | ~models.Q(self_approval_reason=""),
                 name="leave_application_self_approval_states_a_reason",
+            ),
+            # D-188. unpaid_hours is NOT NULL, so this CHECK cannot be escaped by
+            # a NULL, which PostgreSQL would count as satisfied.
+            models.CheckConstraint(
+                condition=models.Q(unpaid_hours__gte=0),
+                name="leave_application_unpaid_hours_not_negative",
+            ),
+            # The unpaid portion is recorded in the application's OWN unit and
+            # the other column stays zero: total_hours IS NULL is a days-basis
+            # application. Hours on a days application would be a conversion
+            # somebody made (D-164). Both branches name total_hours' NULL-ness
+            # explicitly; the unpaid columns are NOT NULL.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(total_hours__isnull=True, unpaid_hours=0)
+                    | models.Q(total_hours__isnull=False, unpaid_days=0)
+                ),
+                name="leave_application_unpaid_in_its_own_unit",
             ),
             # Partial EXCLUDE: only rows that are actually approved compete for a
             # date. A draft or a declined application legitimately shares dates

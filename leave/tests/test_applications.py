@@ -177,6 +177,185 @@ def test_an_overdrawn_application_is_created_with_exceeds_balance_and_unpaid_day
     assert unpaid_count == 3
 
 
+# ------------------------------------------------------- unpaid_hours (D-188)
+
+
+def _hours_basis(employee, annual_type):
+    """A PER_HOURS_WORKED agreement on ANNUAL — the one thing that makes an
+    application's unit HOURS (leave/cycles.py::unit_for_method)."""
+    from employees.models import EmployeeLeaveEntitlement
+    from leave.tests.conftest import START
+
+    with tenant_context_of(employee):
+        EmployeeLeaveEntitlement.objects.create(
+            tenant=employee.tenant,
+            employee=employee,
+            leave_type=annual_type,
+            accrual_method=EmployeeLeaveEntitlement.AccrualMethod.PER_HOURS_WORKED,
+            effective_from=START,
+        )
+    cycle = ensure_cycles(employee, annual_type, horizon=MONDAY)[0]
+    assert cycle.unit == LeaveCycle.Unit.HOURS
+    return cycle
+
+
+def test_an_hourly_employees_overdraw_is_captured_in_unpaid_hours(
+    employee, engagement, minimum_age, leave_rules, annual_type, schedule_5day
+):
+    """Before unpaid_hours existed, an hours-basis overdraw had nowhere to be
+    recorded: unpaid_days stayed 0 and the application read as fully paid
+    although exceeds_balance was TRUE."""
+    cycle = _hours_basis(employee, annual_type)
+    post_transaction(
+        employee=employee,
+        leave_cycle=cycle,
+        leave_type=annual_type,
+        transaction_type=TransactionType.ACCRUAL,
+        quantity=Decimal("3.000"),
+        unit=LeaveCycle.Unit.HOURS,
+        transaction_date=MONDAY,
+        calculation_basis="manual",
+    )
+
+    application = submit_application(
+        employee, leave_type=annual_type, start_date=MONDAY, end_date=MONDAY
+    )
+
+    assert application.exceeds_balance is True
+    assert application.total_hours == Decimal("8.000"), "the fixture schedule's Monday."
+    # 8, not 5 (8 requested less 3 held): the overdraw falls to unpaid a WHOLE
+    # DAY at a time, and approve() deducts only days marked deducted_from_balance
+    # — so the whole Monday goes unpaid and the 3 hours stay in the balance.
+    # unpaid_hours must agree with the day rows payroll will price, not with
+    # the arithmetic shortfall. Whole-day granularity is recorded under D-188.
+    assert application.unpaid_hours == Decimal("8.000")
+    assert application.unpaid_days == Decimal("0"), "an hours application never carries days."
+    with tenant_context_of(employee):
+        stored = LeaveApplication.objects.get(pk=application.pk)
+        unpaid_day_hours = sum(
+            d.hours
+            for d in LeaveApplicationDay.objects.filter(
+                leave_application=application, is_working_day=True, is_paid=False
+            )
+        )
+    assert stored.unpaid_hours == unpaid_day_hours == Decimal("8.000")
+
+
+def test_leave_unpaid_by_nature_puts_every_hour_in_unpaid_hours(
+    employee,
+    engagement,
+    minimum_age,
+    leave_rules,
+    annual_type,
+    annual_unauthorised_type,
+    schedule_5day,
+):
+    """ANNUAL_UNAUTHORISED is unpaid by nature (is_paid=False). The balance
+    COVERS it, so nothing is overdrawn — and every hour is still unpaid. The
+    overdraw figure alone would have recorded zero."""
+    cycle = _hours_basis(employee, annual_type)
+    post_transaction(
+        employee=employee,
+        leave_cycle=cycle,
+        leave_type=annual_type,
+        transaction_type=TransactionType.ACCRUAL,
+        quantity=Decimal("40.000"),
+        unit=LeaveCycle.Unit.HOURS,
+        transaction_date=MONDAY,
+        calculation_basis="manual",
+    )
+
+    application = submit_application(
+        employee,
+        leave_type=annual_unauthorised_type,
+        start_date=MONDAY,
+        end_date=datetime.date(2026, 3, 3),
+    )
+
+    assert application.exceeds_balance is False
+    assert application.total_hours == Decimal("16.000")
+    assert application.unpaid_hours == Decimal("16.000")
+    assert application.unpaid_days == Decimal("0")
+
+
+def test_sick_leave_withheld_for_want_of_a_certificate_is_counted_as_unpaid(
+    employee, engagement, leave_rules, sick_type, evidence_types, schedule_5day
+):
+    """Days basis: the unpaid portion lands in unpaid_days, in the
+    application's own unit, and unpaid_hours stays zero — nothing in leave/
+    converts a day into hours (D-164), and pricing a salaried day off the
+    hourly rate is the very disagreement D-106 exists to prevent."""
+    _grant_balance(employee, sick_type, quantity=Decimal("30.000"))
+
+    application = submit_application(
+        employee,
+        leave_type=sick_type,
+        start_date=MONDAY,
+        end_date=datetime.date(2026, 3, 6),  # 5 working days, no evidence
+    )
+
+    assert application.exceeds_balance is False
+    assert application.unpaid_days == Decimal("5.000")
+    assert application.unpaid_hours == Decimal("0")
+
+
+def _bare_application(employee, leave_type, **overrides):
+    fields = {
+        "tenant": employee.tenant,
+        "employee": employee,
+        "reference": "LV-TEST-1",
+        "leave_type": leave_type,
+        "start_date": MONDAY,
+        "end_date": MONDAY,
+    }
+    fields.update(overrides)
+    return LeaveApplication.objects.create(**fields)
+
+
+def test_unpaid_hours_cannot_be_negative(employee, engagement, annual_type):
+    from django.db import IntegrityError, transaction
+
+    with pytest.raises(IntegrityError) as raised:
+        with transaction.atomic(), tenant_context_of(employee):
+            _bare_application(
+                employee, annual_type, total_hours=Decimal("8"), unpaid_hours=Decimal("-1")
+            )
+    assert "leave_application_unpaid_hours_not_negative" in str(raised.value)
+
+
+def test_unpaid_hours_cannot_be_null(employee, engagement, annual_type):
+    """NOT NULL, so the >= 0 CHECK cannot be escaped by a NULL — which a CHECK
+    alone would treat as satisfied (CLAUDE.md, nullable constraints)."""
+    from django.db import IntegrityError, transaction
+
+    with pytest.raises(IntegrityError) as raised:
+        with transaction.atomic(), tenant_context_of(employee):
+            _bare_application(employee, annual_type, unpaid_hours=None)
+    assert 'null value in column "unpaid_hours"' in str(raised.value)
+
+
+def test_a_days_application_cannot_carry_unpaid_hours(employee, engagement, annual_type):
+    """total_hours IS NULL says the application is days-basis. Hours on it
+    would be a conversion somebody made — refused by the database."""
+    from django.db import IntegrityError, transaction
+
+    with pytest.raises(IntegrityError) as raised:
+        with transaction.atomic(), tenant_context_of(employee):
+            _bare_application(employee, annual_type, unpaid_hours=Decimal("8"))
+    assert "leave_application_unpaid_in_its_own_unit" in str(raised.value)
+
+
+def test_an_hours_application_cannot_carry_unpaid_days(employee, engagement, annual_type):
+    from django.db import IntegrityError, transaction
+
+    with pytest.raises(IntegrityError) as raised:
+        with transaction.atomic(), tenant_context_of(employee):
+            _bare_application(
+                employee, annual_type, total_hours=Decimal("8"), unpaid_days=Decimal("1")
+            )
+    assert "leave_application_unpaid_in_its_own_unit" in str(raised.value)
+
+
 def test_sick_leave_with_no_certificate_beyond_the_threshold_is_taken_and_unpaid(
     employee, engagement, leave_rules, sick_type, evidence_types, schedule_5day
 ):
