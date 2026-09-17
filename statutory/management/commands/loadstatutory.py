@@ -52,6 +52,29 @@ class Command(BaseCommand):
             help="Where the fixtures live. Only meaningful with --all.",
         )
         parser.add_argument(
+            "--supersede",
+            default="",
+            metavar="VERSION",
+            help=(
+                "Load this file as a RE-ENCODING of an already-loaded version: same "
+                "statutory facts, new citation or encoding, new version label. Refuses "
+                "if any figure differs. Nothing is deleted (O-21)."
+            ),
+        )
+        parser.add_argument(
+            "--reason",
+            default="",
+            help="Why the version is being re-encoded. Mandatory with --supersede.",
+        )
+        parser.add_argument(
+            "--supersede-verified",
+            action="store_true",
+            help=(
+                "Supersede even though the old version was VERIFIED. The new version is "
+                "unverified and must be verified again before payroll can use it."
+            ),
+        )
+        parser.add_argument(
             "--loaded-by",
             help="Email address of the person doing the load. Recorded on the version.",
         )
@@ -66,11 +89,26 @@ class Command(BaseCommand):
         if options["load_all"] == bool(options["fixture"]):
             raise CommandError("Give either a fixture path or --all, not both and not neither.")
 
+        if options["supersede"] and options["load_all"]:
+            raise CommandError(
+                "--supersede names one version being re-encoded, so it takes one file, not --all."
+            )
+        if options["reason"] and not options["supersede"]:
+            raise CommandError("--reason is only meaningful with --supersede.")
+
         try:
             if options["load_all"]:
                 reports = load_reference_directory(options["directory"], loaded_by=loaded_by)
             else:
-                reports = [load_reference_file(options["fixture"], loaded_by=loaded_by)]
+                reports = [
+                    load_reference_file(
+                        options["fixture"],
+                        loaded_by=loaded_by,
+                        supersede=options["supersede"],
+                        reason=options["reason"],
+                        supersede_verified=options["supersede_verified"],
+                    )
+                ]
         except ReferenceDataLoadError as exc:
             raise CommandError(f"Load refused. Nothing was written.\n\n{exc}") from exc
 

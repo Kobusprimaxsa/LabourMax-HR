@@ -262,8 +262,10 @@ class LoadReport:
     version_label: str
     created: dict[str, int] = field(default_factory=dict)
     unchanged: dict[str, int] = field(default_factory=dict)
+    updated: dict[str, int] = field(default_factory=dict)
     closed_periods: list[str] = field(default_factory=list)
     already_loaded: bool = False
+    superseded: str = ""
 
     @property
     def total_created(self) -> int:
@@ -281,6 +283,12 @@ class LoadReport:
                 out.append(f"  {table:<26} {created:>4} loaded, {unchanged:>4} already present")
         for line in self.closed_periods:
             out.append(f"  closed  {line}")
+        if self.superseded:
+            for table, count in self.updated.items():
+                out.append(f"  {table:<26} {count:>4} citation(s) re-encoded")
+            out.append(f"  Supersedes {self.superseded}, which is kept and stays readable.")
+            out.append("  NOT verified. A second person must run: manage.py verifystatutory")
+            return out
         out.append(f"  {self.total_created} rows loaded in total.")
         out.append("  NOT verified. A second person must run: manage.py verifystatutory")
         return out
@@ -370,6 +378,15 @@ def _differences(instance: models.Model, values: dict[str, Any]) -> list[str]:
             from decimal import Decimal
 
             comparable = Decimal(str(comparable))
+            # Numerically, not as text: 0 and 0.00 are the same FIGURE, and a
+            # fixture writing one where the column holds the other is not an
+            # edit. Comparing str() reported a figure change that was only a
+            # difference in trailing zeros - found by --supersede refusing a
+            # citation-only re-encoding of the notice bands (O-21).
+            if current is not None:
+                if Decimal(str(current)) != comparable:
+                    out.append(f"{name}: database has {current!r}, fixture has {comparable!r}")
+                continue
         if isinstance(field_object, (models.DateField, models.DateTimeField)) and isinstance(
             comparable, str
         ):
@@ -379,8 +396,84 @@ def _differences(instance: models.Model, values: dict[str, Any]) -> list[str]:
     return out
 
 
+#: Fields that carry the READING rather than the figure. A re-encoding may change
+#: these and nothing else — see ``supersede`` in ``load_reference_data``.
+PROSE_FIELDS = frozenset({"source_reference", "source_url", "notes"})
+
+
+class SupersedeRefusedError(ReferenceDataLoadError):
+    """The new file is not a re-encoding of the old version."""
+
+
+def _supersede_rows(document, *, old_label: str, report: LoadReport) -> list[tuple]:
+    """Check the new file against what is already loaded, and return the prose
+    updates to apply. Refuses on anything that is not prose.
+
+    A re-encoding says the same statutory facts differently. So every row in the
+    file must already exist (adding one is new data), every figure must match
+    (a changed figure is a new gazette and gets an ordinary load with its own
+    effective date), and only the citation, source URL and notes may differ.
+    """
+    figure_changes: list[str] = []
+    missing: list[str] = []
+    updates: list[tuple] = []
+
+    for table_name, spec in TABLES.items():
+        rows = document["tables"].get(table_name)
+        if not rows:
+            continue
+        for index, raw in enumerate(rows, start=1):
+            where = f"{table_name}[{index}]"
+            values = _resolve_references(spec, raw, where=where)
+            lookup = {}
+            for key in spec.natural_key:
+                if key in values:
+                    lookup[key] = values[key]
+                    continue
+                field_object = spec.model._meta.get_field(key)
+                if field_object.has_default():
+                    lookup[key] = field_object.get_default()
+                elif field_object.null:
+                    lookup[key] = None
+            existing = spec.model.objects.filter(**lookup).first()
+            if existing is None:
+                identity = ", ".join(f"{k}={v}" for k, v in lookup.items() if v is not None)
+                missing.append(f"  - {where}: {identity}")
+                continue
+
+            prose = {}
+            for difference in _differences(existing, values):
+                field_name = difference.split(":", 1)[0].strip()
+                if field_name in PROSE_FIELDS:
+                    prose[field_name] = values[field_name]
+                else:
+                    figure_changes.append(f"  - {where}.{difference}")
+            if prose:
+                updates.append((existing, prose))
+
+    if figure_changes:
+        raise SupersedeRefusedError(
+            f"--supersede {old_label} refused: a FIGURE changed, so this is not a "
+            f"re-encoding. A changed figure is a new gazette — load it as its own "
+            f"version with its own effective date:\n" + "\n".join(figure_changes)
+        )
+    if missing:
+        raise SupersedeRefusedError(
+            f"--supersede {old_label} refused: the file carries row(s) the database does "
+            f"not have, which is new data rather than a re-encoding:\n" + "\n".join(missing)
+        )
+    return updates
+
+
 @transaction.atomic
-def load_reference_data(document: dict[str, Any], *, loaded_by=None) -> LoadReport:
+def load_reference_data(
+    document: dict[str, Any],
+    *,
+    loaded_by=None,
+    supersede: str = "",
+    reason: str = "",
+    supersede_verified: bool = False,
+) -> LoadReport:
     """Load one reference data document. Refuses the whole file on any problem.
 
     Returns a report rather than printing one, so the management command, a test and
@@ -403,6 +496,30 @@ def load_reference_data(document: dict[str, Any], *, loaded_by=None) -> LoadRepo
 
     report = LoadReport(version_label=label)
 
+    superseded = None
+    if supersede:
+        if not reason.strip():
+            raise ReferenceDataLoadError(
+                "--supersede requires --reason: a re-encoding with no stated reason is "
+                "indistinguishable from an edit somebody made quietly."
+            )
+        superseded = ReferenceDataVersion.objects.filter(version_label=supersede).first()
+        if superseded is None:
+            raise ReferenceDataLoadError(f"No loaded version '{supersede}' to supersede.")
+        if superseded.verified_at is not None and not supersede_verified:
+            raise ReferenceDataLoadError(
+                f"Version '{supersede}' is VERIFIED (by "
+                f"{superseded.verified_by_user or 'somebody'} on "
+                f"{superseded.verified_at:%d %B %Y}). Superseding it silently un-verifies "
+                f"the data a payroll run was computed against. Pass --supersede-verified "
+                f"to do it deliberately; the version then needs verifying again."
+            )
+        if hasattr(superseded, "superseded_by"):
+            raise ReferenceDataLoadError(
+                f"Version '{supersede}' was already superseded by "
+                f"'{superseded.superseded_by.version_label}'."
+            )
+
     existing = ReferenceDataVersion.objects.filter(version_label=label).first()
     if existing is not None:
         if existing.checksum and existing.checksum != checksum:
@@ -412,6 +529,26 @@ def load_reference_data(document: dict[str, Any], *, loaded_by=None) -> LoadRepo
                 f"a new effective date instead."
             )
         report.already_loaded = True
+        return report
+
+    if superseded is not None:
+        # Checked BEFORE anything is written: a refusal writes nothing at all.
+        updates = _supersede_rows(document, old_label=supersede, report=report)
+        version = ReferenceDataVersion.objects.create(
+            version_label=label,
+            applies_from=applies_from,
+            description=document.get("description", ""),
+            checksum=checksum,
+            loaded_by_user=loaded_by,
+            supersedes=superseded,
+            supersede_reason=reason.strip(),
+        )
+        for row, prose in updates:
+            for field_name, value in prose.items():
+                setattr(row, field_name, value)
+            row.save(update_fields=[*prose, "updated_at"])
+            report.updated[row._meta.db_table] = report.updated.get(row._meta.db_table, 0) + 1
+        report.superseded = supersede
         return report
 
     version = ReferenceDataVersion.objects.create(
@@ -522,14 +659,27 @@ def _close_open_period(spec: TableSpec, identity: dict, *, closes_from, report) 
         report.closed_periods.append(f"{spec.model._meta.db_table}: {row} now ends {closes_from}")
 
 
-def load_reference_file(path: str | Path, *, loaded_by=None) -> LoadReport:
+def load_reference_file(
+    path: str | Path,
+    *,
+    loaded_by=None,
+    supersede: str = "",
+    reason: str = "",
+    supersede_verified: bool = False,
+) -> LoadReport:
     """Read a JSON fixture from disk and load it."""
     text = Path(path).read_text(encoding="utf-8")
     try:
         document = json.loads(text)
     except json.JSONDecodeError as exc:
         raise ReferenceDataLoadError(f"{path} is not valid JSON: {exc}") from exc
-    return load_reference_data(document, loaded_by=loaded_by)
+    return load_reference_data(
+        document,
+        loaded_by=loaded_by,
+        supersede=supersede,
+        reason=reason,
+        supersede_verified=supersede_verified,
+    )
 
 
 def load_reference_directory(directory: str | Path | None = None, *, loaded_by=None):

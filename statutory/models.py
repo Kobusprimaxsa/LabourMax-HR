@@ -154,6 +154,23 @@ class ReferenceDataVersion(AuditedModel, AuditMixin):
     """
 
     version_label = models.CharField(max_length=40, unique=True, help_text="e.g. 'REF-2026.03.01'.")
+    # A RE-ENCODING is a new version of the FILE, not a new gazette (O-21). The
+    # superseded row is kept and stays readable: "what was in force in March 2026"
+    # and "which version of the file is current" are different questions, and a
+    # 2029 re-run needs the first one answered. The reason is mandatory, held to
+    # the column by the CHECK pair below, because a supersede with no stated
+    # reason is indistinguishable from an edit somebody made quietly.
+    supersedes = models.OneToOneField(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="superseded_by",
+        help_text="The version this one re-encodes. Never a figure change - see the loader.",
+    )
+    supersede_reason = models.TextField(
+        blank=True, help_text="Why it was re-encoded. Mandatory when superseding."
+    )
     applies_from = models.DateField(db_index=True)
     description = models.TextField(blank=True, help_text="What changed, and why.")
 
@@ -216,6 +233,14 @@ class ReferenceDataVersion(AuditedModel, AuditMixin):
                 | models.Q(verified_at__isnull=False, verified_by_user__isnull=False),
                 name="ref_version_verified_by_and_at_together",
             ),
+            models.CheckConstraint(
+                condition=models.Q(supersedes__isnull=True) | ~models.Q(supersede_reason=""),
+                name="ref_version_supersede_states_its_reason",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(supersedes__isnull=False) | models.Q(supersede_reason=""),
+                name="ref_version_reason_only_when_superseding",
+            ),
         ]
 
     def __str__(self):
@@ -243,6 +268,7 @@ class ReferenceDataVersion(AuditedModel, AuditMixin):
                 applies_from__lte=on_date,
                 verified_at__isnull=False,
                 golden_tests_passed=True,
+                superseded_by__isnull=True,  # a re-encoded version is not the current one
             )
             .order_by("-applies_from", "-id")
             .first()
