@@ -252,6 +252,24 @@ def test_a_tenant_cannot_delete_a_shared_leave_type(tenant, annual):
         LeaveType.all_tenants.filter(pk=annual.pk).delete()
 
 
+def test_a_leave_type_in_use_cannot_be_deleted(employee, tenant):
+    """RESTORED (D-191). PROTECT, per the conventions table: a grant pointing at
+    nothing is unreadable. The employer's OWN type, so the shared-row lock above
+    cannot be what refuses it."""
+    from django.db.models import ProtectedError
+
+    with tenant_context(tenant.pk):
+        birthday = LeaveType.objects.create(tenant=tenant, code="BIRTHDAY", name="Birthday leave")
+    make_entitlement(employee, birthday, additional_days_per_cycle=Decimal("1.000"))
+
+    with tenant_context(tenant.pk):
+        with pytest.raises(ProtectedError) as raised, transaction.atomic():
+            birthday.delete()
+        assert LeaveType.objects.filter(pk=birthday.pk).exists()
+
+    assert "EmployeeLeaveEntitlement.leave_type" in str(raised.value)
+
+
 # --------------------------------------------------------- leave entitlements
 
 
@@ -530,6 +548,110 @@ def test_two_different_components_may_run_together(employee, tenant, source_code
         assert EmployeeRecurringComponent.objects.filter(employee=employee).count() == 2
 
 
+def test_a_standing_deduction_carries_its_terms(employee, tenant):
+    """RESTORED (D-191). The positive case the refusals around it surround: a
+    consented deduction with its amount, its loan balance and its per-component
+    cap is captured whole and reads back exactly."""
+    from core.models import FileObject
+
+    loan = make_component(tenant, "ADVANCE", PayrollComponent.ComponentType.DEDUCTION)
+    with tenant_context(tenant.pk):
+        consent = FileObject.objects.create(
+            tenant=tenant,
+            storage_key="consent/advance-signed",
+            original_filename="advance-consent.pdf",
+            content_type="application/pdf",
+            size_bytes=10,
+            checksum_sha256="0" * 64,
+            scan_status=FileObject.ScanStatus.CLEAN,
+        )
+        row = EmployeeRecurringComponent(
+            tenant=tenant,
+            employee=employee,
+            payroll_component=loan,
+            effective_from=START,
+            amount=Decimal("450.0000"),
+            balance_outstanding=Decimal("2700.00"),
+            total_deduction_cap_pct=Decimal("25.00"),
+            written_consent_file=consent,
+        )
+        row.full_clean()
+        row.save()
+        stored = EmployeeRecurringComponent.objects.get(pk=row.pk)
+
+    assert stored.amount == Decimal("450.0000")
+    assert stored.balance_outstanding == Decimal("2700.00")
+    assert stored.total_deduction_cap_pct == Decimal("25.00")
+    assert stored.written_consent_file_id == consent.pk
+
+
+def test_a_statutory_component_cannot_carry_a_standing_amount(employee, tenant):
+    """RESTORED (D-191). PAYE is computed from the tables; a captured figure is
+    meaningless, and a payroll run would have to guess which one wins. Stated
+    against the calculation method, not a list of codes, so it keeps holding as
+    the catalogue grows. A zero line (test_a_statutory_deduction_needs_no_consent)
+    carries no figure and stays legal."""
+    paye = make_component(
+        tenant,
+        "PAYE",
+        PayrollComponent.ComponentType.DEDUCTION,
+        method=PayrollComponent.CalculationMethod.STATUTORY,
+    )
+    for figures in (
+        {"amount": Decimal("500.0000")},
+        {"amount": None, "percentage_of_basic": Decimal("18.0000")},
+    ):
+        with tenant_context(employee.tenant_id):
+            row = EmployeeRecurringComponent(
+                tenant=employee.tenant,
+                employee=employee,
+                payroll_component=paye,
+                effective_from=START,
+                **figures,
+            )
+            with pytest.raises(ValidationError) as raised:
+                row.full_clean()
+        message = str(raised.value)
+        assert "PAYE is statutory" in message, message
+        assert "computed from reference data" in message, message
+
+
+def test_a_fixed_component_needs_an_amount_not_a_percentage(employee, tenant, source_code):
+    """RESTORED (D-191). A FIXED component is a rand figure; a percentage on it is
+    a figure the component's own method says nothing will read."""
+    allowance = make_component(
+        tenant, "TRANSPORT", PayrollComponent.ComponentType.EARNING, source_code=source_code
+    )
+    with tenant_context(employee.tenant_id):
+        row = EmployeeRecurringComponent(
+            tenant=employee.tenant,
+            employee=employee,
+            payroll_component=allowance,
+            effective_from=START,
+            percentage_of_basic=Decimal("10.0000"),
+        )
+        with pytest.raises(ValidationError) as raised:
+            row.full_clean()
+
+    message = str(raised.value)
+    assert "TRANSPORT is a fixed amount" in message, message
+
+
+def test_a_percentage_is_a_percentage(employee, tenant):
+    """RESTORED (D-191). More than 100 percent of basic is not a line, it is a
+    typo - 150 captured for 1.50 - and on a deduction it takes more than the wage."""
+    union = make_component(
+        tenant,
+        "UNION_FEE",
+        PayrollComponent.ComponentType.DEDUCTION,
+        method=PayrollComponent.CalculationMethod.PERCENTAGE_OF_BASE,
+    )
+    with pytest.raises(IntegrityError) as raised, transaction.atomic():
+        make_recurring(employee, union, amount=None, percentage_of_basic=Decimal("150.0000"))
+
+    assert "recurring_component_percentage_is_a_percentage" in str(raised.value)
+
+
 # ------------------------------------------------------------------ file notes
 
 
@@ -590,3 +712,43 @@ def test_notes_read_newest_first(employee):
         )
 
     assert dates == sorted(dates, reverse=True)
+
+
+def test_a_note_cannot_be_dated_in_the_future(employee):
+    """RESTORED (D-191). A note is evidence of what was thought at the time; one
+    dated tomorrow records something that has not happened. Safe in a CHECK in
+    this direction only, for the reason date_of_birth's is: as time passes a
+    stored row stays valid. "Today" is South African time, which is how the
+    employer reads a date, so a note written after midnight SAST is not refused
+    while UTC is still on yesterday."""
+    from zoneinfo import ZoneInfo
+
+    from django.utils import timezone as dj_timezone
+
+    today_sast = dj_timezone.now().astimezone(ZoneInfo("Africa/Johannesburg")).date()
+    with tenant_context(employee.tenant_id):
+        EmployeeNote.objects.create(
+            tenant=employee.tenant, employee=employee, note_date=today_sast, body="Today."
+        )
+    with pytest.raises(IntegrityError) as raised, transaction.atomic():
+        with tenant_context(employee.tenant_id):
+            EmployeeNote.objects.create(
+                tenant=employee.tenant,
+                employee=employee,
+                note_date=today_sast + datetime.timedelta(days=1),
+                body="Tomorrow.",
+            )
+
+    assert "employee_note_not_dated_in_the_future" in str(raised.value)
+
+
+def test_an_unknown_category_is_refused(employee):
+    """RESTORED (D-191). TextChoices alone is a form-level list; the CHECK is what
+    stops raw SQL or an importer writing a category nothing can display."""
+    with pytest.raises(IntegrityError) as raised, transaction.atomic():
+        with tenant_context(employee.tenant_id):
+            EmployeeNote.objects.create(
+                tenant=employee.tenant, employee=employee, category="something", body="Something."
+            )
+
+    assert "employee_note_category_is_known" in str(raised.value)

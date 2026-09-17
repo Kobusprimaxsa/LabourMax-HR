@@ -1728,6 +1728,14 @@ class EmployeeRecurringComponent(AuditedModel, TenantScopedModel):
                 | models.Q(percentage_of_basic__gte=0),
                 name="recurring_component_percentage_is_not_negative",
             ),
+            # D-191. More than 100 percent of basic is a typo (150 for 1.50), and
+            # on a deduction it takes more than the wage. The IS NULL branch says
+            # what NULL means: an amount-only line.
+            models.CheckConstraint(
+                condition=models.Q(percentage_of_basic__isnull=True)
+                | models.Q(percentage_of_basic__lte=100),
+                name="recurring_component_percentage_is_a_percentage",
+            ),
             models.CheckConstraint(
                 condition=models.Q(balance_outstanding__isnull=True)
                 | models.Q(balance_outstanding__gte=0),
@@ -1792,6 +1800,32 @@ class EmployeeRecurringComponent(AuditedModel, TenantScopedModel):
             return
 
         is_deduction = component.component_type == component.ComponentType.DEDUCTION
+        method = component.calculation_method
+
+        # D-191. A statutory component's figure is computed from reference data;
+        # a standing figure on the line is one the payroll run would have to
+        # choose against. Stated against the method, never a list of codes. A
+        # zero amount carries no figure and stays legal.
+        if method == component.CalculationMethod.STATUTORY and (
+            (self.amount is not None and self.amount != 0) or self.percentage_of_basic is not None
+        ):
+            raise ValidationError(
+                f"{component.code} is statutory: its figure is computed from reference data, "
+                "so a recurring line may not carry a standing amount or percentage."
+            )
+
+        # D-191. The component's own method says how its figure is read; a
+        # percentage on a FIXED component is a figure nothing will read.
+        if method == component.CalculationMethod.FIXED and self.percentage_of_basic is not None:
+            raise ValidationError(
+                {
+                    "percentage_of_basic": (
+                        f"{component.code} is a fixed amount: give the line an amount, not a "
+                        "percentage of basic. A percentage needs a component whose calculation "
+                        "method is percentage of a base."
+                    )
+                }
+            )
 
         # BCEA s34(1) permits a deduction without consent only where a law, court
         # order, arbitration award or collective agreement requires it. There is no
@@ -1883,6 +1917,20 @@ class EmployeeNote(AuditedModel, TenantScopedModel):
             ),
             models.CheckConstraint(
                 condition=~models.Q(body=""), name="employee_note_body_is_not_empty"
+            ),
+            # D-191. A note is evidence of what was thought at the time. Safe in a
+            # CHECK in this direction only, as employee_born_before_today is: as
+            # time passes a stored row stays valid. "Today" is SAST — how the
+            # employer reads a date — not the UTC session's date.
+            models.CheckConstraint(
+                condition=models.Q(
+                    note_date__lte=models.Func(
+                        Now(),
+                        template="(%(expressions)s AT TIME ZONE 'Africa/Johannesburg')::date",
+                        output_field=models.DateField(),
+                    )
+                ),
+                name="employee_note_not_dated_in_the_future",
             ),
         ]
 
