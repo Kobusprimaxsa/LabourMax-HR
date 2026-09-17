@@ -111,15 +111,33 @@ def test_an_overdrawn_hours_day_is_unpaid_in_full_and_charges_the_balance_nothin
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "D-193, awaiting Kobus: ANNUAL_UNAUTHORISED is seeded is_paid=False AND draws "
-        "on the ANNUAL balance (D-127, D-180), so an unauthorised absence is unpaid "
-        "AND spends earned annual leave. strict: this fails loudly once fixed."
-    ),
-)
-def test_an_unauthorised_absence_is_not_both_unpaid_and_charged_to_annual_leave(
+def _elect(employee, value):
+    from employers.models import EmployerSetting
+
+    with tenant_context(employee.tenant_id):
+        EmployerSetting.objects.create(
+            tenant=employee.tenant,
+            employer=employee.employer,
+            setting_key="UNAUTHORISED_ABSENCE_TREATMENT",
+            value_type=EmployerSetting.ValueType.TEXT,
+            value_text=value,
+            set_by_employer=True,
+        )
+
+
+def _unauthorised_day(employee, annual_type, annual_unauthorised_type, owner, held):
+    cycle = _hold(employee, annual_type, held, LeaveCycle.Unit.DAYS)
+    application = submit_application(
+        employee, leave_type=annual_unauthorised_type, start_date=MONDAY, end_date=MONDAY
+    )
+    approve(application, decided_by=owner)
+    with tenant_context(employee.tenant_id):
+        balance = recompute_cycle(cycle).balance_quantity
+        day = application.days.get()
+    return application, day, balance
+
+
+def test_by_default_an_unauthorised_absence_is_unpaid_and_charges_nothing(
     employee,
     engagement,
     minimum_age,
@@ -130,17 +148,126 @@ def test_an_unauthorised_absence_is_not_both_unpaid_and_charged_to_annual_leave(
     owner,
     working_time_rules,
 ):
-    cycle = _hold(employee, annual_type, "15.000", LeaveCycle.Unit.DAYS)
+    """D-195, the default election (`unpaid`): no work, no pay — and no earned
+    annual leave spent without the employee's agreement. Was D-193's defect:
+    unpaid AND charged, balance 14."""
+    application, day, balance = _unauthorised_day(
+        employee, annual_type, annual_unauthorised_type, owner, "15.000"
+    )
 
+    assert day.is_paid is False
+    assert day.deducted_from_balance is False
+    assert application.unpaid_days == Decimal("1.000")
+    assert _taken(application) == [], "unpaid: no TAKEN row"
+    assert balance == Decimal("15.000"), f"charged AND unpaid: balance {balance}"
+
+
+def test_an_employer_may_elect_to_charge_an_unauthorised_absence_to_annual_leave_and_pay_it(
+    employee,
+    engagement,
+    minimum_age,
+    leave_rules,
+    annual_type,
+    annual_unauthorised_type,
+    schedule_5day,
+    owner,
+    working_time_rules,
+):
+    """D-195, `annual_leave`: the day is annual leave — spent from the balance
+    AND paid. Never one without the other."""
+    _elect(employee, "annual_leave")
+    application, day, balance = _unauthorised_day(
+        employee, annual_type, annual_unauthorised_type, owner, "15.000"
+    )
+
+    assert day.is_paid is True
+    assert day.deducted_from_balance is True
+    assert application.unpaid_days == Decimal("0")
+    assert [t.days for t in _taken(application)] == [Decimal("-1.000")]
+    assert balance == Decimal("14.000")
+
+
+def test_charged_to_annual_leave_with_nothing_held_falls_unpaid_and_charges_nothing(
+    employee,
+    engagement,
+    minimum_age,
+    leave_rules,
+    annual_type,
+    annual_unauthorised_type,
+    schedule_5day,
+    owner,
+    working_time_rules,
+):
+    """The `annual_leave` election cannot pay leave that is not there: with no
+    balance the day falls to unpaid exactly as an ordinary overdraw does
+    (D-188) — unpaid, and the balance is not driven negative."""
+    _elect(employee, "annual_leave")
+    application, day, balance = _unauthorised_day(
+        employee, annual_type, annual_unauthorised_type, owner, "0.500"
+    )
+
+    assert application.exceeds_balance is True
+    assert day.is_paid is False
+    assert day.deducted_from_balance is False
+    assert application.unpaid_days == Decimal("1.000")
+    assert _taken(application) == []
+    assert balance == Decimal("0.500")
+
+
+def test_the_election_is_frozen_on_the_application_when_it_is_submitted(
+    employee,
+    engagement,
+    minimum_age,
+    leave_rules,
+    annual_type,
+    annual_unauthorised_type,
+    schedule_5day,
+    owner,
+    working_time_rules,
+):
+    """Changing the setting after submission must not rewrite an absence
+    already recorded: the treatment lives on the application's day rows."""
+    from employers.models import EmployerSetting
+
+    cycle = _hold(employee, annual_type, "15.000", LeaveCycle.Unit.DAYS)
     application = submit_application(
         employee, leave_type=annual_unauthorised_type, start_date=MONDAY, end_date=MONDAY
     )
+    _elect(employee, "annual_leave")
     approve(application, decided_by=owner)
 
     with tenant_context(employee.tenant_id):
         balance = recompute_cycle(cycle).balance_quantity
+        assert EmployerSetting.objects.get(setting_key="UNAUTHORISED_ABSENCE_TREATMENT")
     assert application.unpaid_days == Decimal("1.000")
-    assert balance == Decimal("15.000"), f"charged AND unpaid: balance {balance}"
+    assert balance == Decimal("15.000")
+
+
+def test_an_unknown_treatment_is_refused_by_name_not_guessed(
+    employee,
+    engagement,
+    minimum_age,
+    leave_rules,
+    annual_type,
+    annual_unauthorised_type,
+    schedule_5day,
+    working_time_rules,
+):
+    """A stored value outside the choices must not silently fall back to the
+    default — that would be the default_sort() shape again."""
+    from employers.onboarding import SettingValueError
+
+    _hold(employee, annual_type, "15.000", LeaveCycle.Unit.DAYS)
+    _elect(employee, "sometimes")
+
+    with pytest.raises(SettingValueError) as raised:
+        submit_application(
+            employee, leave_type=annual_unauthorised_type, start_date=MONDAY, end_date=MONDAY
+        )
+    message = str(raised.value)
+    assert "UNAUTHORISED_ABSENCE_TREATMENT" in message, message
+    assert "'sometimes'" in message, message
+    assert "annual_leave, unpaid" in message, message
 
 
 @pytest.mark.xfail(

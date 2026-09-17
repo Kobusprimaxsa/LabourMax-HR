@@ -223,6 +223,18 @@ def submit_application(
         method, _entitlement = accrual_method_for(employee, leave_type, start_date)
         unit = unit_for_method(method)
 
+        # D-195. An unauthorised absence is EITHER unpaid and uncharged (the
+        # default) OR annual leave, charged and paid — the employer's election,
+        # fixed into the day rows here so a later change cannot rewrite it.
+        # Never both unpaid and charged (D-193). Keyed on the system row.
+        unauthorised_treatment = None
+        if leave_type.is_system and leave_type.code == LeaveType.Code.ANNUAL_UNAUTHORISED:
+            from employers.onboarding import setting_value
+
+            unauthorised_treatment = setting_value(
+                employee.employer, "UNAUTHORISED_ABSENCE_TREATMENT"
+            )
+
         ensure_cycles(employee, leave_type, horizon=start_date)
         from leave.balances import balance_as_at
 
@@ -239,6 +251,12 @@ def submit_application(
         )
 
         quantity_field = "day_portion" if unit == LeaveCycle.Unit.DAYS else "hours"
+
+        if unauthorised_treatment == "unpaid":
+            for day_dict in day_dicts:
+                if day_dict["is_working_day"]:
+                    day_dict["is_paid"] = False
+                    day_dict["deducted_from_balance"] = False
         requested = sum((d[quantity_field] for d in day_dicts if d["deducted_from_balance"]), ZERO)
 
         exceeds_balance = requested > available
@@ -268,7 +286,7 @@ def submit_application(
             for day_dict in day_dicts:
                 if day_dict["is_working_day"]:
                     day_dict["is_paid"] = False
-        elif not leave_type.is_paid:
+        elif not leave_type.is_paid and unauthorised_treatment != "annual_leave":
             for day_dict in day_dicts:
                 if day_dict["is_working_day"] and day_dict["deducted_from_balance"]:
                     day_dict["is_paid"] = False

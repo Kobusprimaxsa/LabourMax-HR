@@ -39,6 +39,9 @@ class SettingDefinition:
     description: str
     default: object
     by_sector: dict[str, object] | None = None
+    # For a TEXT setting that is one of a fixed set. A stored value outside it
+    # is refused by setting_value(), never silently replaced by the default.
+    choices: tuple[str, ...] | None = None
 
     def default_for(self, sector_code: str):
         if self.by_sector and sector_code in self.by_sector:
@@ -108,6 +111,20 @@ SETTING_DEFINITIONS: list[SettingDefinition] = [
         default=True,
     ),
     SettingDefinition(
+        key="UNAUTHORISED_ABSENCE_TREATMENT",
+        value_type=EmployerSetting.ValueType.TEXT,
+        description=(
+            "How an absence recorded as unauthorised annual leave is treated (D-195). "
+            "'unpaid' (the default): no work, no pay, and no annual leave spent. "
+            "'annual_leave': the day is taken as annual leave - charged to the balance "
+            "AND paid; if the balance cannot cover it, it falls unpaid and uncharged like "
+            "any overdraw. Never both unpaid and charged (D-193). Fixed on the application "
+            "when it is submitted."
+        ),
+        default="unpaid",
+        choices=("annual_leave", "unpaid"),
+    ),
+    SettingDefinition(
         key="GROUP_HEADER_MINIMUM",
         value_type=EmployerSetting.ValueType.NUMERIC,
         description=(
@@ -165,6 +182,10 @@ def seed_settings_for(employer) -> list[EmployerSetting]:
     return created
 
 
+class SettingValueError(ValueError):
+    """A stored setting value is outside the setting's registered choices."""
+
+
 def setting_value(employer, key: str):
     """One setting's value, or the registry default if the row is missing.
 
@@ -184,4 +205,10 @@ def setting_value(employer, key: str):
         row = EmployerSetting.objects.filter(employer=employer, setting_key=key).first()
     if row is None:
         return definition.default_for(employer.sector.code)
+    if definition.choices is not None and row.value not in definition.choices:
+        raise SettingValueError(
+            f"{key} for {employer} is {row.value!r}, which is not one of: "
+            f"{', '.join(definition.choices)}. Refused rather than falling back to the "
+            f"default, which would silently apply a treatment nobody chose."
+        )
     return row.value

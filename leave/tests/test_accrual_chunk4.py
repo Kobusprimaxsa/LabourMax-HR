@@ -643,7 +643,20 @@ def test_unauthorised_annual_leave_reduces_the_annual_balance(
     owner_user,
     owner_membership,
 ):
+    # D-195: the balance is charged only when the employer has elected to treat
+    # an unauthorised absence as annual leave — and then the day is PAID too.
+    # The default, `unpaid`, charges nothing (test_unpaid_days_are_not_charged).
+    from employers.models import EmployerSetting
+
     with tenant_context_of(employee):
+        EmployerSetting.objects.create(
+            tenant=employee.tenant,
+            employer=employer,
+            setting_key="UNAUTHORISED_ABSENCE_TREATMENT",
+            value_type=EmployerSetting.ValueType.TEXT,
+            value_text="annual_leave",
+            set_by_employer=True,
+        )
         annual_cycle = ensure_cycles(employee, annual_type, horizon=MONDAY)[0]
         post_transaction(
             employee=employee,
@@ -682,6 +695,8 @@ def test_unauthorised_annual_leave_reduces_the_annual_balance(
         "even though it posts against ANNUAL's cycle."
     )
     assert taken_txn.leave_cycle_id == annual_cycle.pk
+    with tenant_context_of(employee):
+        assert application.days.get().is_paid is True, "charged to annual leave, so paid"
 
 
 # --------------------------------------------------------- negative balances
