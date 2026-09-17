@@ -1,5 +1,5 @@
 {
-  "version_label": "REF-2026.03.01-NOTICE-BANDS-2",
+  "version_label": "REF-2026.03.01-NOTICE-BANDS-3",
   "applies_from": "2026-03-01",
   "description": "termination_notice_band (D-68, D-158 corrected): the BCEA default and the domestic sector's SD7 override, carried over unchanged from termination_rule_set's retired notice_weeks_* columns; SD1's own two-band notice regime, clause 23(1); and per-boundary inclusivity read from each statute's own wording rather than a single global convention. NOT verified.",
   "tables": {
@@ -53,7 +53,7 @@
         "sector": "DOMESTIC",
         "effective_from": "2026-03-01",
         "sequence": 1,
-        "source_reference": "Sectoral Determination 7: Domestic Worker Sector, published in Regulation Gazette No. 7434 (consolidated text), read with Basic Conditions of Employment Act 75 of 1997 s37(1)(c)",
+        "source_reference": "Sectoral Determination 7: Domestic Worker Sector, published in Regulation Gazette No. 7434 (consolidated text), read with Basic Conditions of Employment Act 75 of 1997 s37(1)(c); SD7 clause 24(1)(a)",
         "notes": "Carried over from termination_rule_set.notice_weeks_* (D-68) — the same figure, the same citation, now with its own unit instead of an implied week. Upper boundary INCLUSIVE, same reading as the BCEA default's own band 1 — six months or less is one week regardless of sector. service_from/service_to touch the adjacent band exactly, in the same unit both sides, by construction — the reconciliation check in statutory/checks.py relies on that rather than converting between units.",
         "service_from_value": "0",
         "service_from_unit": "months",
@@ -68,7 +68,7 @@
         "sector": "DOMESTIC",
         "effective_from": "2026-03-01",
         "sequence": 2,
-        "source_reference": "Sectoral Determination 7: Domestic Worker Sector, published in Regulation Gazette No. 7434 (consolidated text), read with Basic Conditions of Employment Act 75 of 1997 s37(1)(c)",
+        "source_reference": "Sectoral Determination 7: Domestic Worker Sector, published in Regulation Gazette No. 7434 (consolidated text), read with Basic Conditions of Employment Act 75 of 1997 s37(1)(c); SD7 clause 24(1)(b)",
         "notes": "Carried over from termination_rule_set.notice_weeks_* (D-68) — the same figure, the same citation, now with its own unit instead of an implied week. BCEA s37(1)(c)(ii): four weeks for a domestic worker employed for MORE THAN six months — exclusive, unlike the ordinary s37(1)(c)(i) one-year mark, because this clause states its own threshold at six months with no companion clause contesting it. SD7's 6-months-and-over and over-1-year columns held the same figure (4 weeks), so this is one open-ended band rather than a redundant third one with no real boundary.",
         "service_from_value": "6",
         "service_from_unit": "months",

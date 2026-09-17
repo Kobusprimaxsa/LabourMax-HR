@@ -1,5 +1,5 @@
 {
-  "version_label": "REF-2026.03.01-RULES",
+  "version_label": "REF-2026.03.01-RULES-r2",
   "applies_from": "2026-03-01",
   "description": "Sector rule sets: the BCEA default and the domestic sector's Sectoral Determination 7 overrides, for leave, working time and termination. Contract cleaning is deliberately absent - SD1 has not been read. Researched 13 September 2026. NOT verified.",
   "tables": {

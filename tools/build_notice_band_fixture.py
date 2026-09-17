@@ -49,6 +49,15 @@ SD7 = (
     "Gazette No. 7434 (consolidated text), read with Basic Conditions of Employment "
     "Act 75 of 1997 s37(1)(c)"
 )
+# The clause itself, added in P6 chunk 5's audit: SD7 clause 24(1) states the
+# domestic notice regime — "(a) one week, if the domestic worker has been employed
+# for six months or less; (b) four weeks, if the domestic worker has been employed
+# for more than six months" — read from the gazette body (GN R.1068, GG 23732,
+# 15 August 2002, clause 24). The bands previously cited the determination as a
+# whole and the Act's s37(1)(c), which is the same rule but not a clause anybody
+# can turn to, unlike the SD1 bands beside them citing clause 23(1).
+SD7_BAND_1 = f"{SD7}; SD7 clause 24(1)(a)"
+SD7_BAND_2 = f"{SD7}; SD7 clause 24(1)(b)"
 SD1 = (
     "Sectoral Determination 1: Contract Cleaning Sector, current consolidated text "
     "(clauses 3, 8-24)"
@@ -102,7 +111,7 @@ def band(
 
 
 DOCUMENT = {
-    "version_label": "REF-2026.03.01-NOTICE-BANDS-2",
+    "version_label": "REF-2026.03.01-NOTICE-BANDS-3",
     "applies_from": "2026-03-01",
     "description": (
         "termination_notice_band (D-68, D-158 corrected): the BCEA default and the "
@@ -178,7 +187,7 @@ DOCUMENT = {
             band(
                 sequence=1,
                 sector="DOMESTIC",
-                source=SD7,
+                source=SD7_BAND_1,
                 from_value="0",
                 from_unit="months",
                 from_inclusive=True,
@@ -196,7 +205,7 @@ DOCUMENT = {
             band(
                 sequence=2,
                 sector="DOMESTIC",
-                source=SD7,
+                source=SD7_BAND_2,
                 from_value="6",
                 from_unit="months",
                 from_inclusive=False,  # band 1 already claims exactly six months.

@@ -230,7 +230,7 @@ def termination_rules(
 
 
 DOCUMENT = {
-    "version_label": "REF-2026.03.01-RULES",
+    "version_label": "REF-2026.03.01-RULES-r2",
     "applies_from": "2026-03-01",
     "description": (
         "Sector rule sets: the BCEA default and the domestic sector's Sectoral "
@@ -324,7 +324,7 @@ SD1 = (
 SD1_URL = "https://www.acts.co.za/basic/sd1_nr622_3__remuneration.php"
 
 DOCUMENT_SD1 = {
-    "version_label": "REF-2026.03.01-SD1",
+    "version_label": "REF-2026.03.01-SD1-r2",
     "applies_from": "2026-03-01",
     "description": (
         "Contract cleaning sector rule sets from Sectoral Determination 1, clauses 3 "
