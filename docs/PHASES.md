@@ -408,8 +408,8 @@ wrong the first time.
 - **`ANNUAL_UNAUTHORISED` is resolved** (chunk 4, D-180) and its unpaid hours are captured
   (D-188), but the property test does not generate it; `test_accrual_chunk4.py` and
   `test_applications.py` do.
-- **`ACCOM_DED` percentages are not yet checked against the gazetted ceiling at capture**
-  (D-197); the s34 total belongs to the P7 payroll run.
+- **`ACCOM_DED` is checked against the gazetted ceiling at capture (D-198), but a line is not
+  re-checked when a later gazette lowers it**; that, and the s34 total, belong to P7.
 - **Part-day overdraw** — see `unpaid_hours` above: whole days only.
 - **SD7 clause 21(1) is verified against the 2002 gazette, not a current consolidation**
   (D-194). No consolidated SD7 could be read; confirming no amendment since is queued for
