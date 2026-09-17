@@ -369,10 +369,11 @@ with no drift. **Chunk 4 does NOT meet this in full, and the reason is not drift
 ledger reconciles — PROVEN below for ANNUAL, SICK and FAMILY_RESPONSIBILITY (not MATERNITY,
 PARENTAL or ADOPTION, which have no accrual until chunk 5). But reconciliation only proves
 the balance equals what was posted, not that what was posted is right, and D-193 found two
-paths that post a deduction they should not: an unauthorised absence and uncertified sick
-leave are each unpaid AND charged to the balance. Both are pinned by strict-xfail tests
-and wait on a decision (Kobus; O-06 for sick leave). Until those are decided, a balance can
-reconcile perfectly and still be wrong for those two cases.
+paths that posted a deduction they should not, each unpaid AND charged. The unauthorised
+absence is RESOLVED by an employer election (D-195): unpaid and uncharged by default, or
+charged to annual leave and paid. Uncertified sick leave is STILL OPEN — pinned by a
+strict-xfail test and waiting on the labour law review (O-06). Until it is decided, a sick
+balance can reconcile perfectly and still be wrong for that case.
 `leave/tests/test_reconciliation_property.py` (Hypothesis) generates random sequences — up
 to 16 actions, any of the three leave types, DAYS or HOURS, either s22(4) election — of
 manual accruals, adjustments, applications approved and cancelled (full and part day),
@@ -409,7 +410,8 @@ wrong the first time.
 - **`ANNUAL_UNAUTHORISED` is resolved** (chunk 4, D-180) and its unpaid hours are captured
   (D-188), but the property test does not generate it; `test_accrual_chunk4.py` and
   `test_applications.py` do.
-- **Unpaid AND charged — D-193, open.** See the done-clause above.
+- **Uncertified sick leave, unpaid AND charged — D-193, open.** See the done-clause above.
+- **`UNAUTHORISED_ABSENCE_TREATMENT=annual_leave` rests on a legal question** queued for O-06: whether an employer may designate the absence as annual leave without agreement (D-195).
 - **Part-day overdraw** — see `unpaid_hours` above: whole days only.
 - **SD7 clause 21(1) is verified against the 2002 gazette, not a current consolidation**
   (D-194). No consolidated SD7 could be read; confirming no amendment since is queued for
