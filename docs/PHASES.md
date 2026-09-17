@@ -250,7 +250,7 @@ completed prerequisite, not the outcome the "Done when" clause actually asks for
 
 ---
 
-## P6 — Leave Management · 5 weeks · 8 tables — chunk 4 of 5 done
+## P6 — Leave Management · 5 weeks · 8 tables — chunk 4 of 5 done (with 4b, 4c); chunk 5 not started
 
 **Chunks 1 to 4 done** (15 September 2026): the catalogue, cycles, the ledger, the
 accrual engine (now ANNUAL, SICK and FAMILY_RESPONSIBILITY), evidence, applications,
@@ -259,10 +259,15 @@ holiday observance, the negative balance report, and `ANNUAL_UNAUTHORISED`'s par
 balance. **Chunk 4b** (16 September 2026, D-186 to D-190): s22(4) as an employer election,
 the statutory data commands in CI, `unpaid_hours`, s27(1) eligibility enforced, and the
 property test extended through the real engine to SICK and FAMILY_RESPONSIBILITY — where it
-found two defects, both fixed. See the P6 section of CLAUDE.md and D-162 to D-190 for the
-detail. **Chunk 5 —
-maternity, parental leave under the Van Wyk interim reading, and adoption — is not yet
-started.** Read the honest "Done when" assessment at the bottom of this section before
+found two defects, both fixed. **Chunk 4c** (17 September 2026, D-191 to D-194): seven
+tests lost to a parallel session restored with the four guards they needed; a statutory
+accrual method refused at capture by trigger; the overdraw proven to retain held leave, and
+two other unpaid paths raised as defects awaiting decision (D-193); SD7 and SD1 read from
+the clause text. See the P6 section of CLAUDE.md and D-162 to D-194 for the detail.
+
+**Chunk 5 is NOT started:** maternity leave, parental leave under the interim reading in
+*Van Wyk and Others v Minister of Employment and Labour* [2025] ZACC 20, and adoption leave.
+`AccrualNotSupportedError` names the gap for all three. Read the honest "Done when" assessment at the bottom of this section before
 treating any part of the phase as fully proven — it is not, in specific and stated ways,
 and the property test's own findings (D-176, corrected as D-184) are the reason to trust
 that statement rather than merely take it on faith.
@@ -360,8 +365,14 @@ that statement rather than merely take it on faith.
       subtract it automatically**
 
 **Done when:** every employee's balance reconciles to their ledger in every scenario,
-with no drift. **PROVEN for ANNUAL, SICK and FAMILY_RESPONSIBILITY; NOT for MATERNITY,
-PARENTAL or ADOPTION, which have no accrual yet (chunk 5).**
+with no drift. **Chunk 4 does NOT meet this in full, and the reason is not drift.** The
+ledger reconciles — PROVEN below for ANNUAL, SICK and FAMILY_RESPONSIBILITY (not MATERNITY,
+PARENTAL or ADOPTION, which have no accrual until chunk 5). But reconciliation only proves
+the balance equals what was posted, not that what was posted is right, and D-193 found two
+paths that post a deduction they should not: an unauthorised absence and uncertified sick
+leave are each unpaid AND charged to the balance. Both are pinned by strict-xfail tests
+and wait on a decision (Kobus; O-06 for sick leave). Until those are decided, a balance can
+reconcile perfectly and still be wrong for those two cases.
 `leave/tests/test_reconciliation_property.py` (Hypothesis) generates random sequences — up
 to 16 actions, any of the three leave types, DAYS or HOURS, either s22(4) election — of
 manual accruals, adjustments, applications approved and cancelled (full and part day),
@@ -398,12 +409,11 @@ wrong the first time.
 - **`ANNUAL_UNAUTHORISED` is resolved** (chunk 4, D-180) and its unpaid hours are captured
   (D-188), but the property test does not generate it; `test_accrual_chunk4.py` and
   `test_applications.py` do.
-- **An entitlement row may still RECORD a per-hours-worked method against SICK or
-  FAMILY_RESPONSIBILITY.** It is ignored, not refused at capture (D-190) — a decision for
-  Kobus, not taken here.
+- **Unpaid AND charged — D-193, open.** See the done-clause above.
 - **Part-day overdraw** — see `unpaid_hours` above: whole days only.
-- **SD7 and SD1's own clause wording for s27(1)'s boundary was not re-read** (D-189); the
-  strict "longer than" reading rests on the BCEA and the loaded rule sets' notes.
+- **SD7 clause 21(1) is verified against the 2002 gazette, not a current consolidation**
+  (D-194). No consolidated SD7 could be read; confirming no amendment since is queued for
+  O-06. SD1 clause 22(1) is verified against the 1 March 2026 consolidation.
 - **Termination payout — P7's job, with a constraint now recorded ahead of it (D-185).** A
   terminated employee's closed cycle balance is proven untouched at termination (chunk 2's
   own tests) but paying it out is not this phase's work, and when P7 does it, it must
