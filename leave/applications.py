@@ -252,7 +252,21 @@ def submit_application(
 
         quantity_field = "day_portion" if unit == LeaveCycle.Unit.DAYS else "hours"
 
-        if unauthorised_treatment == "unpaid":
+        # D-196. Sick leave beyond the BCEA s23(1) threshold with no certificate
+        # is UNPAID and NOT charged: the s22 entitlement is untouched. Decided
+        # BEFORE the balance is read, so an uncertified day never draws on it
+        # and never trips the overdraw either.
+        working_units_for_sick = sum(
+            (d[quantity_field] for d in day_dicts if d["is_working_day"]), ZERO
+        )
+        sick_is_paid = _is_sick_leave_paid(
+            leave_type,
+            leave_evidence_type,
+            working_units=working_units_for_sick,
+            on_date=start_date,
+        )
+
+        if unauthorised_treatment == "unpaid" or not sick_is_paid:
             for day_dict in day_dicts:
                 if day_dict["is_working_day"]:
                     day_dict["is_paid"] = False
@@ -273,20 +287,7 @@ def submit_application(
             day_dict["deducted_from_balance"] = False
             remaining_unpaid -= day_dict[quantity_field]
 
-        working_units_for_sick = sum(
-            (d[quantity_field] for d in day_dicts if d["is_working_day"]), ZERO
-        )
-        sick_is_paid = _is_sick_leave_paid(
-            leave_type,
-            leave_evidence_type,
-            working_units=working_units_for_sick,
-            on_date=start_date,
-        )
-        if not sick_is_paid:
-            for day_dict in day_dicts:
-                if day_dict["is_working_day"]:
-                    day_dict["is_paid"] = False
-        elif not leave_type.is_paid and unauthorised_treatment != "annual_leave":
+        if not leave_type.is_paid and unauthorised_treatment != "annual_leave":
             for day_dict in day_dicts:
                 if day_dict["is_working_day"] and day_dict["deducted_from_balance"]:
                     day_dict["is_paid"] = False

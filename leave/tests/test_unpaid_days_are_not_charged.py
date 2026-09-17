@@ -270,14 +270,6 @@ def test_an_unknown_treatment_is_refused_by_name_not_guessed(
     assert "annual_leave, unpaid" in message, message
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "D-193, awaiting Kobus and O-06: sick leave withheld for want of a certificate "
-        "(BCEA s23(1)) is unpaid AND deducted from the sick balance. strict: this fails "
-        "loudly once fixed."
-    ),
-)
 def test_uncertified_sick_leave_is_not_both_unpaid_and_charged_to_the_sick_balance(
     employee,
     engagement,
@@ -288,6 +280,9 @@ def test_uncertified_sick_leave_is_not_both_unpaid_and_charged_to_the_sick_balan
     owner,
     working_time_rules,
 ):
+    """D-196, Kobus's decision: sick leave withheld for want of a certificate
+    beyond the BCEA s23(1) threshold is UNPAID and NOT charged — the s22
+    entitlement is untouched. Was D-193's second defect: balance 25."""
     cycle = _hold(employee, sick_type, "30.000", LeaveCycle.Unit.DAYS)
 
     application = submit_application(
@@ -299,3 +294,30 @@ def test_uncertified_sick_leave_is_not_both_unpaid_and_charged_to_the_sick_balan
         balance = recompute_cycle(cycle).balance_quantity
     assert application.unpaid_days == Decimal("5.000")
     assert balance == Decimal("30.000"), f"charged AND unpaid: balance {balance}"
+    assert _taken(application) == [], "uncertified and unpaid: no TAKEN row"
+
+
+def test_sick_leave_within_the_certificate_threshold_is_paid_and_charged(
+    employee,
+    engagement,
+    leave_rules,
+    sick_type,
+    evidence_types,
+    schedule_5day,
+    owner,
+    working_time_rules,
+):
+    """The negative half of D-196: two days needs no certificate (s23(1)), so they
+    are ordinary sick leave — paid AND drawn from the balance."""
+    cycle = _hold(employee, sick_type, "30.000", LeaveCycle.Unit.DAYS)
+
+    application = submit_application(
+        employee, leave_type=sick_type, start_date=MONDAY, end_date=datetime.date(2026, 3, 3)
+    )
+    approve(application, decided_by=owner)
+
+    with tenant_context(employee.tenant_id):
+        balance = recompute_cycle(cycle).balance_quantity
+    assert application.unpaid_days == Decimal("0")
+    assert [t.days for t in _taken(application)] == [Decimal("-2.000")]
+    assert balance == Decimal("28.000")
