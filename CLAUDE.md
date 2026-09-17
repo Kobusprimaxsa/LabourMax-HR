@@ -304,6 +304,13 @@ the gazette or the SARS table wins and the workbook gets corrected.
 against the bands below it, every tax threshold against its rebates. `verifystatutory`
 refuses to record verification while anything blocking is outstanding.
 
+**Re-encoded a fixture? It needs a new version label, not a hand-deleted row** (D-199, O-21
+closed). Regenerating a fixture changes its checksum and `checkstatutory` then refuses it by name.
+Give the file a new label (`REF-2026.03.01-RULES-r2`) and run `loadstatutory <file> --supersede
+REF-2026.03.01-RULES --reason "..."`: the old version row is kept and marked superseded, only
+citations and notes may differ, and a changed FIGURE is refused by name — that is a new gazette and
+gets an ordinary load. Never delete a `reference_data_version` row.
+
 **A clone of this repo has empty reference tables.** The fixtures in `reference/` must be
 loaded before anything works, and `checkstatutory` refuses rather than reporting success on an
 empty database (D-74) — every check iterates rows, so over no rows they all pass.
@@ -1018,7 +1025,7 @@ gateway), so starting it means stopping to ask.
 stop. That applies to filling in a fixture as much as to writing code.
 
 **P6 — Leave: chunk 4 of 5 built, with hardening passes 4b and 4c** (17 September 2026).
-1,165 tests collected, all passing. An unpaid leave day never also spends leave: an overdraw
+1,174 tests collected, all passing. An unpaid leave day never also spends leave: an overdraw
 (D-188), uncertified sick leave (D-196) and an unauthorised absence elected unpaid (D-195)
 all charge nothing. See D-186 to D-197 for 4b and 4c. The leave
 catalogue, cycles, the append-only ledger, the accrual engine (ANNUAL, SICK and
