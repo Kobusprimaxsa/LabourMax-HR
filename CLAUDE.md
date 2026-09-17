@@ -340,6 +340,15 @@ Things that are easy to get wrong, and have been got wrong before:
 - **The maternity restriction runs after the birth, not before it.** A birth mother may not
   work for six weeks after giving birth unless certified fit; separately, she may start leave
   up to four weeks before. Two different rules, two columns.
+- **An absent statutory figure is a boolean, never a zero.**
+  `working_time_rule_set.accommodation_deduction_capped` (NOT NULL, **no database default**) plus a
+  nullable `accommodation_deduction_max_pct`, two CHECKs holding them together, and
+  `statutory.resolve.accommodation_cap()` answering `NOT_LOADED` / `NO_CAP` / `CAPPED(pct)` (D-198
+  amended). 0.00 used to mean "this instrument states no cap", which made a real zero cap read as
+  UNLIMITED and — the one that would have bitten — made any new rule set row whose author never
+  thought about the column silently uncapped. No default, so such a row fails instead. The other
+  zero-means-no-figure columns (`night_allowance_value`, the three standby columns) still carry the
+  old encoding; the same reasoning applies to them when one is next touched.
 - **The s22(3) sick ratio is not a second entitlement.** One per 26 days worked restricts how
   much of the ONE s22(2) cycle entitlement is available in the first six months. So the first
   cycle resolves to E − A by default, and s22(4)'s "may" is the employer's election
@@ -379,7 +388,7 @@ falling back to superseded rates.
 | Encrypted fields | ID numbers and bank account numbers, with `_last4` in a separate plain column. Needs `FIELD_ENCRYPTION_KEY` — without it every write refuses (D-77), and `manage.py check` says so in one line (D-94) |
 | Booleans | Positive assertions: `is_active`, never `is_not_active` |
 | Enumerations | `TextChoices` + a `CHECK` constraint. Not integer codes — raw SQL against production should read |
-| Employer settings | Registered in `employers/onboarding.py`, read through `setting_value()`, which pins the employer's tenant itself. `SICK_FIRST_CYCLE_REDUCTION` defaults TRUE because the single-entitlement reading of s22 produces E − A and almost every employer wants it (D-186). `UNAUTHORISED_ABSENCE_TREATMENT` defaults `unpaid` (unpaid, no leave spent; `annual_leave` = charged AND paid, never both unpaid and charged, D-195). A setting with `choices` refuses a stored value outside them. `ACCOM_DED` is a percentage of the wage, never a rand amount (D-197), refused above the gazetted ceiling; a ceiling of 0.00 means no cap is set (D-198). Never read a setting inside `calculators/` — pass the resolved value in |
+| Employer settings | Registered in `employers/onboarding.py`, read through `setting_value()`, which pins the employer's tenant itself. `SICK_FIRST_CYCLE_REDUCTION` defaults TRUE because the single-entitlement reading of s22 produces E − A and almost every employer wants it (D-186). `UNAUTHORISED_ABSENCE_TREATMENT` defaults `unpaid` (unpaid, no leave spent; `annual_leave` = charged AND paid, never both unpaid and charged, D-195). A setting with `choices` refuses a stored value outside them. `ACCOM_DED` is a percentage of the wage, never a rand amount (D-197), refused above the gazetted ceiling (D-198). Never read a setting inside `calculators/` — pass the resolved value in |
 
 ---
 
@@ -1009,7 +1018,7 @@ gateway), so starting it means stopping to ask.
 stop. That applies to filling in a fixture as much as to writing code.
 
 **P6 — Leave: chunk 4 of 5 built, with hardening passes 4b and 4c** (17 September 2026).
-1,149 tests collected, all passing. An unpaid leave day never also spends leave: an overdraw
+1,165 tests collected, all passing. An unpaid leave day never also spends leave: an overdraw
 (D-188), uncertified sick leave (D-196) and an unauthorised absence elected unpaid (D-195)
 all charge nothing. See D-186 to D-197 for 4b and 4c. The leave
 catalogue, cycles, the append-only ledger, the accrual engine (ANNUAL, SICK and

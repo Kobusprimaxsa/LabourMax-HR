@@ -409,7 +409,12 @@ wrong the first time.
   (D-188), but the property test does not generate it; `test_accrual_chunk4.py` and
   `test_applications.py` do.
 - **`ACCOM_DED` is checked against the gazetted ceiling at capture (D-198), but a line is not
-  re-checked when a later gazette lowers it**; that, and the s34 total, belong to P7.
+  re-checked when a later gazette lowers it**; that, and the s34 total, belong to P7. The cap is an
+  explicit pair as of chunk 4d — capped boolean (no default) plus a nullable percentage — so an
+  instrument that states no cap and one that forbids the deduction are no longer the same row.
+- **Family responsibility ELIGIBILITY is PROVISIONAL for domestic workers** (D-189, O-06): SD7 cl
+  21(1) is verified against the 2002 gazette only. If SD7 departs from s27(1) as it departs on the
+  quantum, the code unlawfully refuses a domestic worker who works three days a week.
 - **Part-day overdraw** — see `unpaid_hours` above: whole days only.
 - **SD7 clause 21(1) is verified against the 2002 gazette, not a current consolidation**
   (D-194). No consolidated SD7 could be read; confirming no amendment since is queued for
