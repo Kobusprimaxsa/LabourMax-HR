@@ -65,8 +65,8 @@ def employee(db):
     return person
 
 
-def _working_time_rules(*, sector, ceiling):
-    """A working time rule set carrying the accommodation ceiling under test.
+def _working_time_rules(*, sector, capped, ceiling=None):
+    """A working time rule set carrying the accommodation cap under test.
     Every other figure is a placeholder this module never reads."""
     return WorkingTimeRuleSet.objects.create(
         sector=sector,
@@ -95,7 +95,8 @@ def _working_time_rules(*, sector, ceiling):
         meal_interval_minutes=60,
         daily_rest_hours=12,
         weekly_rest_hours=36,
-        accommodation_deduction_max_pct=Decimal(ceiling),
+        accommodation_deduction_capped=capped,
+        accommodation_deduction_max_pct=None if ceiling is None else Decimal(ceiling),
     )
 
 
@@ -145,7 +146,7 @@ def test_the_catalogue_seeds_accom_ded_as_a_percentage_of_a_base():
 
 
 def test_an_accommodation_deduction_is_captured_as_a_percentage(employee):
-    _working_time_rules(sector=employee.employer.sector, ceiling="10.00")
+    _working_time_rules(sector=employee.employer.sector, capped=True, ceiling="10.00")
     accom = _system_accom(Method.PERCENTAGE_OF_BASE)
     with tenant_context(employee.tenant_id):
         row = _line(employee, accom, percentage_of_basic=Decimal("10.0000"))
@@ -215,7 +216,7 @@ def _clean_line(employee, percentage):
 def test_a_percentage_above_the_gazetted_ceiling_is_refused_naming_both_figures(employee):
     """SD7 caps the accommodation deduction at 10 percent of the wage. A line above
     it is an unlawful deduction on every payslip it touches, so capture refuses."""
-    _working_time_rules(sector=employee.employer.sector, ceiling="10.00")
+    _working_time_rules(sector=employee.employer.sector, capped=True, ceiling="10.00")
 
     with pytest.raises(ValidationError) as raised:
         _clean_line(employee, "10.0100")
@@ -230,17 +231,48 @@ def test_a_percentage_above_the_gazetted_ceiling_is_refused_naming_both_figures(
 
 
 def test_a_percentage_at_the_ceiling_is_accepted(employee):
-    _working_time_rules(sector=employee.employer.sector, ceiling="10.00")
+    _working_time_rules(sector=employee.employer.sector, capped=True, ceiling="10.00")
     assert _clean_line(employee, "10.0000").pk is not None
 
 
-def test_a_zero_ceiling_means_no_cap_is_set_not_that_nothing_may_be_deducted(employee):
-    """The fixture builder's own cited convention: ZERO MEANS NO CAP IS SET BY THE
-    ACT (tools/build_rule_set_fixture.py). The BCEA default and SD1 both load 0.00
-    because neither states an accommodation percentage. Reached here through the
-    BCEA fallback — no row for the employer's own sector."""
-    _working_time_rules(sector=None, ceiling="0.00")
+def test_no_cap_set_allows_any_percentage(employee):
+    """NO_CAP: the instrument states no accommodation percentage — the BCEA
+    default and SD1 both. Reached here through the BCEA fallback, no row for the
+    employer's own sector. The absence of a cap is now a boolean, not a 0.00
+    standing in for it (D-198 amended)."""
+    _working_time_rules(sector=None, capped=False)
     assert _clean_line(employee, "25.0000").pk is not None
+
+
+def test_a_cap_of_zero_refuses_any_accommodation_deduction(employee):
+    """CAPPED(0): an instrument that forbids the deduction outright. Under the
+    0.00 sentinel this case was UNREACHABLE — zero read as unlimited, the
+    maximally wrong answer — so it is written first and watched fail. Nothing
+    loaded uses it today; it is representable, which is the point."""
+    _working_time_rules(sector=employee.employer.sector, capped=True, ceiling="0.00")
+
+    with pytest.raises(ValidationError) as raised:
+        _clean_line(employee, "0.5000")
+
+    message = str(raised.value)
+    assert "0.50% exceeds the ceiling of 0.00%" in message, message
+    with tenant_context(employee.tenant_id):
+        assert not EmployeeRecurringComponent.objects.filter(employee=employee).exists()
+
+
+def test_the_two_columns_must_agree(db):
+    """The paired CHECKs: a cap with no percentage, or a percentage with no cap,
+    is a half-written row — and a row written without thinking about
+    accommodation at all fails outright, because the boolean has no default."""
+    from django.db import IntegrityError, transaction
+
+    with pytest.raises(IntegrityError) as raised, transaction.atomic():
+        _working_time_rules(sector=None, capped=True, ceiling=None)
+    assert "working_time_capped_states_its_percentage" in str(raised.value)
+
+    with pytest.raises(IntegrityError) as raised, transaction.atomic():
+        _working_time_rules(sector=None, capped=False, ceiling="10.00")
+    assert "working_time_uncapped_states_no_percentage" in str(raised.value)
 
 
 def test_no_rule_set_loaded_refuses_rather_than_skipping_the_check(employee):

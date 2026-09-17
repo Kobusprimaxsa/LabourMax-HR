@@ -29,7 +29,9 @@ rather than being whatever the ORM's ordering happened to return.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
+import enum
 from decimal import Decimal
 
 from dateutil.relativedelta import relativedelta
@@ -226,6 +228,49 @@ def leave_rules(sector: Sector | None, on_date: datetime.date) -> LeaveRuleSet:
 def working_time_rules(sector: Sector | None, on_date: datetime.date) -> WorkingTimeRuleSet:
     """Ordinary hours, overtime and premium rules for a sector on a date."""
     return _rule_set(WorkingTimeRuleSet, sector, on_date)
+
+
+class AccommodationCapState(enum.StrEnum):
+    """Three states, named. A caller that forgets one gets an AttributeError,
+    not a Decimal it can quietly misread (D-198 amended)."""
+
+    NOT_LOADED = "not_loaded"  # no rule set in force for that sector on that date
+    NO_CAP = "no_cap"  # the instrument states no accommodation percentage
+    CAPPED = "capped"  # the instrument states one — possibly zero
+
+
+@dataclasses.dataclass(frozen=True)
+class AccommodationCap:
+    state: AccommodationCapState
+    percentage: Decimal | None = None
+    source_reference: str = ""
+    detail: str = ""  # why it is NOT_LOADED, in the resolver's own words
+
+    def exceeded_by(self, percentage: Decimal) -> bool:
+        """Only a CAPPED instrument can be exceeded. NO_CAP is not a cap of zero
+        — that reading is exactly what the 0.00 sentinel got wrong."""
+        return self.state is AccommodationCapState.CAPPED and percentage > self.percentage
+
+
+def accommodation_cap(sector: Sector | None, on_date: datetime.date) -> AccommodationCap:
+    """What the instrument in force says about capping an accommodation deduction.
+
+    Returns NOT_LOADED rather than raising: "no reference data" is a third answer
+    the caller must handle, not an exception to be caught in passing.
+    """
+    try:
+        rules = working_time_rules(sector, on_date)
+    except StatutoryValueMissingError as missing:
+        return AccommodationCap(state=AccommodationCapState.NOT_LOADED, detail=str(missing))
+    if not rules.accommodation_deduction_capped:
+        return AccommodationCap(
+            state=AccommodationCapState.NO_CAP, source_reference=rules.source_reference
+        )
+    return AccommodationCap(
+        state=AccommodationCapState.CAPPED,
+        percentage=rules.accommodation_deduction_max_pct,
+        source_reference=rules.source_reference,
+    )
 
 
 def termination_rules(sector: Sector | None, on_date: datetime.date) -> TerminationRuleSet:

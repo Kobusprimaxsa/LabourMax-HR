@@ -1107,8 +1107,25 @@ class WorkingTimeRuleSet(SectorRuleSet):
     meal_interval_minutes = models.SmallIntegerField()
     daily_rest_hours = models.SmallIntegerField()
     weekly_rest_hours = models.SmallIntegerField()
+    # The PAIR, not a sentinel (D-198 amended). A percentage of 0.00 used to mean
+    # "this instrument states no cap", which made a genuine zero cap — an
+    # instrument forbidding the deduction outright — unrepresentable, and read as
+    # UNLIMITED. Worse, a new rule set row whose author never thought about
+    # accommodation was silently uncapped. The boolean is NOT NULL and takes NO
+    # database default, so such a row now fails instead.
+    accommodation_deduction_capped = models.BooleanField(
+        help_text=(
+            "Does this instrument cap the accommodation deduction? FALSE means it "
+            "states no percentage (the BCEA and SD1), not that nothing may be deducted. "
+            "No default: a row that does not say fails."
+        )
+    )
     accommodation_deduction_max_pct = models.DecimalField(
-        max_digits=5, decimal_places=2, help_text="SD7 permitted accommodation deduction."
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="The cap, when capped. NULL when not. SD7 states 10 percent of the wage.",
     )
 
     class Meta:
@@ -1120,6 +1137,19 @@ class WorkingTimeRuleSet(SectorRuleSet):
             models.CheckConstraint(
                 condition=models.Q(overtime_multiplier__gte=1),
                 name="working_time_overtime_multiplier_at_least_one",
+            ),
+            # The pair must agree, both ways. Declared on this concrete model, not
+            # on an abstract base: Meta.constraints on a base is NOT inherited by a
+            # child that declares its own Meta, and this one does (db_table).
+            models.CheckConstraint(
+                condition=models.Q(accommodation_deduction_capped=False)
+                | models.Q(accommodation_deduction_max_pct__isnull=False),
+                name="working_time_capped_states_its_percentage",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(accommodation_deduction_capped=True)
+                | models.Q(accommodation_deduction_max_pct__isnull=True),
+                name="working_time_uncapped_states_no_percentage",
             ),
         ]
 

@@ -62,7 +62,7 @@
       {
         "effective_from": "2026-03-01",
         "source_reference": "Basic Conditions of Employment Act 75 of 1997, ss 9-18 and s9A",
-        "notes": "effective_from is the start of this reference data, not the provision's commencement. The rule itself is older. DERIVED, not transcribed. BCEA s10(1)(b) caps the whole day at 12 hours including overtime; three is that cap less a nine-hour ordinary day. On an eight-hour six-day week the same cap allows four. ZERO MEANS THERE IS NO STATUTORY FIGURE, not that the amount is nil. BCEA s17(2) requires night work to be compensated by an allowance or by reduced hours, and deliberately sets no amount - the employer sets it. A calculator must read the employer's own setting, not this column. ZERO MEANS THE CONCEPT DOES NOT EXIST IN THE ACT. Standby is a Sectoral Determination 7 creature; the BCEA has no standby regime at all. ZERO MEANS NO CAP IS SET BY THE ACT. BCEA s34 governs deductions generally but states no accommodation percentage. The 10 percent cap is SD7's. Overtime is capped at 10 hours a week under s10(1)(b); a collective agreement may take it to 15 for up to two months a year, which is an agreement-level fact rather than a statutory default. The four-hour minimum payment is s9A and applies to employees earning below the s6(3) threshold.",
+        "notes": "effective_from is the start of this reference data, not the provision's commencement. The rule itself is older. DERIVED, not transcribed. BCEA s10(1)(b) caps the whole day at 12 hours including overtime; three is that cap less a nine-hour ordinary day. On an eight-hour six-day week the same cap allows four. ZERO MEANS THERE IS NO STATUTORY FIGURE, not that the amount is nil. BCEA s17(2) requires night work to be compensated by an allowance or by reduced hours, and deliberately sets no amount - the employer sets it. A calculator must read the employer's own setting, not this column. ZERO MEANS THE CONCEPT DOES NOT EXIST IN THE ACT. Standby is a Sectoral Determination 7 creature; the BCEA has no standby regime at all. accommodation_deduction_capped = false: the BCEA states no accommodation percentage, so no cap is loaded and accommodation_deduction_max_pct is null. That is the ABSENCE of a cap, not a cap of zero. BCEA s34 governs deductions generally but states no percentage; the 10 percent cap is SD7's. Overtime is capped at 10 hours a week under s10(1)(b); a collective agreement may take it to 15 for up to two months a year, which is an agreement-level fact rather than a statutory default. The four-hour minimum payment is s9A and applies to employees earning below the s6(3) threshold.",
         "ordinary_hours_per_week": "45.00",
         "ordinary_hours_per_day_5day": "9.00",
         "ordinary_hours_per_day_6day": "8.00",
@@ -86,7 +86,8 @@
         "meal_interval_minutes": 60,
         "daily_rest_hours": 12,
         "weekly_rest_hours": 36,
-        "accommodation_deduction_max_pct": "0.00"
+        "accommodation_deduction_capped": false,
+        "accommodation_deduction_max_pct": null
       },
       {
         "effective_from": "2026-03-01",
@@ -115,6 +116,7 @@
         "meal_interval_minutes": 60,
         "daily_rest_hours": 12,
         "weekly_rest_hours": 36,
+        "accommodation_deduction_capped": true,
         "accommodation_deduction_max_pct": "10.00",
         "sector": "DOMESTIC"
       }

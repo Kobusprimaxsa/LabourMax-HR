@@ -276,5 +276,6 @@ def working_time_rules(db):
         meal_interval_minutes=60,
         daily_rest_hours=12,
         weekly_rest_hours=36,
+        accommodation_deduction_capped=True,
         accommodation_deduction_max_pct=Decimal("10"),
     )

@@ -10,8 +10,10 @@ because the fallback to the BCEA row is at least visible.
 Where a rule set column has no statutory figure behind it, it is loaded as zero with
 a note saying so, never as a plausible-looking number. There are four:
 ``night_allowance_value`` (the BCEA requires an allowance but sets no amount - the
-employer does), and the three standby columns and the accommodation cap on the BCEA
-row (neither concept exists in the Act; both are SD7's).
+employer does) and the three standby columns (the concept is SD7's; the Act has no
+standby regime). The accommodation cap is NOT one of them any more: it is a pair,
+``accommodation_deduction_capped`` plus a nullable percentage, so "this instrument
+states none" is said outright rather than encoded as a zero (D-198 amended).
 
 Three figures here are derivations rather than transcriptions, and each carries a
 note on its row saying so: 15 and 18 working days from the Act's "21 consecutive
@@ -71,10 +73,19 @@ NO_BCEA_STANDBY = (
     "Determination 7 creature; the BCEA has no standby regime at all."
 )
 
-NO_BCEA_ACCOMMODATION = (
-    "ZERO MEANS NO CAP IS SET BY THE ACT. BCEA s34 governs deductions generally but "
-    "states no accommodation percentage. The 10 percent cap is SD7's."
-)
+
+def no_accommodation_cap(instrument):
+    """The citation for the BOOLEAN. "This instrument states no accommodation
+    percentage" is a statutory reading and carries its source exactly as a figure
+    does - and it is the ABSENCE of a cap, not a cap of zero, which is a different
+    reading the old 0.00 sentinel could not tell apart (D-198 amended)."""
+    return (
+        f"accommodation_deduction_capped = false: {instrument} states no accommodation "
+        "percentage, so no cap is loaded and accommodation_deduction_max_pct is null. "
+        "That is the ABSENCE of a cap, not a cap of zero. BCEA s34 governs deductions "
+        "generally but states no percentage; the 10 percent cap is SD7's."
+    )
+
 
 NO_STATUTORY_BONUS = (
     "There is no statutory annual bonus in this sector, so the weeks are zero and the "
@@ -133,7 +144,9 @@ def working_time_rules(
     standby_start,
     standby_end,
     standby_hours,
-    accommodation_pct,
+    accommodation_capped,
+    accommodation_pct=None,
+    accommodation_source=None,
     night_allowance_type="by_agreement",
     night_allowance_value="0.0000",
     min_paid_hours="4.00",
@@ -144,8 +157,8 @@ def working_time_rules(
         notes.append(NO_STATUTORY_FIGURE)
     if not standby_allowance or standby_allowance == "0.00":
         notes.append(NO_BCEA_STANDBY)
-    if accommodation_pct == "0.00":
-        notes.append(NO_BCEA_ACCOMMODATION)
+    if not accommodation_capped:
+        notes.append(no_accommodation_cap(accommodation_source or source))
     if extra_notes:
         notes.append(extra_notes)
 
@@ -176,6 +189,7 @@ def working_time_rules(
         "meal_interval_minutes": 60,
         "daily_rest_hours": 12,
         "weekly_rest_hours": 36,
+        "accommodation_deduction_capped": accommodation_capped,
         "accommodation_deduction_max_pct": accommodation_pct,
     }
     if sector:
@@ -258,7 +272,8 @@ DOCUMENT = {
                 standby_start="00:00:00",
                 standby_end="00:00:00",
                 standby_hours="0.00",
-                accommodation_pct="0.00",
+                accommodation_capped=False,
+                accommodation_source="the BCEA",
                 extra_notes=(
                     "Overtime is capped at 10 hours a week under s10(1)(b); a collective "
                     "agreement may take it to 15 for up to two months a year, which is an "
@@ -275,6 +290,7 @@ DOCUMENT = {
                 standby_start="20:00:00",
                 standby_end="06:00:00",
                 standby_hours="3.00",
+                accommodation_capped=True,
                 accommodation_pct="10.00",
                 extra_notes=(
                     "VERIFY THE STANDBY ALLOWANCE. R20 per shift is the figure in the "
@@ -338,7 +354,8 @@ DOCUMENT_SD1 = {
                 standby_start="00:00:00",
                 standby_end="00:00:00",
                 standby_hours="0.00",
-                accommodation_pct="0.00",
+                accommodation_capped=False,
+                accommodation_source="Sectoral Determination 1",
                 night_allowance_type="percentage",
                 night_allowance_value="10.0000",
                 min_paid_hours="6.00",
