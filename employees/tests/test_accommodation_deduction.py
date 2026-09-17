@@ -29,7 +29,7 @@ from employees.identity import luhn_check_digit
 from employees.models import Employee, EmployeeRecurringComponent
 from employers.components import SYSTEM_COMPONENTS
 from employers.models import Employer, PayrollComponent
-from statutory.models import Sector, StatutoryParameter
+from statutory.models import Sector, StatutoryParameter, WorkingTimeRuleSet
 
 pytestmark = pytest.mark.django_db
 
@@ -63,6 +63,40 @@ def employee(db):
         )
     engage(person, start_date=START, job_title="Domestic worker")
     return person
+
+
+def _working_time_rules(*, sector, ceiling):
+    """A working time rule set carrying the accommodation ceiling under test.
+    Every other figure is a placeholder this module never reads."""
+    return WorkingTimeRuleSet.objects.create(
+        sector=sector,
+        effective_from=datetime.date(1997, 12, 1),
+        source_reference="Test fixture: Sectoral Determination 7",
+        ordinary_hours_per_week=Decimal("45"),
+        ordinary_hours_per_day_5day=Decimal("9"),
+        ordinary_hours_per_day_6day=Decimal("8"),
+        overtime_multiplier=Decimal("1.5"),
+        max_overtime_hours_per_day=Decimal("3"),
+        max_overtime_hours_per_week=Decimal("10"),
+        sunday_multiplier_ordinary=Decimal("1.5"),
+        sunday_multiplier_non_ordinary=Decimal("2.0"),
+        public_holiday_worked_multiplier=Decimal("2.0"),
+        public_holiday_not_worked_paid=True,
+        night_work_start_time=datetime.time(18, 0),
+        night_work_end_time=datetime.time(6, 0),
+        night_allowance_type="percentage",
+        night_allowance_value=Decimal("10"),
+        standby_allowance_per_shift=Decimal("50.00"),
+        standby_window_start=datetime.time(18, 0),
+        standby_window_end=datetime.time(6, 0),
+        standby_hours_before_overtime=Decimal("2"),
+        min_paid_hours_per_day=Decimal("6"),
+        meal_interval_after_hours=Decimal("5"),
+        meal_interval_minutes=60,
+        daily_rest_hours=12,
+        weekly_rest_hours=36,
+        accommodation_deduction_max_pct=Decimal(ceiling),
+    )
 
 
 def _system_accom(method):
@@ -111,6 +145,7 @@ def test_the_catalogue_seeds_accom_ded_as_a_percentage_of_a_base():
 
 
 def test_an_accommodation_deduction_is_captured_as_a_percentage(employee):
+    _working_time_rules(sector=employee.employer.sector, ceiling="10.00")
     accom = _system_accom(Method.PERCENTAGE_OF_BASE)
     with tenant_context(employee.tenant_id):
         row = _line(employee, accom, percentage_of_basic=Decimal("10.0000"))
@@ -163,3 +198,57 @@ def test_the_migration_step_refuses_rather_than_rewriting_a_captured_rand_amount
     with platform_context():
         accom.refresh_from_db()
     assert accom.calculation_method == Method.FIXED, "refused, so nothing changed"
+
+
+# ------------------------------------------------ the gazetted ceiling (D-198)
+
+
+def _clean_line(employee, percentage):
+    accom = _system_accom(Method.PERCENTAGE_OF_BASE)
+    with tenant_context(employee.tenant_id):
+        row = _line(employee, accom, percentage_of_basic=Decimal(percentage))
+        row.full_clean()
+        row.save()
+    return row
+
+
+def test_a_percentage_above_the_gazetted_ceiling_is_refused_naming_both_figures(employee):
+    """SD7 caps the accommodation deduction at 10 percent of the wage. A line above
+    it is an unlawful deduction on every payslip it touches, so capture refuses."""
+    _working_time_rules(sector=employee.employer.sector, ceiling="10.00")
+
+    with pytest.raises(ValidationError) as raised:
+        _clean_line(employee, "10.0100")
+
+    message = str(raised.value)
+    assert "10.01%" in message, message
+    assert "ceiling of 10.00%" in message, message
+    assert "working_time_rule_set.accommodation_deduction_max_pct" in message, message
+    assert "Test fixture: Sectoral Determination 7" in message, message
+    with tenant_context(employee.tenant_id):
+        assert not EmployeeRecurringComponent.objects.filter(employee=employee).exists()
+
+
+def test_a_percentage_at_the_ceiling_is_accepted(employee):
+    _working_time_rules(sector=employee.employer.sector, ceiling="10.00")
+    assert _clean_line(employee, "10.0000").pk is not None
+
+
+def test_a_zero_ceiling_means_no_cap_is_set_not_that_nothing_may_be_deducted(employee):
+    """The fixture builder's own cited convention: ZERO MEANS NO CAP IS SET BY THE
+    ACT (tools/build_rule_set_fixture.py). The BCEA default and SD1 both load 0.00
+    because neither states an accommodation percentage. Reached here through the
+    BCEA fallback — no row for the employer's own sector."""
+    _working_time_rules(sector=None, ceiling="0.00")
+    assert _clean_line(employee, "25.0000").pk is not None
+
+
+def test_no_rule_set_loaded_refuses_rather_than_skipping_the_check(employee):
+    """D-101's shape: there is no staleness guard behind a capture-time check, so a
+    missing figure refuses instead of letting an unchecked percentage through."""
+    with pytest.raises(ValidationError) as raised:
+        _clean_line(employee, "5.0000")
+
+    message = str(raised.value)
+    assert "accommodation deduction ceiling cannot be checked" in message, message
+    assert "No working time rule set" in message, message

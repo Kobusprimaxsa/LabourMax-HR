@@ -1838,6 +1838,51 @@ class EmployeeRecurringComponent(AuditedModel, TenantScopedModel):
                 }
             )
 
+        # D-198. The accommodation deduction may not exceed the ceiling gazetted
+        # for the employer's sector on the line's start date (SD7: 10 percent of
+        # the wage). Read through statutory.resolve, never a literal. A ceiling
+        # of ZERO means the instrument sets no cap (the fixture builder's cited
+        # convention — the BCEA and SD1 state no accommodation percentage), not
+        # that nothing may be deducted. No rule set loaded refuses (D-101): a
+        # capture-time check has no staleness guard behind it. clean() rather
+        # than a trigger: the ceiling resolves per sector and date with the BCEA
+        # fallback, and a second copy of that resolver in SQL would drift.
+        if (
+            component.is_system
+            and component.code == "ACCOM_DED"
+            and self.percentage_of_basic is not None
+        ):
+            from statutory import resolve
+            from statutory.resolve import StatutoryValueMissingError
+
+            try:
+                rules = resolve.working_time_rules(
+                    self.employee.employer.sector, self.effective_from
+                )
+            except StatutoryValueMissingError as missing:
+                raise ValidationError(
+                    {
+                        "percentage_of_basic": (
+                            f"The accommodation deduction ceiling cannot be checked: {missing} "
+                            "Load the statutory reference data before capturing this line."
+                        )
+                    }
+                ) from missing
+            ceiling = rules.accommodation_deduction_max_pct
+            if ceiling > 0 and self.percentage_of_basic > ceiling:
+                raise ValidationError(
+                    {
+                        "percentage_of_basic": (
+                            f"An accommodation deduction of "
+                            f"{self.percentage_of_basic:.2f}% exceeds the ceiling of "
+                            f"{ceiling:.2f}% of the wage in force on "
+                            f"{self.effective_from:%d %B %Y} "
+                            f"(working_time_rule_set.accommodation_deduction_max_pct, "
+                            f"{rules.source_reference})."
+                        )
+                    }
+                )
+
         # D-191. The component's own method says how its figure is read; a
         # percentage on a FIXED component is a figure nothing will read.
         if method == component.CalculationMethod.FIXED and self.percentage_of_basic is not None:
