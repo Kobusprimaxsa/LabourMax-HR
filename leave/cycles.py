@@ -133,14 +133,22 @@ def accrual_method_for(
     """
     leave_type = resolve_balance_leave_type(leave_type)
     entitlement = current_entitlement(employee, leave_type, on_date)
-    # The agreed method is s20(2)'s, and s20(2) is ANNUAL leave. SICK (s22(2))
-    # and FAMILY_RESPONSIBILITY (s27(2)) are entitlements in DAYS that no
-    # agreement re-denominates, and their accrual is prescribed, never agreed.
+    # SICK (s22(2)) and FAMILY_RESPONSIBILITY (s27(2)) are entitlements in DAYS
+    # that no agreement re-denominates; their accrual is prescribed, never agreed.
     # Honouring accrual_method for them made an HOURS cycle the engine then
-    # filled with day figures — reconciling, and wrong (D-190, found by the
-    # property generator). The entitlement row itself still applies: its
-    # additional or replacement days are read by entitlement_quantity_for().
-    if entitlement is None or leave_type.code != LeaveType.Code.ANNUAL:
+    # filled with day figures — reconciling, and wrong (D-190). Capture now
+    # refuses such a row for the system types (D-192); this stays as the second
+    # layer for a row that predates that refusal. Keyed on the CODE, not
+    # is_system, because the engine dispatches on the code too (leave/accrual.py
+    # ::_DISPATCH) — any row coded SICK accrues as sick leave. Every OTHER code
+    # keeps its agreed method: an employer's own hourly scheme stays in hours
+    # (D-190 first ignored it for every non-ANNUAL code, which was too broad).
+    # The entitlement row still applies either way: its additional or
+    # replacement days are read by entitlement_quantity_for().
+    if entitlement is None or leave_type.code in (
+        LeaveType.Code.SICK,
+        LeaveType.Code.FAMILY_RESPONSIBILITY,
+    ):
         return AccrualMethod.MONTHLY, entitlement
     return entitlement.accrual_method, entitlement
 

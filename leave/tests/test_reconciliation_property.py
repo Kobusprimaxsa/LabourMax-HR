@@ -189,7 +189,7 @@ def _fresh_employee_with_two_cycles(leave_type, unit: str, *, reduce_by_taken: b
                 is_working_day=cycle_day < 5,
                 ordinary_hours=Decimal("8") if cycle_day < 5 else Decimal("0"),
             )
-        if unit == LeaveCycle.Unit.HOURS:
+        if unit == LeaveCycle.Unit.HOURS and leave_type.code == LeaveType.Code.ANNUAL:
             EmployeeLeaveEntitlement.objects.create(
                 tenant=tenant,
                 employee=employee,
@@ -197,6 +197,25 @@ def _fresh_employee_with_two_cycles(leave_type, unit: str, *, reduce_by_taken: b
                 accrual_method=EmployeeLeaveEntitlement.AccrualMethod.PER_HOURS_WORKED,
                 effective_from=START,
             )
+        elif unit == LeaveCycle.Unit.HOURS:
+            # D-192: the statute offers SICK and FAMILY_RESPONSIBILITY no method,
+            # so the sampled agreement is REFUSED at capture — asserted, by its
+            # message, not skipped. The example carries on as a days employee.
+            from django.db import IntegrityError, transaction
+
+            try:
+                with transaction.atomic():
+                    EmployeeLeaveEntitlement.objects.create(
+                        tenant=tenant,
+                        employee=employee,
+                        leave_type=leave_type,
+                        accrual_method=EmployeeLeaveEntitlement.AccrualMethod.PER_HOURS_WORKED,
+                        effective_from=START,
+                    )
+            except IntegrityError as refused:
+                assert f"{leave_type.code} leave cannot use the per_hours_worked" in str(refused)
+            else:
+                raise AssertionError(f"a per-hours {leave_type.code} agreement was accepted")
 
     # Exactly two cycles: a horizon 1.5x cycle_months out always falls inside
     # cycle 2's own span, whatever cycle_months is — read, never a literal.

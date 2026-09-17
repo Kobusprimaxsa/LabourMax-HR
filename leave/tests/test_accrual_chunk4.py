@@ -785,9 +785,17 @@ def test_a_per_hours_worked_agreement_never_makes_a_day_entitlement_an_hours_cyc
     entitlement row carrying PER_HOURS_WORKED for either used to produce an
     HOURS cycle, and the engine then wrote day figures into the hours column:
     the ledger still summed, so nothing reconciling it could see."""
+    from django.db import connection
+
     from employees.models import EmployeeLeaveEntitlement
+    from employees.statutory_methods import TRIGGER_NAME
 
     leave_type = sick_type if code == "SICK" else family_type
+    # D-192 now refuses this row at capture. The engine's ignore is the second
+    # layer, for a row that PREDATES that refusal — simulated by writing it with
+    # the trigger disabled.
+    with connection.cursor() as cursor:
+        cursor.execute(f"ALTER TABLE employee_leave_entitlement DISABLE TRIGGER {TRIGGER_NAME}")
     with tenant_context_of(employee):
         EmployeeLeaveEntitlement.objects.create(
             tenant=employee.tenant,
@@ -796,6 +804,10 @@ def test_a_per_hours_worked_agreement_never_makes_a_day_entitlement_an_hours_cyc
             accrual_method=EmployeeLeaveEntitlement.AccrualMethod.PER_HOURS_WORKED,
             effective_from=START,
         )
+    with connection.cursor() as cursor:
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        cursor.execute(f"ALTER TABLE employee_leave_entitlement ENABLE TRIGGER {TRIGGER_NAME}")
+    with tenant_context_of(employee):
         cycle = ensure_cycles(employee, leave_type, horizon=START)[0]
 
     assert cycle.unit == LeaveCycle.Unit.DAYS, f"{code} is an entitlement in days, got {cycle.unit}"

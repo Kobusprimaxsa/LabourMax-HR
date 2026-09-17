@@ -1630,6 +1630,16 @@ class EmployeeLeaveEntitlement(AuditedModel, TenantScopedModel):
                 }
             )
 
+        # D-192. The readable half; the trigger in employees/0010 is the half that
+        # holds for the importer, a data migration and psql. Same wording.
+        if self.leave_type_id:
+            from employees.statutory_methods import refusal_message, refuses
+
+            if refuses(self.leave_type, self.accrual_method):
+                raise ValidationError(
+                    {"accrual_method": refusal_message(self.leave_type.code, self.accrual_method)}
+                )
+
 
 class EmployeeRecurringComponent(AuditedModel, TenantScopedModel):
     """A payslip line that repeats every period without being re-entered.
