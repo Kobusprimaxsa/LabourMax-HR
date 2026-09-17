@@ -12,7 +12,9 @@ years in on three days a week does not qualify, however long the service.
 What IS written here is how each figure compares, because that is the
 statute's wording rather than a number: "longer than" four months, so exactly
 four months does not qualify and the first eligible day is the day after;
-"at least" four days, so four does.
+"at least" four days, so four does. Both determinations carry the same two
+limbs in the same words — SD1 clause 22(1) and SD7 clause 21(1), read from the
+clause text and quoted in D-194; SD7 departs only on the quantum (five days).
 
 **Service is the CURRENT engagement's** (``current_engagement``), never an
 edited first row (D-103): a re-hire's service starts again, the same anchor
