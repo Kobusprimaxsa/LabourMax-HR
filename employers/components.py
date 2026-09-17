@@ -72,6 +72,7 @@ EMPLOYER_CONTRIBUTION = PayrollComponent.ComponentType.EMPLOYER_CONTRIBUTION
 STATUTORY = PayrollComponent.CalculationMethod.STATUTORY
 RATE_X_UNITS = PayrollComponent.CalculationMethod.RATE_X_UNITS
 FIXED = PayrollComponent.CalculationMethod.FIXED
+PERCENTAGE_OF_BASE = PayrollComponent.CalculationMethod.PERCENTAGE_OF_BASE
 
 
 @dataclass(frozen=True)
@@ -290,7 +291,7 @@ SYSTEM_COMPONENTS: tuple[SystemComponent, ...] = (
         code="ACCOM_DED",
         name="Accommodation deduction",
         component_type=DEDUCTION,
-        calculation_method=FIXED,
+        calculation_method=PERCENTAGE_OF_BASE,
         display_order=220,
         source_code=None,
         standalone_flags={
@@ -300,6 +301,7 @@ SYSTEM_COMPONENTS: tuple[SystemComponent, ...] = (
             "is_coida_base": False,
         },
         reason=(
+            "A PERCENTAGE of the wage, which payroll turns into a rand figure (D-197) - "
             "SD7 permits a deduction for accommodation supplied, capped at a "
             "percentage of the wage held in "
             "working_time_rule_set.accommodation_deduction_max_pct. A deduction from "

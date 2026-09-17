@@ -1824,6 +1824,20 @@ class EmployeeRecurringComponent(AuditedModel, TenantScopedModel):
                 "so a recurring line may not carry a standing amount or percentage."
             )
 
+        # D-197. The mirror image: a percentage-of-a-base component (ACCOM_DED)
+        # is a percentage of the wage; a rand amount on it is a figure its own
+        # method says nothing will read.
+        if method == component.CalculationMethod.PERCENTAGE_OF_BASE and self.amount is not None:
+            raise ValidationError(
+                {
+                    "amount": (
+                        f"{component.code} is a percentage of a base: give the line a "
+                        "percentage of basic, not a rand amount. Payroll turns the "
+                        "percentage into the rand figure."
+                    )
+                }
+            )
+
         # D-191. The component's own method says how its figure is read; a
         # percentage on a FIXED component is a figure nothing will read.
         if method == component.CalculationMethod.FIXED and self.percentage_of_basic is not None:
