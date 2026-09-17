@@ -340,6 +340,16 @@ Things that are easy to get wrong, and have been got wrong before:
 - **The maternity restriction runs after the birth, not before it.** A birth mother may not
   work for six weeks after giving birth unless certified fit; separately, she may start leave
   up to four weeks before. Two different rules, two columns.
+- **The s22(3) sick ratio is not a second entitlement.** One per 26 days worked restricts how
+  much of the ONE s22(2) cycle entitlement is available in the first six months. So the first
+  cycle resolves to E − A by default, and s22(4)'s "may" is the employer's election
+  (`SICK_FIRST_CYCLE_REDUCTION`, D-181 amended, D-186).
+- **Unpaid leave stays in the application's own unit.** `unpaid_days` for a days-basis
+  application, `unpaid_hours` for an hours-basis one, the other zero (D-188). Converting days
+  to hours at capture is the D-106 conversion one step earlier, and D-164 forbids it.
+- **Family responsibility eligibility is two limbs, in all three instruments**: longer than
+  four months AND at least four days a week — BCEA s27(1), SD1 cl 22(1), SD7 cl 21(1)
+  (D-189, D-194). SD7 departs on the quantum only.
 - **Domestic workers depart from the BCEA in three places** (SD7): five days' family
   responsibility leave rather than three, fifteen hours' overtime a week rather than ten, and
   four weeks' notice from six months' service rather than two.
@@ -369,6 +379,7 @@ falling back to superseded rates.
 | Encrypted fields | ID numbers and bank account numbers, with `_last4` in a separate plain column. Needs `FIELD_ENCRYPTION_KEY` — without it every write refuses (D-77), and `manage.py check` says so in one line (D-94) |
 | Booleans | Positive assertions: `is_active`, never `is_not_active` |
 | Enumerations | `TextChoices` + a `CHECK` constraint. Not integer codes — raw SQL against production should read |
+| Employer settings | Registered in `employers/onboarding.py`, read through `setting_value()`, which pins the employer's tenant itself. `SICK_FIRST_CYCLE_REDUCTION` defaults TRUE because the single-entitlement reading of s22 produces E − A and almost every employer wants it (D-186). Never read a setting inside `calculators/` — pass the resolved value in |
 
 ---
 
@@ -453,6 +464,10 @@ rather than fighting the ACL.
 - **Never** change a settled decision (sheet 09) without raising it explicitly first.
 - **Never** invent a statutory figure. If you need one and cannot cite it, say so and stop.
 - Every production defect gets a **failing test before it gets a fix**.
+- **Check a test count against git, per file, never against a doc.** Collect in a worktree
+  at the old commit and diff `file: count` lists. Orphaned bytecode is how lost tests hide:
+  20 from a parallel session survived only as a `.pyc` (D-191). pytest names them
+  `name.cpython-314-pytest-X.Y.Z.pyc`, so strip from `.cpython-` or every test reads as orphaned.
 
 ## Current state
 
@@ -993,7 +1008,10 @@ gateway), so starting it means stopping to ask.
 **Statutory figures are never invented.** If a rate is needed and cannot be cited, say so and
 stop. That applies to filling in a fixture as much as to writing code.
 
-**P6 — Leave: chunk 4 of 5 built** (15 September 2026). 1083 tests green. The leave
+**P6 — Leave: chunk 4 of 5 built, with hardening passes 4b and 4c** (17 September 2026).
+1,135 tests collected: 1,133 pass and 2 are strict xfails pinning D-193 (an unauthorised
+absence and uncertified sick leave are both unpaid AND charged to the balance — awaiting
+Kobus and O-06). See D-186 to D-194 for 4b and 4c. The leave
 catalogue, cycles, the append-only ledger, the accrual engine (ANNUAL, SICK and
 FAMILY_RESPONSIBILITY as of chunk 4), evidence, applications and authorisation are in —
 forfeiture *capture* is chunk 3, and it is not stubbed here. **Chunk 5 — maternity,
@@ -1129,7 +1147,7 @@ cycle here, and an hourly employee's own overdraw has no `unpaid_hours` column t
 type resolves to its `parent_leave_type`, called first by `ensure_cycles()`, `current_cycle()`
 and `accrual_method_for()` — so an unauthorised-absence transaction posts against ANNUAL's own
 cycle and reduces ANNUAL's own balance, while the ledger row still carries its own
-`leave_type=ANNUAL_UNAUTHORISED` as the audit label. The `unpaid_hours` gap is still open.
+`leave_type=ANNUAL_UNAUTHORISED` as the audit label. `unpaid_hours` now exists (D-188).
 
 **Self-approval is BLOCKED and escalates to the owner (task 3, D-174).** Only where the deciding
 user IS the owner AND no other approver (owner or admin) exists for the tenant may
@@ -1218,14 +1236,7 @@ of a valid sequence (skip a reversal that would drive its cycle negative, the sa
 overdrawn adjustment already gets), not in the ledger, which was never asked to understand
 causality between independent rows.
 
-**What that proof does NOT cover, stated plainly:** SICK and every other leave type besides
-ANNUAL (the accrual engine itself is scoped to ANNUAL only, D-168, so there is nothing yet to
-reconcile for the rest); HOURS-denominated balances by property test (proven deterministically
-instead — `leave/tests/test_applications.py` — but not by the random-sequence proof, which only
-generates DAYS-unit actions); `ANNUAL_UNAUTHORISED`'s parent-balance resolution (flagged
-unresolved since chunk 2, D-174, and not exercised here either); and termination payout, which
-is P7's. Full detail, including which P6 done-clauses pass and which do not and why, is in
-`docs/PHASES.md`'s own P6 section — not ticked here without it being demonstrated there first.
+**What that proof covers as of chunk 4c:** ANNUAL, SICK and FAMILY_RESPONSIBILITY, both denominations, through the real engine (D-190). It does not cover MATERNITY, PARENTAL or ADOPTION (chunk 5), `ANNUAL_UNAUTHORISED`, or termination payout (P7). Detail in `docs/PHASES.md`'s P6 section.
 
 **Chunk 4: D-176 was the right diagnosis and the wrong fix, and this chunk corrects the fix
 rather than the diagnosis (D-184).** Chunk 3 responded to the property test's own finding —
