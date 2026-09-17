@@ -379,7 +379,7 @@ falling back to superseded rates.
 | Encrypted fields | ID numbers and bank account numbers, with `_last4` in a separate plain column. Needs `FIELD_ENCRYPTION_KEY` — without it every write refuses (D-77), and `manage.py check` says so in one line (D-94) |
 | Booleans | Positive assertions: `is_active`, never `is_not_active` |
 | Enumerations | `TextChoices` + a `CHECK` constraint. Not integer codes — raw SQL against production should read |
-| Employer settings | Registered in `employers/onboarding.py`, read through `setting_value()`, which pins the employer's tenant itself. `SICK_FIRST_CYCLE_REDUCTION` defaults TRUE because the single-entitlement reading of s22 produces E − A and almost every employer wants it (D-186). `UNAUTHORISED_ABSENCE_TREATMENT` defaults `unpaid` (unpaid, no leave spent; `annual_leave` = charged AND paid, never both unpaid and charged, D-195). A setting with `choices` refuses a stored value outside them. Never read a setting inside `calculators/` — pass the resolved value in |
+| Employer settings | Registered in `employers/onboarding.py`, read through `setting_value()`, which pins the employer's tenant itself. `SICK_FIRST_CYCLE_REDUCTION` defaults TRUE because the single-entitlement reading of s22 produces E − A and almost every employer wants it (D-186). `UNAUTHORISED_ABSENCE_TREATMENT` defaults `unpaid` (unpaid, no leave spent; `annual_leave` = charged AND paid, never both unpaid and charged, D-195). A setting with `choices` refuses a stored value outside them. `ACCOM_DED` is a percentage of the wage, never a rand amount (D-197). Never read a setting inside `calculators/` — pass the resolved value in |
 
 ---
 
@@ -1009,9 +1009,9 @@ gateway), so starting it means stopping to ask.
 stop. That applies to filling in a fixture as much as to writing code.
 
 **P6 — Leave: chunk 4 of 5 built, with hardening passes 4b and 4c** (17 September 2026).
-1,139 tests collected, one a strict xfail pinning D-193: uncertified sick leave is unpaid AND
-charged to the sick balance, awaiting O-06. (The unauthorised-absence half is resolved by
-the employer's election, D-195.) See D-186 to D-195 for 4b and 4c. The leave
+1,145 tests collected, all passing. An unpaid leave day never also spends leave: an overdraw
+(D-188), uncertified sick leave (D-196) and an unauthorised absence elected unpaid (D-195)
+all charge nothing. See D-186 to D-197 for 4b and 4c. The leave
 catalogue, cycles, the append-only ledger, the accrual engine (ANNUAL, SICK and
 FAMILY_RESPONSIBILITY as of chunk 4), evidence, applications and authorisation are in —
 forfeiture *capture* is chunk 3, and it is not stubbed here. **Chunk 5 — maternity,

@@ -365,15 +365,13 @@ that statement rather than merely take it on faith.
       subtract it automatically**
 
 **Done when:** every employee's balance reconciles to their ledger in every scenario,
-with no drift. **Chunk 4 does NOT meet this in full, and the reason is not drift.** The
-ledger reconciles — PROVEN below for ANNUAL, SICK and FAMILY_RESPONSIBILITY (not MATERNITY,
-PARENTAL or ADOPTION, which have no accrual until chunk 5). But reconciliation only proves
-the balance equals what was posted, not that what was posted is right, and D-193 found two
-paths that posted a deduction they should not, each unpaid AND charged. The unauthorised
-absence is RESOLVED by an employer election (D-195): unpaid and uncharged by default, or
-charged to annual leave and paid. Uncertified sick leave is STILL OPEN — pinned by a
-strict-xfail test and waiting on the labour law review (O-06). Until it is decided, a sick
-balance can reconcile perfectly and still be wrong for that case.
+with no drift. **PROVEN for ANNUAL, SICK and FAMILY_RESPONSIBILITY; NOT for MATERNITY,
+PARENTAL or ADOPTION, which have no accrual until chunk 5.** Reconciliation alone only proves
+the balance equals what was posted; D-193 found two paths that posted a deduction for a day
+nobody paid for. Both are closed by Kobus's decisions: an unauthorised absence is the
+employer's election, unpaid and uncharged or annual leave charged and paid (D-195); sick
+leave withheld for want of a certificate is unpaid and not charged (D-196). Each has a test
+asserting the unpaid figure and the balance together.
 `leave/tests/test_reconciliation_property.py` (Hypothesis) generates random sequences — up
 to 16 actions, any of the three leave types, DAYS or HOURS, either s22(4) election — of
 manual accruals, adjustments, applications approved and cancelled (full and part day),
@@ -410,8 +408,8 @@ wrong the first time.
 - **`ANNUAL_UNAUTHORISED` is resolved** (chunk 4, D-180) and its unpaid hours are captured
   (D-188), but the property test does not generate it; `test_accrual_chunk4.py` and
   `test_applications.py` do.
-- **Uncertified sick leave, unpaid AND charged — D-193, open.** See the done-clause above.
-- **`UNAUTHORISED_ABSENCE_TREATMENT=annual_leave` rests on a legal question** queued for O-06: whether an employer may designate the absence as annual leave without agreement (D-195).
+- **`ACCOM_DED` percentages are not yet checked against the gazetted ceiling at capture**
+  (D-197); the s34 total belongs to the P7 payroll run.
 - **Part-day overdraw** — see `unpaid_hours` above: whole days only.
 - **SD7 clause 21(1) is verified against the 2002 gazette, not a current consolidation**
   (D-194). No consolidated SD7 could be read; confirming no amendment since is queued for
