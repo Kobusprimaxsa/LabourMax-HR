@@ -38,9 +38,11 @@ from dateutil.relativedelta import relativedelta
 from django.db.models import Q
 
 from statutory.models import (
+    AdoptionAgeLimit,
     LeaveRuleSet,
     MedicalTaxCreditRate,
     MinimumWageRate,
+    ParentalLeaveQuantum,
     PayeRebate,
     PayeTaxBracket,
     PublicHoliday,
@@ -271,6 +273,59 @@ def accommodation_cap(sector: Sector | None, on_date: datetime.date) -> Accommod
         percentage=rules.accommodation_deduction_max_pct,
         source_reference=rules.source_reference,
     )
+
+
+#: Quoted in the refusal when the interim quantum has lapsed, so the person
+#: reading it knows which judgment ran out and on what date rather than being
+#: told a row is missing.
+VAN_WYK = "Van Wyk v Minister of Employment and Labour (CCT 308/23) [2025] ZACC 20"
+
+
+def parental_quantum(on_date: datetime.date) -> ParentalLeaveQuantum:
+    """How much parental leave the law gives on ``on_date``, in months and days.
+
+    REFUSES when nothing is in force rather than falling back (D-203, D-101's
+    shape). The interim reading-in is effective-dated to the end of the 36-month
+    suspension, so this is exactly what happens on 3 October 2028 if Parliament
+    has not legislated and nothing has been loaded — and the one thing it must
+    not do is quietly revert a parent from four months to the pre-judgment
+    s25A's ten days, on a date nobody was watching.
+    """
+    row = in_force_on(ParentalLeaveQuantum.objects.all(), on_date).first()
+    if row is None:
+        latest = ParentalLeaveQuantum.objects.order_by("-effective_to").first()
+        ran_out = (
+            f" The interim reading-in in {VAN_WYK} was loaded to {latest.effective_to:%d %B %Y}"
+            if latest is not None and latest.effective_to
+            else ""
+        )
+        raise StatutoryValueMissingError(
+            f"No parental leave quantum is in force on {on_date:%d %B %Y}.{ran_out}: the "
+            f"declarations of invalidity were suspended for 36 months from 3 October 2025, "
+            f"and nothing has been loaded for the period after that. Load the remedial "
+            f"legislation, or whatever the Constitutional Court ordered in its place, before "
+            f"capturing parental leave for this date. This refuses rather than falling back "
+            f"to the repealed s25A, which would cut a parent to ten days."
+        )
+    return row
+
+
+def adoption_age_limit(on_date: datetime.date) -> AdoptionAgeLimit:
+    """Whether adoption leave is limited by the child's age on ``on_date``.
+
+    Unlike the quantum, this one is expected to lapse INTO a row saying there is
+    no limit — the Court declared the under-two limit invalid and only suspended
+    that declaration (D-203). A missing row still refuses, because "nobody has
+    loaded the rule" is not the same statement as "there is no limit".
+    """
+    row = in_force_on(AdoptionAgeLimit.objects.all(), on_date).first()
+    if row is None:
+        raise StatutoryValueMissingError(
+            f"No adoption age limit rule is in force on {on_date:%d %B %Y}. {VAN_WYK} retains "
+            f"the 'below the age of two' limit for the suspension period and strikes it down "
+            f"after; load the row that applies to this date rather than guessing which."
+        )
+    return row
 
 
 def termination_rules(sector: Sector | None, on_date: datetime.date) -> TerminationRuleSet:

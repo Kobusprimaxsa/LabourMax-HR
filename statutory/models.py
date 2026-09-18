@@ -275,6 +275,103 @@ class ReferenceDataVersion(AuditedModel, AuditMixin):
         )
 
 
+class ParentalLeaveQuantum(AuditedModel, AuditMixin, EffectiveDatedModel, CitedStatutoryModel):
+    """How much parental leave the law gives, and to whom (Van Wyk, order para 5).
+
+    TWO totals, not one, and the condition that separates them is a fact about a
+    person who is not this employer's employee:
+
+    - a single parent, or the only employed party in a parental relationship, is
+      entitled to at least four consecutive months (read-in s25(1))
+    - where both parties are employed, the parties are entitled **in the
+      aggregate** to four months and ten days (read-in s25(4A))
+
+    **This row LAPSES.** The reading-in is interim: the declarations of invalidity
+    are suspended for 36 months from 3 October 2025, so ``effective_to`` is set
+    and is never open-ended. When it lapses with nothing loaded in its place the
+    resolver REFUSES (D-101's shape) rather than falling back — falling back to
+    the pre-judgment s25A would cut a parent from four months to ten days on a
+    date nobody was watching. Contrast ``AdoptionAgeLimit``, which lapses the
+    other way for a reason the order itself gives.
+    """
+
+    sole_parent_months = models.SmallIntegerField(
+        help_text="Read-in s25(1): a single parent, or the only employed party."
+    )
+    sole_parent_days = models.SmallIntegerField(
+        help_text="Days on top of the months, if the instrument gives any. Usually zero."
+    )
+    both_employed_months = models.SmallIntegerField(
+        help_text="Read-in s25(4A): the AGGREGATE where both parties are employed."
+    )
+    both_employed_days = models.SmallIntegerField(help_text="Read-in s25(4A): plus ten days.")
+
+    class Meta:
+        db_table = "parental_leave_quantum"
+        ordering = ["-effective_from"]
+        constraints = [
+            effective_range_ordered("parental_leave_quantum"),
+            source_reference_not_blank("parental_leave_quantum"),
+            models.CheckConstraint(
+                condition=models.Q(sole_parent_months__gte=0, sole_parent_days__gte=0)
+                & models.Q(both_employed_months__gte=0, both_employed_days__gte=0),
+                name="parental_quantum_figures_not_negative",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Parental leave quantum from {self.effective_from}"
+
+
+class AdoptionAgeLimit(AuditedModel, AuditMixin, EffectiveDatedModel, CitedStatutoryModel):
+    """Whether adoption leave is limited by the child's age, and to what.
+
+    **This one lapses the OTHER WAY, and the order is why.** Para 3 declares the
+    "below the age of two" limit in s25B(1) invalid; para 4 suspends that
+    declaration for 36 months; para 5's reading-in RETAINS the limit meanwhile.
+    So the limit applies today and stops applying when the suspension ends — the
+    Court has already held it unconstitutional. Refusing an adoption of a
+    three-year-old in November 2028 because "no rule is loaded" would be this
+    software enforcing a provision that has been struck down.
+
+    Expressed as DATA, not code: one row with the limit and an ``effective_to``,
+    and a second row from the day after saying there is none. Right on the day,
+    with no deploy.
+
+    ``is_limited`` is NOT NULL and takes **no database default**, paired with a
+    nullable ``max_child_age_years`` — D-198's own shape, because a row written
+    without thinking about the limit must fail rather than silently mean one
+    thing or the other.
+    """
+
+    is_limited = models.BooleanField(
+        help_text="Does the instrument limit adoption leave by the child's age? No default."
+    )
+    max_child_age_years = models.SmallIntegerField(
+        null=True, blank=True, help_text="The limit, when limited. NULL when not."
+    )
+
+    class Meta:
+        db_table = "adoption_age_limit"
+        ordering = ["-effective_from"]
+        constraints = [
+            effective_range_ordered("adoption_age_limit"),
+            source_reference_not_blank("adoption_age_limit"),
+            models.CheckConstraint(
+                condition=models.Q(is_limited=False) | models.Q(max_child_age_years__isnull=False),
+                name="adoption_limit_states_its_age",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(is_limited=True) | models.Q(max_child_age_years__isnull=True),
+                name="adoption_unlimited_states_no_age",
+            ),
+        ]
+
+    def __str__(self):
+        limit = f"under {self.max_child_age_years}" if self.is_limited else "no age limit"
+        return f"Adoption age limit from {self.effective_from}: {limit}"
+
+
 # ---------------------------------------------------------------- watch calendar
 
 

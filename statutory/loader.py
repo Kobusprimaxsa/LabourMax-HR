@@ -61,6 +61,7 @@ from typing import Any
 from django.db import models, transaction
 
 from statutory.models import (
+    AdoptionAgeLimit,
     Bank,
     BankBranch,
     JobGrade,
@@ -68,6 +69,7 @@ from statutory.models import (
     MedicalTaxCreditRate,
     MinimumWageRate,
     MunicipalityAreaMap,
+    ParentalLeaveQuantum,
     PayeRebate,
     PayeTaxBracket,
     PublicHoliday,
@@ -185,6 +187,20 @@ TABLES: dict[str, TableSpec] = {
         natural_key=("parameter_code", "effective_from"),
         scope=("parameter_code",),
     ),
+    # Van Wyk's interim quantum, and the adoption age limit it retains. Two
+    # tables because they LAPSE IN OPPOSITE DIRECTIONS (D-203): the quantum
+    # vanishes and the resolver refuses; the age limit is replaced by a row
+    # saying there is none.
+    "parental_leave_quantum": TableSpec(
+        ParentalLeaveQuantum,
+        natural_key=("effective_from",),
+        scope=(),
+    ),
+    "adoption_age_limit": TableSpec(
+        AdoptionAgeLimit,
+        natural_key=("effective_from",),
+        scope=(),
+    ),
     "leave_rule_set": TableSpec(
         LeaveRuleSet,
         natural_key=("sector", "effective_from"),
@@ -250,6 +266,7 @@ FIXTURE_ORDER = [
     "ref-2026.03.01-lumpsum.json",
     "ref-2026.03.01-leave.json",
     "ref-2026.03.01-sick-accrual.json",
+    "ref-2026.03.01-parental.json",
 ]
 
 FIXTURE_DIRECTORY = "reference"
