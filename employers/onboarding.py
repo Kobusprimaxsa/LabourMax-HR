@@ -125,6 +125,18 @@ SETTING_DEFINITIONS: list[SettingDefinition] = [
         choices=("annual_leave", "unpaid"),
     ),
     SettingDefinition(
+        key="PARENTAL_LEAVE_PAID",
+        value_type=EmployerSetting.ValueType.BOOLEAN,
+        description=(
+            "Does this employer pay parental, maternity and adoption leave? FALSE is the "
+            "statutory position and the default: the read-in BCEA s25(7) leaves payment to "
+            "the Minister under the Unemployment Insurance Act, so the employee claims a UIF "
+            "benefit and the employer pays nothing. TRUE where a contract or agreement is "
+            "better than the Act, which it may always be. Not hard-coded either way (D-205)."
+        ),
+        default=False,
+    ),
+    SettingDefinition(
         key="GROUP_HEADER_MINIMUM",
         value_type=EmployerSetting.ValueType.NUMERIC,
         description=(

@@ -279,3 +279,35 @@ def working_time_rules(db):
         accommodation_deduction_capped=True,
         accommodation_deduction_max_pct=Decimal("10"),
     )
+
+
+@pytest.fixture
+def parental_type(db):
+    """The seeded, shared PARENTAL leave type — the parent of MATERNITY and
+    ADOPTION as of P6 chunk 5 (D-201)."""
+    seed_system_leave_types()
+    with platform_context():
+        return LeaveType.objects.get(code=LeaveType.Code.PARENTAL, tenant__isnull=True)
+
+
+@pytest.fixture
+def maternity_type(parental_type):
+    with platform_context():
+        return LeaveType.objects.get(code=LeaveType.Code.MATERNITY, tenant__isnull=True)
+
+
+@pytest.fixture
+def parental_quantum(db):
+    """Van Wyk's interim quantum: four months, or four months and ten days in
+    the aggregate, ending with the 36-month suspension."""
+    from statutory.models import ParentalLeaveQuantum
+
+    return ParentalLeaveQuantum.objects.create(
+        effective_from=datetime.date(2025, 10, 3),
+        effective_to=datetime.date(2028, 10, 3),
+        sole_parent_months=4,
+        sole_parent_days=0,
+        both_employed_months=4,
+        both_employed_days=10,
+        source_reference="Van Wyk (CCT 308/23) [2025] ZACC 20, order para 5(a)",
+    )

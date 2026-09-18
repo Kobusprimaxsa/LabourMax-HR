@@ -70,6 +70,12 @@ class ApplicationRefusedError(Exception):
     """The application may not be created this way. Nothing was written."""
 
 
+class ParentalLeaveRefusedError(ApplicationRefusedError):
+    """The parental leave declaration is missing, or asks for more than the
+    declared relationship shape allows, or breaks s25(4B)'s single sequence.
+    Nothing was written."""
+
+
 class FamilyResponsibilityIneligibleError(ApplicationRefusedError):
     """BCEA s27(1) does not apply to this employee on this date. Names the limb
     that failed and its figure. Nothing was written."""
@@ -177,6 +183,74 @@ def _build_days(
     return days
 
 
+def _check_parental(employee, leave_type, declaration, *, start_date, end_date):
+    """Everything the order lets us check, and nothing it does not (D-202).
+
+    The quantum is resolved on the application's own start date, so when the
+    interim reading-in lapses this refuses rather than falling back (D-203).
+    """
+    from leave import parental as parental_rules
+    from statutory import resolve
+    from statutory.resolve import StatutoryValueMissingError
+
+    if declaration is None:
+        raise ParentalLeaveRefusedError(
+            f"{leave_type.code} leave needs the employer's declaration before it can be "
+            f"captured: the relationship shape (single parent, the only employed party, or "
+            f"both employed - read-in s25(1) and s25(4A) give different totals), this "
+            f"employee's share in months and days, and the date of the birth, placement or "
+            f"adoption order. The share cannot be checked against anything without it, "
+            f"because whether the other parent is employed is not a fact this system can see."
+        )
+
+    try:
+        quantum = resolve.parental_quantum(start_date)
+    except StatutoryValueMissingError as missing:
+        raise ParentalLeaveRefusedError(str(missing)) from missing
+
+    if parental_rules.exceeds_maximum(declaration, quantum):
+        months, days = parental_rules.maximum_for(declaration.shape, quantum)
+        shape_label = parental_rules.RelationshipShape(declaration.shape).label
+        asked = parental_rules.describe(declaration.share_months, declaration.share_days)
+        raise ParentalLeaveRefusedError(
+            f"A share of {asked} "
+            f"is more than {shape_label.lower()} allows: "
+            f"{parental_rules.describe(months, days)} "
+            f"({quantum.source_reference}). Taking LESS than the maximum is fine and is not "
+            f"refused - the entitlement is a ceiling on what the employer must grant, not a "
+            f"floor on what the employee must take."
+        )
+
+    if leave_type.code == LeaveType.Code.ADOPTION:
+        try:
+            limit = resolve.adoption_age_limit(start_date)
+        except StatutoryValueMissingError as missing:
+            raise ParentalLeaveRefusedError(str(missing)) from missing
+        if limit.is_limited and declaration.child_under_age_limit is False:
+            raise ParentalLeaveRefusedError(
+                f"Adoption leave is limited to a child below the age of "
+                f"{limit.max_child_age_years} until {limit.effective_to:%d %B %Y} "
+                f"(read-in s25B(1); {limit.source_reference}). The Constitutional Court has "
+                f"already declared that limit invalid and suspended the declaration, so it "
+                f"falls away on that date and this application would then be accepted."
+            )
+
+    existing = list(parental_rules.sequence_for_event(employee, declaration.event_date))
+    if existing and parental_rules.detached_from(
+        existing, start_date=start_date, end_date=end_date
+    ):
+        first, last = existing[0], existing[-1]
+        raise ParentalLeaveRefusedError(
+            f"Parental leave for the event of {declaration.event_date:%d %B %Y} is already "
+            f"recorded from {first.start_date:%d %B %Y} to {last.end_date:%d %B %Y}, and "
+            f"read-in s25(4B) requires it to be taken 'in a single sequence of consecutive "
+            f"days'. Extend that sequence instead - a period starting the day after it ends "
+            f"is the same sequence - or cancel it first."
+        )
+
+    return declaration
+
+
 def submit_application(
     employee,
     *,
@@ -187,6 +261,7 @@ def submit_application(
     leave_evidence_type: LeaveEvidenceType | None = None,
     is_part_day: bool = False,
     submitted_by=None,
+    parental=None,
 ) -> LeaveApplication:
     """Create and submit a leave application. Atomic. Never refuses for want
     of evidence, and never refuses for being overdrawn — see the module
@@ -219,6 +294,14 @@ def submit_application(
                     f"Family responsibility leave from {start_date:%d %B %Y} refused: "
                     + " ".join(eligibility.reasons)
                 )
+
+        from leave import parental as parental_rules
+
+        parental_declaration = None
+        if parental_rules.is_parental(leave_type):
+            parental_declaration = _check_parental(
+                employee, leave_type, parental, start_date=start_date, end_date=end_date
+            )
 
         method, _entitlement = accrual_method_for(employee, leave_type, start_date)
         unit = unit_for_method(method)
@@ -265,6 +348,22 @@ def submit_application(
             working_units=working_units_for_sick,
             on_date=start_date,
         )
+
+        if parental_declaration is not None:
+            # Parental leave accrues nothing and draws on nothing (D-201): the
+            # ceiling is the declared share against the statutory quantum, not a
+            # balance. Unpaid by default (read-in s25(7): payment is the UIF's
+            # question, not the employer's), unless this employer has elected to
+            # pay it by contract (D-205). Either way the days are recorded
+            # through the SAME unpaid columns as every other unpaid reason
+            # (D-188) - never a third mechanism.
+            from employers.onboarding import setting_value
+
+            employer_pays = bool(setting_value(employee.employer, "PARENTAL_LEAVE_PAID"))
+            for day_dict in day_dicts:
+                if day_dict["is_working_day"]:
+                    day_dict["is_paid"] = employer_pays
+                day_dict["deducted_from_balance"] = False
 
         if unauthorised_treatment == "unpaid" or not sick_is_paid:
             for day_dict in day_dicts:
@@ -336,6 +435,19 @@ def submit_application(
             # here converts a day into hours (D-164).
             unpaid_days=unpaid_total if unit == LeaveCycle.Unit.DAYS else ZERO,
             unpaid_hours=unpaid_total if unit == LeaveCycle.Unit.HOURS else ZERO,
+            parental_event_date=(parental_declaration.event_date if parental_declaration else None),
+            parental_relationship_shape=(
+                parental_declaration.shape if parental_declaration else ""
+            ),
+            parental_share_months=(
+                parental_declaration.share_months if parental_declaration else None
+            ),
+            parental_share_days=(parental_declaration.share_days if parental_declaration else None),
+            parental_child_under_age_limit=(
+                parental_declaration.child_under_age_limit if parental_declaration else None
+            ),
+            parental_declared_by_user=submitted_by if parental_declaration else None,
+            parental_declared_at=timezone.now() if parental_declaration else None,
         )
         application.full_clean()
         application.save()

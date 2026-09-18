@@ -934,6 +934,45 @@ class LeaveApplication(AuditedModel, TenantScopedModel):
     )
     cancelled_reason = models.CharField(max_length=255, blank=True)
 
+    # ------------------------------------------------- parental leave (D-202)
+    # CAPTURED, never computed. The quantum turns on whether the OTHER parent is
+    # employed, which is a fact about somebody who is not this employer's
+    # employee. The declaration is the employer's evidence if it is disputed, so
+    # it carries who said it and when.
+    #
+    # The event is a DATE and nothing else: no child's name, no identity number.
+    # None of it is needed for any calculation, and a domestic employer's system
+    # holding a child's identity number is a liability with no upside. The
+    # under-two adoption limit is a declared yes/no for the same reason - it
+    # would otherwise need the child's date of birth stored here.
+    parental_event_date = models.DateField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="The birth, placement or adoption order date this leave relates to.",
+    )
+    parental_relationship_shape = models.CharField(
+        max_length=30,
+        blank=True,
+        help_text="Declared: single parent, only employed party, or both employed.",
+    )
+    parental_share_months = models.SmallIntegerField(null=True, blank=True)
+    parental_share_days = models.SmallIntegerField(null=True, blank=True)
+    parental_child_under_age_limit = models.BooleanField(
+        null=True,
+        blank=True,
+        help_text="Adoption only. Declared, not derived - the child's date of birth is not stored.",
+    )
+    parental_declared_by_user = models.ForeignKey(
+        "core.AppUser",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        editable=False,
+    )
+    parental_declared_at = models.DateTimeField(null=True, blank=True)
+
     self_approved = models.BooleanField(
         default=False,
         help_text="TRUE only where the owner is also the applicant and no other approver exists.",
@@ -991,6 +1030,45 @@ class LeaveApplication(AuditedModel, TenantScopedModel):
                     | models.Q(total_hours__isnull=False, unpaid_days=0)
                 ),
                 name="leave_application_unpaid_in_its_own_unit",
+            ),
+            # The declaration travels together or not at all (D-202). A half-filled
+            # declaration is worse than none: it reads as a recorded fact while
+            # missing the part that decides the ceiling. The same CHECK-pair shape
+            # as the accommodation cap (D-198) and the supersede reason (D-199).
+            # child_under_age_limit is deliberately outside the group - it applies
+            # to adoption only, and NULL there means "not an adoption".
+            models.CheckConstraint(
+                condition=models.Q(
+                    parental_event_date__isnull=True,
+                    parental_relationship_shape="",
+                    parental_share_months__isnull=True,
+                    parental_share_days__isnull=True,
+                    parental_declared_at__isnull=True,
+                )
+                | models.Q(
+                    parental_event_date__isnull=False,
+                    parental_share_months__isnull=False,
+                    parental_share_days__isnull=False,
+                    parental_declared_at__isnull=False,
+                )
+                & ~models.Q(parental_relationship_shape=""),
+                name="leave_application_parental_declaration_is_whole",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(parental_relationship_shape="")
+                | models.Q(
+                    parental_relationship_shape__in=[
+                        "single_parent",
+                        "only_employed_party",
+                        "both_employed",
+                    ]
+                ),
+                name="leave_application_parental_shape_is_known",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(parental_share_months__isnull=True)
+                | models.Q(parental_share_months__gte=0, parental_share_days__gte=0),
+                name="leave_application_parental_share_not_negative",
             ),
             # Partial EXCLUDE: only rows that are actually approved compete for a
             # date. A draft or a declined application legitimately shares dates

@@ -98,7 +98,11 @@ from leave.accrual import (
     SICK_UPFRONT_BASIS,
     accrue_employee,
 )
-from leave.applications import FamilyResponsibilityIneligibleError, submit_application
+from leave.applications import (
+    FamilyResponsibilityIneligibleError,
+    ParentalLeaveRefusedError,
+    submit_application,
+)
 from leave.authorisation import approve, cancel
 from leave.balances import balance_as_at
 from leave.cycles import ensure_cycles
@@ -107,6 +111,8 @@ from leave.forfeiture import ForfeitureRefusedError, capture_forfeiture
 from leave.ledger import post_transaction, reverse_transaction
 from leave.models import LeaveApplication, LeaveCycle, LeaveTransaction, LeaveType
 from leave.negative_balances import negative_balances
+from leave.parental import FAMILY_CODES as PARENTAL_FAMILY
+from leave.parental import ParentalDeclaration, RelationshipShape
 from statutory.models import Sector
 
 pytestmark = pytest.mark.django_db
@@ -116,6 +122,10 @@ BORN = datetime.date(1990, 1, 1)
 START = datetime.date(2026, 3, 1)  # a Sunday; the first Monday is 2026-03-02
 
 TransactionType = LeaveTransaction.TransactionType
+
+#: The day Van Wyk's 36-month suspension ends, after which the interim
+#: quantum is no longer in force and capture refuses (D-203).
+LAPSE_DATE = datetime.date(2028, 10, 3)
 
 # 40 keeps CI's run short. Raise it locally to hunt, e.g.
 # LEAVE_PROPERTY_EXAMPLES=400 pytest leave/tests/test_reconciliation_property.py
@@ -450,7 +460,9 @@ def _capture_worked_days(employee, cursor: datetime.date, count: int) -> datetim
 @given(
     actions=st.lists(action_strategy, min_size=3, max_size=16),
     unit=st.sampled_from([LeaveCycle.Unit.DAYS, LeaveCycle.Unit.HOURS]),
-    leave_type_key=st.sampled_from(["ANNUAL", "SICK", "FAMILY_RESPONSIBILITY"]),
+    leave_type_key=st.sampled_from(
+        ["ANNUAL", "SICK", "FAMILY_RESPONSIBILITY", "PARENTAL", "MATERNITY"]
+    ),
     reduce_by_taken=st.booleans(),
 )
 def test_balance_reconciles_to_the_ledger_across_any_valid_sequence(
@@ -463,6 +475,9 @@ def test_balance_reconciles_to_the_ledger_across_any_valid_sequence(
     annual_type,
     sick_type,
     family_type,
+    parental_type,
+    maternity_type,
+    parental_quantum,
     owner_user,
     actions,
     unit,
@@ -474,6 +489,8 @@ def test_balance_reconciles_to_the_ledger_across_any_valid_sequence(
         "ANNUAL": annual_type,
         "SICK": sick_type,
         "FAMILY_RESPONSIBILITY": family_type,
+        "PARENTAL": parental_type,
+        "MATERNITY": maternity_type,
     }[leave_type_key]
 
     employee, cycles = _fresh_employee_with_two_cycles(
@@ -550,12 +567,43 @@ def test_balance_reconciles_to_the_ledger_across_any_valid_sequence(
                         assert after_count == before_count, "a refusal writes nothing"
                         cursor = end + datetime.timedelta(days=1)
                         continue
+                extra = {}
+                if leave_type.code in PARENTAL_FAMILY:
+                    # Each application is its own birth or placement, so s25(4B)'s
+                    # single sequence is satisfied by construction rather than by
+                    # narrowing what the generator may produce — that rule has its
+                    # own tests in test_parental.py.
+                    extra["parental"] = ParentalDeclaration(
+                        shape=RelationshipShape.SINGLE_PARENT,
+                        share_months=1,
+                        share_days=0,
+                        event_date=start,
+                    )
+                if extra and start >= LAPSE_DATE:
+                    # The interim quantum is effective-dated to the end of the
+                    # 36-month suspension, so past that date capture REFUSES
+                    # (D-203) — asserted here, by its message, rather than kept
+                    # out of the generator's reach. The sequence carries on as
+                    # an example with no application at this cursor.
+                    with pytest.raises(ParentalLeaveRefusedError) as lapsed:
+                        submit_application(
+                            employee,
+                            leave_type=leave_type,
+                            start_date=start,
+                            end_date=end,
+                            is_part_day=is_part_day,
+                            **extra,
+                        )
+                    assert "Van Wyk" in str(lapsed.value)
+                    cursor = end + datetime.timedelta(days=1)
+                    continue
                 application = submit_application(
                     employee,
                     leave_type=leave_type,
                     start_date=start,
                     end_date=end,
                     is_part_day=is_part_day,
+                    **extra,
                 )
                 approved = approve(application, decided_by=owner_user)
                 applications.append({"application": approved, "cancelled": False})
