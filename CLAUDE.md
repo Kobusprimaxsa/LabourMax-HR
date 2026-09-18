@@ -339,11 +339,18 @@ Things that are easy to get wrong, and have been got wrong before:
 - **Commission is excluded** from the UIF contribution base. Bonuses are not.
 - **Bonuses in PAYE**: annualise regular pay ×12, then add the annual payment **once**.
   Multiplying a bonus by twelve is the classic December over-deduction.
-- **Parental leave** is under an interim Constitutional Court reading-in — *Van Wyk v Minister
-  of Employment and Labour* [2025] ZACC 20, 3 October 2025: four months and ten days for all
-  parents together, divided as they agree and split as equally as possible if they cannot.
-  The declaration of invalidity is suspended 36 months for Parliament to legislate, so this
-  **will** change. Stored as months plus days, never as a day count.
+- **Parental leave has TWO totals, and the condition between them is not ours to see.** Under
+  the interim reading-in in *Van Wyk v Minister of Employment and Labour* [2025] ZACC 20,
+  3 October 2025: a single parent, or **the only employed party**, gets four consecutive months
+  (read-in s25(1)); where **both parties are employed** the parties get four months and ten days
+  **in the aggregate** (read-in s25(4A)), divided as they agree. Whether the other parent is
+  employed is a fact about someone who is not this employer's employee, so the shape and the
+  share are **declared and captured, never computed** (D-201, D-202). s25A is deleted: there is
+  no standalone ten-day parental leave. Adoption and commissioning leave are four months too,
+  not the pre-judgment ten weeks. MATERNITY and ADOPTION are sub-types of PARENTAL and resolve
+  to ONE balance. Stored as months plus days, never as a day count, and the month-end clamps
+  (D-204). The suspension ends 3 October 2028: the quantum then REFUSES rather than falling
+  back, while the under-two adoption limit FALLS AWAY, both as loaded data (D-203).
 - **The maternity restriction runs after the birth, not before it.** A birth mother may not
   work for six weeks after giving birth unless certified fit; separately, she may start leave
   up to four weeks before. Two different rules, two columns.
@@ -1024,8 +1031,11 @@ gateway), so starting it means stopping to ask.
 **Statutory figures are never invented.** If a rate is needed and cannot be cited, say so and
 stop. That applies to filling in a fixture as much as to writing code.
 
-**P6 — Leave: chunk 4 of 5 built, with hardening passes 4b and 4c** (17 September 2026).
-1,174 tests collected, all passing. An unpaid leave day never also spends leave: an overdraw
+**P6 — Leave: ALL FIVE CHUNKS BUILT** (18 September 2026). Chunk 5 — maternity, parental
+under Van Wyk and adoption — is in: the two totals as cited reference data, the declaration
+captured rather than computed, s25(4B)'s single sequence enforced, and the two opposite lapse
+behaviours loaded as data (D-201 to D-206).
+1,206 tests collected, all passing. An unpaid leave day never also spends leave: an overdraw
 (D-188), uncertified sick leave (D-196) and an unauthorised absence elected unpaid (D-195)
 all charge nothing. See D-186 to D-197 for 4b and 4c. The leave
 catalogue, cycles, the append-only ledger, the accrual engine (ANNUAL, SICK and

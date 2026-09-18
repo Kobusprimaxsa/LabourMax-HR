@@ -250,7 +250,7 @@ completed prerequisite, not the outcome the "Done when" clause actually asks for
 
 ---
 
-## P6 — Leave Management · 5 weeks · 8 tables — chunk 4 of 5 done (with 4b, 4c); chunk 5 not started
+## P6 — Leave Management · 5 weeks · 8 tables — chunks 1 to 5 built (4b, 4c hardening)
 
 **Chunks 1 to 4 done** (15 September 2026): the catalogue, cycles, the ledger, the
 accrual engine (now ANNUAL, SICK and FAMILY_RESPONSIBILITY), evidence, applications,
@@ -265,9 +265,27 @@ accrual method refused at capture by trigger; the overdraw proven to retain held
 two other unpaid paths raised as defects awaiting decision (D-193); SD7 and SD1 read from
 the clause text. See the P6 section of CLAUDE.md and D-162 to D-194 for the detail.
 
-**Chunk 5 is NOT started:** maternity leave, parental leave under the interim reading in
-*Van Wyk and Others v Minister of Employment and Labour* [2025] ZACC 20, and adoption leave.
-`AccrualNotSupportedError` names the gap for all three. Read the honest "Done when" assessment at the bottom of this section before
+**Chunk 5 is BUILT** (18 September 2026, D-201 to D-206): maternity, parental and adoption
+leave under the interim reading-in in *Van Wyk and Others v Minister of Employment and Labour*
+[2025] ZACC 20. The two totals (four months; four months and ten days in the aggregate where
+both parties are employed) are cited reference data resolved on the application date; the
+relationship shape and the employee's share are captured as a declaration, never computed;
+s25(4B)'s single sequence is enforced per birth or placement; and the suspension's two opposite
+lapse behaviours are loaded as data. These types still do not accrue — `AccrualNotSupportedError`
+is correct for them and stays.
+
+**What P8's UI-19 will need from this data, so the shape is right now rather than retrofitted
+(task 7d).** `statutory_out` is not built. When it is, the declaration written here is what the
+UI-19 and the UIF benefit claim will read: `leave_application.parental_event_date` (the birth,
+placement or adoption-order date), the start and end of each approved period, and
+`parental_relationship_shape` — the employee claims against the UIF, and the employer's
+declaration is what supports the claim. Two things it will NOT find here, deliberately: the
+other parent (D-202 — never captured, and unknowable), and the child's identity details (only
+the event DATE is stored). **And the UIF Act half of Van Wyk is unread-in:** order para 2
+declares ss 24, 26A, 27 and 29A of the Unemployment Insurance Act invalid alongside the BCEA
+sections, but para 5 reads in only the BCEA, so the benefit periods a UI-19 declares are still
+governed by the unamended UIF Act during the suspension (D-203). P8 must not assume the BCEA
+leave period and the UIF benefit period are the same length. Read the honest "Done when" assessment at the bottom of this section before
 treating any part of the phase as fully proven — it is not, in specific and stated ways,
 and the property test's own findings (D-176, corrected as D-184) are the reason to trust
 that statement rather than merely take it on faith.
