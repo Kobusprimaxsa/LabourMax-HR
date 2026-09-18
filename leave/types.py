@@ -152,7 +152,31 @@ SYSTEM_LEAVE_TYPES: tuple[SystemLeaveType, ...] = (
         ),
     ),
     SystemLeaveType(
+        # MATERNITY and ADOPTION are SUB-TYPES of this one (D-201). Van Wyk's
+        # reading-in makes s25 a single parent-neutral entitlement, and s25B(1)
+        # points adoption leave straight at "the parental leave referred to in
+        # section 25(1)" — so they are one entitlement wearing three names, and
+        # they must resolve to ONE balance. An employee cannot take four months
+        # of maternity and four months of parental leave for the same child.
+        # The names stay because employers and employees say "maternity leave",
+        # and forcing "parental leave" into a domestic employer's vocabulary
+        # would be bad product for no legal gain.
+        code=Code.PARENTAL,
+        name="Parental leave",
+        is_paid=False,
+        accrues=False,
+        display_order=41,
+        colour_hex="#8E24AA",
+        reason=(
+            "BCEA s25A (the interim Van Wyk reading-in, D-... in leave_rule_set): "
+            "unpaid by the employer, same UIF-benefit shape as maternity, and "
+            "calendar-bound rather than accrued."
+        ),
+    ),
+    SystemLeaveType(
         code=Code.MATERNITY,
+        parent_code=Code.PARENTAL,
+        balance_source=BalanceSource.PARENT,
         name="Maternity leave",
         is_paid=False,
         accrues=False,
@@ -169,20 +193,9 @@ SYSTEM_LEAVE_TYPES: tuple[SystemLeaveType, ...] = (
         ),
     ),
     SystemLeaveType(
-        code=Code.PARENTAL,
-        name="Parental leave",
-        is_paid=False,
-        accrues=False,
-        display_order=41,
-        colour_hex="#8E24AA",
-        reason=(
-            "BCEA s25A (the interim Van Wyk reading-in, D-... in leave_rule_set): "
-            "unpaid by the employer, same UIF-benefit shape as maternity, and "
-            "calendar-bound rather than accrued."
-        ),
-    ),
-    SystemLeaveType(
         code=Code.ADOPTION,
+        parent_code=Code.PARENTAL,
+        balance_source=BalanceSource.PARENT,
         name="Adoption leave",
         is_paid=False,
         accrues=False,

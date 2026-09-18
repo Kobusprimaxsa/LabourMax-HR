@@ -42,6 +42,22 @@ WHY = {
     "FAMILY_RESPONSIBILITY": (
         "Family responsibility leave is BCEA s27(2): a flat number of days per annual leave cycle."
     ),
+    # Added with P6 chunk 5: the parental family is prescribed in the same way.
+    # Van Wyk's reading-in states a period per birth or placement - four months,
+    # or four months and ten days in the aggregate - and offers no method for an
+    # agreement to select. It does not accrue at all.
+    "PARENTAL": (
+        "Parental leave is read-in BCEA s25(1) and s25(4A): a period per birth or placement, "
+        "not a bank that accrues."
+    ),
+    "MATERNITY": (
+        "Maternity leave draws on the parental entitlement (read-in BCEA s25), which is a "
+        "period per birth, not a bank that accrues."
+    ),
+    "ADOPTION": (
+        "Adoption leave is read-in BCEA s25B(1), which gives the parental leave referred to in "
+        "s25(1): a period per placement, not a bank that accrues."
+    ),
 }
 
 
