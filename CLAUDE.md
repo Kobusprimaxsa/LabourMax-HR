@@ -367,7 +367,9 @@ Things that are easy to get wrong, and have been got wrong before:
 - **The maternity restriction runs after the birth, not before it.** A birth mother may not
   work for six weeks after giving birth unless certified fit; separately, she may start leave
   up to four weeks before. Two different rules, two columns.
-- **Leave pay, notice pay and severance all use the same s35(5) remuneration**, and the
+- **Leave pay, notice pay and severance all use the same s35(5) remuneration** — s35(5) says
+  so itself, which is why the rule lives in `calculators/remuneration.py` and not in whichever
+  calculator needed it first (D-226). The
   13-week average under s35(4) applies to all three. Whether it applies at all is a DECLARED
   boolean, because "fluctuates significantly" has no gazetted threshold (D-220). The average is
   never floored at the contractual rate (D-221).
@@ -1019,10 +1021,12 @@ every shared boundary — both true is an overlap, both false is a gap, and a pl
 value-equality check catches neither. BCEA's one-year mark is the one boundary that is
 genuinely a judgement call: s37(1)(b) "not more than one year" and s37(1)(c)(i) "one year
 or more" both name it, and four weeks is the reading loaded, flagged for the labour law
-review rather than asserted as settled (O-06). Nothing reads SD1's own
-pay-in-lieu-of-notice formula yet either — clause 23(1)(d) gives figures for one working
-day and for two weeks, and no band in the determination is two weeks, so P7 must not
-encode a reading of the four-week case until the labour law review answers it (O-06).
+review rather than asserted as settled (O-06). SD1's own pay-in-lieu-of-notice
+formula is read as of P7 chunk 5, and the note that used to stand here was wrong about
+the clause (D-224): 23(1)(d) gives figures for one working day and for **four weeks'
+notice** — the figure being "double the weekly wage" — not "for two weeks", so there was
+never a missing band. Its amounts are a floor ("not less than") and BCEA s38 pays more in
+every case, so the two do not conflict.
 
 **The fixture checksum guards a reload, not the time in between** (D-161). The loader
 fingerprints a fixture and refuses to reload a version label under different content —
@@ -1155,6 +1159,41 @@ by name against GN 691's limbs — the flag decides what an employee's leave is 
 rest of their employment and appears on no screen. **O-25 raised**: `BONUS_PRO_RATA` is flagged
 FALSE, and SD1's December bonus is gazetted rather than discretionary, which GN 691(c) would
 include. Not changed, because the flag is a settled decision.
+
+**P7 chunk 5 — the termination payout** (19 September 2026, D-224 to D-227). 1 460 tests
+green. `calculators/termination.py` prices s38 pay in lieu, s40(b) leave due, s40(c) the
+incomplete cycle and s41 severance — and **BCEA s35 moved to `calculators/remuneration.py`**
+because s35(5) names all three payments together, so one averaging rule serves s21, s38 and
+s41 rather than three copies of it (D-226).
+
+**Three findings, and two of them changed what this build believed.**
+
+**SD1 clause 23(1)(d) was misread, and the conflict it was flagged for does not exist**
+(D-224). The note that stood here said the clause "gives figures for one working day and for
+two weeks, and no band in the determination is two weeks". It gives figures for one working
+day and for **four weeks' notice** — the figure being "double the weekly wage". There was
+never a missing band. Its amounts are a floor ("not less than") and s38(1) pays four weekly
+wages where SD1's floor is two, so paying s38 satisfies both. The cached determination text
+had been in the research directory since P6; a note about a clause is not the clause.
+
+**s40(c) is a FLOOR, not a formula** (D-225). Pro-rata leave for the incomplete cycle is the
+GREATER of the ledger's own accrual and the Act's one-day-per-17-worked, because s40(c)(ii)
+permits "any basis that is at least as favourable". An employer whose rule set accrues less
+generously underpays every leaver and nothing on a payslip shows it, so where the statutory
+floor wins the result says so by name. "**Longer than** four months" puts the boundary in the
+lower band — exactly four months does not qualify.
+
+**BCEA s84(1) is not implemented anywhere** (O-26): "previous employment with the same
+employer must be taken into account if the break between the periods of employment is less
+than one year". `service_days_to()` is this-engagement-only by design, and nothing aggregates,
+so a re-hired employee's notice band and severance are both understated. D-103 is not the
+problem and must not be undone; what is missing is the sum. **O-27** raised too: s40(a)'s time
+off in lieu of overtime or Sunday work has no leave type and no ledger, so a mandatory
+termination payment cannot be computed at all.
+
+**A negative leave balance is surfaced and never netted off** (D-185, now with its own test):
+recovering it is a s34 deduction needing written consent, so the figure reaches the stored
+trace and the total is undiminished.
 
 **P6 — Leave: ALL FIVE CHUNKS BUILT** (18 September 2026). Chunk 5 — maternity, parental
 under Van Wyk and adoption — is in: the two totals as cited reference data, the declaration

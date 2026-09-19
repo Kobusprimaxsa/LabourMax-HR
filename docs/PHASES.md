@@ -448,8 +448,8 @@ wrong the first time.
 
 The one that has to be right.
 
-**Chunks 1 to 4 built** (19 September 2026, D-207 to D-223): the calculator contract, the
-trace, UIF, SDL, PAYE, gross pay and leave pay. **The assembly is BLOCKED and deliberately not started.** Reference data version
+**Chunks 1 to 5 built** (19 September 2026, D-207 to D-227): the calculator contract, the
+trace, UIF, SDL, PAYE, gross pay, leave pay and the termination payout. **The assembly is BLOCKED and deliberately not started.** Reference data version
 REF-2026.03.01 is loaded and reconciles but is NOT verified, so `in_force_on()` cannot see it
 and no payroll run can start — periods, runs and payslips all read effective-dated rows.
 Calculators are not blocked by that, because a pure function takes its statutory figures as
@@ -489,7 +489,11 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       data. The average is not floored at the contractual rate — s21(1)(b) makes s35 the
       calculation — and what counts as remuneration stays the component flag, held to
       Government Notice 691 by a test that pins the flagged set by name
-- [ ] `termination_payout` — notice, pro-rata leave, severance, pro-rata bonus
+- [x] `termination_payout` — notice, pro-rata leave, severance — CHUNK 5 (D-224 to
+      D-227). The pro-rata BONUS is not built: it belongs with `annual_bonus_cycle` below,
+      and SD1's is the only one gazetted. s40(c) turned out to be a FLOOR rather than a
+      formula, SD1 clause 23(1)(d) turned out not to conflict with s38 at all, and BCEA
+      s84(1) turned out not to be implemented anywhere (O-26)
 - [ ] `annual_bonus_cycle` accruing monthly
 - [ ] `payslip`, `payslip_line` with SARS source codes and employee snapshot
 - [ ] `ytd_accumulator`, rebuildable from finalised payslips
