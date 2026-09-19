@@ -29,12 +29,12 @@ off page 38.
 own first rate begins, so the two agreements abut with neither a gap nor an
 overlap for ``minimum_wage_rate``'s exclusion constraint to catch.
 
-**What this does NOT load.** Only the wage rates and the monthly wage factor
-were read and verified. This agreement's leave, working time, termination and
-notice provisions are not loaded, so for 1–31 March 2026 those still resolve to
-Sectoral Determination 1's sector-wide rows, which is what they did before and
-is an approximation rather than the instrument. Recorded rather than papered
-over (D-259).
+**What this does NOT load.** The wage rates, the monthly wage factor, the leave
+and working time rule sets and the two additive maternity benefits are read and
+loaded. Its TERMINATION and NOTICE provisions are not, so for 1–31 March 2026 a
+severance calculation, the December bonus quantity and every notice band still
+resolve to Sectoral Determination 1's sector-wide rows rather than to this
+agreement. Recorded rather than papered over (D-259, D-260).
 
 Run: python tools/build_bccci_2023_fixture.py
 """
@@ -83,10 +83,17 @@ AREA_B = (
 )
 
 NOT_A_GAZETTEER = (
-    "Only the wage rates and the clause 3 monthly wage factor were read and verified "
-    "from this gazette. Its leave, working time, termination and notice provisions are "
-    "NOT loaded, so for 1-31 March 2026 those resolve to Sectoral Determination 1's "
-    "sector-wide rows - the same approximation as before, not this instrument (D-259)."
+    "WHAT IS STILL NOT LOADED FROM THIS GAZETTE: its termination and notice provisions. So "
+    "for 1-31 March 2026 a severance calculation, the December bonus quantity and every "
+    "notice band still resolve to Sectoral Determination 1's sector-wide rows rather than to "
+    "this agreement (D-260)."
+)
+
+NOT_A_GAZETTEER_RULES = (
+    "WHAT IS STILL NOT LOADED FROM THIS GAZETTE: its termination and notice provisions. So "
+    "for 1-31 March 2026 a severance calculation, the December bonus quantity and every "
+    "notice band still resolve to Sectoral Determination 1's sector-wide rows rather than to "
+    "this agreement (D-260)."
 )
 
 
@@ -113,7 +120,7 @@ def wage(rate: str, effective_from: str, effective_to: str, subclause: str, extr
 
 
 FIXTURE = {
-    "version_label": "REF-2023.04.01-BCCCI",
+    "version_label": "REF-2023.04.01-BCCCI-r2",
     "applies_from": "2023-04-01",
     "description": (
         "The PREDECESSOR BCCCI (KwaZulu-Natal) Main Collective Agreement: wage rates and "
@@ -156,9 +163,270 @@ FIXTURE = {
 }
 
 
+# ---------------------------------------------------------------------------
+# THE RULE SETS, read clause by clause off the same gazette.
+#
+# THE CLAUSE NUMBERING IS NOT THE 2026 AGREEMENT'S AND MUST NOT BE MAPPED ONTO
+# IT (D-260). The 2026 agreement inserted "5. MINIMUM HOURS" as its own clause
+# and pushed everything after it down by one, so where 2026 has clause 8
+# Regulation of Working Time, 9 Annual Leave, 10 Sick Leave, 11 Public Holidays
+# and Sundays, 12 Study Leave and 13 Maternity, THIS agreement has 7, 8, 9, 10,
+# 11 and 12 - and its six-hour minimum is clause 4.6(a) rather than a clause of
+# its own. Every citation below was read off the page, not derived by
+# subtracting one.
+#
+# That renumbering also explains a gazette error already recorded in O-32: the
+# 2026 agreement's clause 3 defines "overtime" by reference to "Clause 7" for
+# maximum normal hours, which in 2026 is Prohibition on Further Negotiation. In
+# THIS agreement clause 7 IS the working time clause, so the cross-reference was
+# correct when it was written and became wrong when clause 5 was inserted and
+# nobody updated the definition. A leftover, not a typo.
+#
+# EVERY FIGURE IS THE SAME AS THE 2026 AGREEMENT'S. That is a finding, not an
+# assumption: each was read off this gazette and then compared. The two
+# differences found are both in clause 7.4/8.4's meal interval detail - the 2026
+# agreement adds a two-hour interval for shifts of ten hours and above, limited
+# to the Health Care and Hospitality sectors, and changes the "longer than one
+# hour" trigger to "longer than two hours" for cleaners. Neither figure is
+# loaded in either rule set, so neither row differs.
+# ---------------------------------------------------------------------------
+
+RULES_OUTPUT = (
+    pathlib.Path(__file__).resolve().parents[1] / "reference" / "ref-2023.04.01-bccci-rules.json"
+)
+
+DERIVED_LEAVE_DAYS = (
+    "DERIVED, not transcribed, by the same arithmetic the BCEA itself uses: clause 8.1(a)'s "
+    "21 CONSECUTIVE days is three weeks, which is 15 working days on a five-day week and 18 "
+    "on a six-day week, and the monthly accrual follows over a 12-month cycle. Clause 8.1(b)'s "
+    "28 consecutive days is four weeks, so 20 and 24. The agreement states none of these six "
+    "figures directly."
+)
+
+FROM_THE_ACT = (
+    "NOT FROM THIS AGREEMENT. The agreement is silent, so the BCEA governs and these columns "
+    "carry its figures: s20(2)(b)'s one day per 17 worked, s20(4)'s six months, s40(b)'s "
+    "payout on termination, s27(1)'s three days of family responsibility leave on four "
+    "months' service and four days a week, and s25's four weeks before and six weeks after. "
+    "There is no family responsibility clause in this agreement at all - checked through to "
+    "clause 17, not assumed from the successor."
+)
+
+VESTIGIAL_PARENTAL = (
+    "THE THREE parental_leave_* COLUMNS ARE READ BY NOTHING. parental_leave_quantum is the "
+    "authoritative table (D-201) and is separately effective-dated from 3 October 2025, the "
+    "day the Van Wyk interim reading-in took effect - which matters here because this row "
+    "spans that date and these columns cannot express what applied before it. They carry the "
+    "same values every other rule set carries so the row can be created at all; do NOT read "
+    "them as a statement about the pre-Van Wyk position (O-34)."
+)
+
+MEAL_HOUR_IS_THE_ACTS = (
+    "meal_interval_after_hours = 5 is clause 7.4's own trigger. meal_interval_minutes = 60 is "
+    "NOT: clause 7.4 states no general duration, only that the interval may be reduced to not "
+    "less than half an hour by agreement. The hour is BCEA s14(1), which this agreement does "
+    "not displace (D-248, the same finding as for the successor)."
+)
+
+NO_STANDBY = (
+    "ZERO MEANS THE CONCEPT DOES NOT EXIST IN THIS AGREEMENT. Standby is a Sectoral "
+    "Determination 7 creature; this agreement has no standby regime, and neither does its "
+    "successor."
+)
+
+NO_ACCOMMODATION_CAP = (
+    "accommodation_deduction_capped = false: clause 5.3(a) permits a deduction for "
+    "accommodation with the employee's written consent and states NO percentage, so no cap is "
+    "loaded and accommodation_deduction_max_pct is null. That is the ABSENCE of a cap, not a "
+    "cap of zero (D-198)."
+)
+
+RULES_FIXTURE = {
+    "version_label": "REF-2023.04.01-BCCCI-RULES",
+    "applies_from": "2023-04-01",
+    "description": (
+        "Leave and working time rules for contract cleaning Area B under the PREDECESSOR "
+        "BCCCI Main Collective Agreement, Notice 1726 of 2023 in GG 48356. Read clause by "
+        "clause off the rendered gazette; its clause numbering is one behind the 2026 "
+        "agreement's and was not derived from it. Closes on 1 April 2026. NOT verified."
+    ),
+    "tables": {
+        "leave_rule_set": [
+            {
+                "sector": "CONTRACT_CLEANING",
+                "sector_area": "AREA_B",
+                "effective_from": "2023-04-01",
+                "effective_to": "2026-04-01",
+                "source_reference": f"{GAZETTE}, clauses 8, 9 and 11",
+                "source_url": GAZETTE_URL,
+                "notes": " ".join(
+                    [
+                        "Clause 8.1(a): 21 consecutive days for an employee working not more "
+                        "than 6 days a week, which is the BCEA s20 position. Clause 8.1(b): 28 "
+                        "consecutive days for MORE THAN ten years' service with the same "
+                        "employer, so ten years to the day stays in the lower band (D-158). "
+                        "Clause 9.1 mirrors BCEA s22 exactly: a 36-month cycle (9.1(a)), six "
+                        "weeks worth (9.1(b)), one day per 26 days worked in the first six "
+                        "months (9.1(c)) and the first-cycle reduction (9.1(d)). Clause 9.3's "
+                        "certificate rule is NOT loaded - like its successor it demands one "
+                        "after more than ONE consecutive day where BCEA s23(1) says two, which "
+                        "s49(1)(e) forbids (D-244, D-248). Clause 11's study leave has no "
+                        "column here and is recorded as scope (O-31).",
+                        DERIVED_LEAVE_DAYS,
+                        FROM_THE_ACT,
+                        VESTIGIAL_PARENTAL,
+                        NOT_A_GAZETTEER_RULES,
+                    ]
+                ),
+                "annual_leave_days_per_cycle_5day": "15.000",
+                "annual_leave_days_per_cycle_6day": "18.000",
+                "annual_accrual_days_per_month_5day": "1.250",
+                "annual_accrual_days_per_month_6day": "1.500",
+                "annual_accrual_ratio_days_worked": 17,
+                "annual_accrual_ratio_hours_worked": 17,
+                "annual_leave_cycle_months": 12,
+                "annual_leave_forfeit_months": 6,
+                "annual_leave_payable_on_termination": True,
+                "has_long_service_annual_leave": True,
+                "long_service_annual_leave_years": 10,
+                "long_service_years_inclusive": False,
+                "long_service_annual_leave_days_5day": "20.000",
+                "long_service_annual_leave_days_6day": "24.000",
+                "sick_leave_cycle_months": 36,
+                "sick_leave_weeks_equivalent": "6.00",
+                "sick_leave_first_six_months_ratio": 26,
+                "sick_leave_payable_on_termination": False,
+                "family_responsibility_days": 3,
+                "family_resp_min_service_months": 4,
+                "family_resp_min_days_per_week": 4,
+                "parental_leave_total_months": 4,
+                "parental_leave_additional_days": 10,
+                "parental_leave_shareable": True,
+                "maternity_earliest_start_weeks_before_birth": 4,
+                "maternity_no_work_weeks_after_birth": 6,
+            }
+        ],
+        "working_time_rule_set": [
+            {
+                "sector": "CONTRACT_CLEANING",
+                "sector_area": "AREA_B",
+                "effective_from": "2023-04-01",
+                "effective_to": "2026-04-01",
+                "source_reference": f"{GAZETTE}, clauses 3, 4.3, 4.6, 7, 10 and 15",
+                "source_url": GAZETTE_URL,
+                "notes": " ".join(
+                    [
+                        "Clause 4.3: a night work allowance of 10 percent of the hourly wage "
+                        "for each night hour or part thereof, IN ADDITION TO the ordinary "
+                        "wage; clause 3 puts the night window at 18:00 to 06:00 for work other "
+                        "than overtime. Clause 4.6(a) - NOT a clause 5, which is Payment of "
+                        "Remuneration in this agreement: an employer may not employ a cleaner "
+                        "for less than 6 hours a day and pays 6 if fewer are worked. Clause "
+                        "7.3: 45 hours a week, 9 a day on five days or fewer, 8 a day on more "
+                        "than five. Clause 7.5: 3 overtime hours a day, 10 a week, at least "
+                        "one and a half times. Clause 7.8: 12 consecutive hours daily rest, 36 "
+                        "weekly which need not include Sunday. CLAUSE 10 REPRODUCES BCEA s16 "
+                        "AND s18, including 10.1(b)(ii)(ab)'s 'whichever is the greater' and "
+                        "10.2(b)'s daily-wage floor on a short Sunday, so Area B priced then "
+                        "exactly as it prices now and calculators/gross.py needs no new code "
+                        "(D-217). Clause 7.6's compressed week and 7.7's four-month averaging "
+                        "have no columns here and are recorded as scope (O-31).",
+                        MEAL_HOUR_IS_THE_ACTS,
+                        NO_STANDBY,
+                        NO_ACCOMMODATION_CAP,
+                        NOT_A_GAZETTEER_RULES,
+                    ]
+                ),
+                "ordinary_hours_per_week": "45.00",
+                "ordinary_hours_per_day_5day": "9.00",
+                "ordinary_hours_per_day_6day": "8.00",
+                "overtime_multiplier": "1.500",
+                "max_overtime_hours_per_day": "3.00",
+                "max_overtime_hours_per_week": "10.00",
+                "sunday_multiplier_non_ordinary": "2.000",
+                "sunday_multiplier_ordinary": "1.500",
+                "public_holiday_worked_multiplier": "2.000",
+                "public_holiday_not_worked_paid": True,
+                "night_work_start_time": "18:00:00",
+                "night_work_end_time": "06:00:00",
+                "night_allowance_type": "percentage",
+                "night_allowance_value": "10.0000",
+                "standby_allowance_per_shift": "0.00",
+                "standby_window_start": "00:00:00",
+                "standby_window_end": "00:00:00",
+                "standby_hours_before_overtime": "0.00",
+                "min_paid_hours_per_day": "6.00",
+                "meal_interval_after_hours": "5.00",
+                "meal_interval_minutes": 60,
+                "daily_rest_hours": 12,
+                "weekly_rest_hours": 36,
+                "accommodation_deduction_capped": False,
+            }
+        ],
+        "statutory_parameter": [
+            {
+                "parameter_code": "PRENATAL_CLINIC_PAID_DAYS_PER_MONTH",
+                "sector": "CONTRACT_CLEANING",
+                "sector_area": "AREA_B",
+                "value_numeric": "1.000000",
+                "unit": "days",
+                "effective_from": "2023-04-01",
+                "effective_to": "2026-04-01",
+                "source_reference": f"{GAZETTE}, clause 12.2",
+                "source_url": GAZETTE_URL,
+                "notes": (
+                    "One day's FULLY PAID leave in each of the 3 months prior to the expected "
+                    "date of confinement, on satisfactory proof of attendance at a prenatal "
+                    "clinic. Word for word what the successor's clause 13.2 says. ADDITIVE, "
+                    "which is why it is loaded when most of clause 12 is not: BCEA s49(1)(d) "
+                    "forbids REDUCING the s25 entitlement, and clause 12.3's twelve-week "
+                    "return cap does that and is void to that extent (D-244)."
+                ),
+            },
+            {
+                "parameter_code": "PRENATAL_CLINIC_MONTHS_BEFORE_BIRTH",
+                "sector": "CONTRACT_CLEANING",
+                "sector_area": "AREA_B",
+                "value_numeric": "3.000000",
+                "unit": "months",
+                "effective_from": "2023-04-01",
+                "effective_to": "2026-04-01",
+                "source_reference": f"{GAZETTE}, clause 12.2",
+                "source_url": GAZETTE_URL,
+                "notes": (
+                    "The day is given in EACH of the three months, so the entitlement is three "
+                    "days in total and one is not carried from one month into the next. Two "
+                    "parameters rather than a pre-multiplied three, because the clause states "
+                    "two figures and a month with no clinic attended pays nothing."
+                ),
+            },
+            {
+                "parameter_code": "MATERNITY_RETURN_PAYMENT_MONTH_DIVISOR",
+                "sector": "CONTRACT_CLEANING",
+                "sector_area": "AREA_B",
+                "value_numeric": "3.000000",
+                "unit": "ratio",
+                "effective_from": "2023-04-01",
+                "effective_to": "2026-04-01",
+                "source_reference": f"{GAZETTE}, clause 12.4(a)",
+                "source_url": GAZETTE_URL,
+                "notes": (
+                    "On RETURN from maternity leave, one third of one month's wage at the rate "
+                    "the employee was on at the time of going on leave - not the rate on "
+                    "return. THE DIVISOR IS LOADED, NOT A THIRD: 0,333333 is a rounded figure "
+                    "standing where an exact one belongs, and a third of R9 000 is R3 000 "
+                    "exactly where 0,333333 x 9000 is R2 999,997 (D-244)."
+                ),
+            },
+        ],
+    },
+}
+
+
 def main():
-    OUTPUT.write_text(json.dumps(FIXTURE, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"Wrote {OUTPUT.relative_to(OUTPUT.parents[1])}")
+    for path, document in ((OUTPUT, FIXTURE), (RULES_OUTPUT, RULES_FIXTURE)):
+        path.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        print(f"Wrote {path.relative_to(path.parents[1])}")
 
 
 if __name__ == "__main__":

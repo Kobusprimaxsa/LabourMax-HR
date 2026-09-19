@@ -295,6 +295,7 @@ FIXTURE_ORDER = [
     # loading it after would be loading a row that ends where a loaded row begins.
     # Order here is dependency order, and both need the sectors from the first file.
     "ref-2023.04.01-bccci.json",
+    "ref-2023.04.01-bccci-rules.json",
     "ref-2026.04.01-bccci.json",
     "ref-2026.04.01-bccci-rules.json",
     "ref-2026.04.01-bccci-notice.json",

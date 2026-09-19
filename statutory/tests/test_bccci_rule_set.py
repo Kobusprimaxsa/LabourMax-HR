@@ -622,3 +622,115 @@ def test_from_the_first_of_april_area_b_is_on_the_agreement(loaded):
     assert resolve.termination_rules(
         sector, datetime.date(2026, 4, 1), made["AREA_B"]
     ).annual_bonus_weeks == Decimal("4.330")
+
+
+# ------- D-260: the predecessor's rules, and the clause numbering that differs
+
+
+@pytest.fixture
+def both_agreements(loaded):
+    """The predecessor's rule sets loaded under the 2026 ones."""
+    for name in ("ref-2023.04.01-bccci-rules.json",):
+        load_reference_data(json.loads((REFERENCE / name).read_text(encoding="utf-8")))
+    return loaded
+
+
+MARCH_2026 = datetime.date(2026, 3, 15)
+
+
+def test_march_2026_resolves_area_bs_own_leave_and_working_time_rules(both_agreements):
+    """Before this, March 2026 fell through to SD1's sector-wide rows — the
+    wage was the agreement's and the conditions were not."""
+    sector, made = both_agreements
+
+    leave = resolve.leave_rules(sector, MARCH_2026, made["AREA_B"])
+    working = resolve.working_time_rules(sector, MARCH_2026, made["AREA_B"])
+
+    assert leave.sector_area_id == made["AREA_B"].pk
+    assert working.sector_area_id == made["AREA_B"].pk
+    assert "Notice 1726 of 2023" in leave.source_reference
+    assert "Notice 1726 of 2023" in working.source_reference
+
+
+def test_the_predecessors_figures_are_the_successors_figures(both_agreements):
+    """Read off the 2023 gazette clause by clause and then compared, not
+    assumed. Every figure in both rule sets matches — which is a finding about
+    two instruments, not a shortcut taken while loading one."""
+    sector, made = both_agreements
+    before = resolve.working_time_rules(sector, MARCH_2026, made["AREA_B"])
+    after = resolve.working_time_rules(sector, datetime.date(2026, 4, 1), made["AREA_B"])
+
+    for field in (
+        "ordinary_hours_per_week",
+        "ordinary_hours_per_day_5day",
+        "ordinary_hours_per_day_6day",
+        "overtime_multiplier",
+        "max_overtime_hours_per_day",
+        "max_overtime_hours_per_week",
+        "sunday_multiplier_ordinary",
+        "sunday_multiplier_non_ordinary",
+        "public_holiday_worked_multiplier",
+        "min_paid_hours_per_day",
+        "night_allowance_value",
+        "daily_rest_hours",
+        "weekly_rest_hours",
+    ):
+        assert getattr(before, field) == getattr(after, field), field
+
+    assert before.pk != after.pk, "two rows, two instruments, two citations"
+
+
+def test_the_long_service_band_applied_in_march_2026_too(both_agreements):
+    """Clause 8.1(b) of the 2023 agreement, which is clause 9.1(b) of the 2026
+    one. Twelve years' service is 28 consecutive days either side of 1 April."""
+    sector, made = both_agreements
+    started = datetime.date(2014, 1, 1)
+
+    assert resolve.annual_leave_days(
+        sector,
+        MARCH_2026,
+        employment_start_date=started,
+        six_day_week=False,
+        sector_area=made["AREA_B"],
+    ) == Decimal("20.000")
+
+
+def test_the_two_rule_sets_abut_at_the_first_of_april(both_agreements):
+    """The predecessor closes exactly where the successor opens. An overlap
+    would have been refused by the exclusion constraint; only a test catches a
+    gap."""
+    sector, made = both_agreements
+
+    for day, scoped in (
+        (datetime.date(2026, 3, 31), "Notice 1726 of 2023"),
+        (datetime.date(2026, 4, 1), "GN R.7296"),
+    ):
+        assert scoped in resolve.leave_rules(sector, day, made["AREA_B"]).source_reference
+        assert scoped in resolve.working_time_rules(sector, day, made["AREA_B"]).source_reference
+
+
+def test_the_predecessors_citations_use_its_own_clause_numbers(both_agreements):
+    """THE TRAP THIS AVOIDS. The 2026 agreement inserted "5. MINIMUM HOURS" and
+    pushed every later clause down by one, so its working time clause is 8 and
+    the predecessor's is 7. Citing the predecessor by the successor's numbers
+    would point a verifier at Payment of Remuneration."""
+    sector, made = both_agreements
+
+    working = resolve.working_time_rules(sector, MARCH_2026, made["AREA_B"])
+    leave = resolve.leave_rules(sector, MARCH_2026, made["AREA_B"])
+
+    assert "clauses 3, 4.3, 4.6, 7, 10 and 15" in working.source_reference
+    assert "clauses 8, 9 and 11" in leave.source_reference
+    assert "clause 8" not in working.source_reference.split(", clauses ")[1]
+
+
+def test_march_2026_termination_still_falls_back_and_that_is_recorded(both_agreements):
+    """The honest remaining gap (D-260). The 2023 gazette's termination and
+    notice provisions were not read, so the December bonus quantity for March
+    2026 is still SD1's 4,333 rather than this council's 4,33."""
+    sector, made = both_agreements
+
+    rules = resolve.termination_rules(sector, MARCH_2026, made["AREA_B"])
+
+    assert rules.sector_area_id is None, "SD1's sector-wide row, not the agreement's"
+    assert rules.annual_bonus_weeks == Decimal("4.333")

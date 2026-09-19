@@ -254,9 +254,10 @@ def test_load_all_loads_every_fixture_from_empty(db):
 
     assert ReferenceDataVersion.objects.count() == len(loader.FIXTURE_ORDER)
     assert MinimumWageRate.objects.exists()
-    assert LeaveRuleSet.objects.count() == 4, (
-        "BCEA default, domestic, contract cleaning under SD1, and contract cleaning "
-        "AREA B under the BCCCI Main Agreement - one sector, two instruments (D-240)."
+    assert LeaveRuleSet.objects.count() == 5, (
+        "BCEA default, domestic, contract cleaning under SD1, and contract cleaning AREA B "
+        "under TWO successive BCCCI agreements - one sector, two instruments (D-240), and "
+        "one of those instruments in two editions abutting at 1 April 2026 (D-260)."
     )
     assert Bank.objects.exists()
 
