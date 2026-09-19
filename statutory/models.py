@@ -1515,8 +1515,29 @@ class TerminationNoticeBand(AuditedModel, AuditMixin, CitedStatutoryModel):
         help_text="NULL for the open-ended top band. Read from the statute's own wording.",
     )
 
-    notice_value = models.DecimalField(max_digits=6, decimal_places=2)
-    notice_unit = models.CharField(max_length=10, choices=NoticeUnit.choices)
+    # PAIRED WITH is_contested (D-241), the same shape the accommodation cap
+    # (D-198) and the night allowance (O-22) already use. NULL here does not
+    # mean "no notice"; it means the instrument does not yield ONE answer for
+    # this band, and a figure invented to fill the column would be a period
+    # nobody can stand behind sitting where a gazetted one belongs.
+    notice_value = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="The period. NULL only where the band is contested.",
+    )
+    notice_unit = models.CharField(max_length=10, choices=NoticeUnit.choices, blank=True)
+    is_contested = models.BooleanField(
+        default=False,
+        help_text=(
+            "The instrument gives two irreconcilable answers for this band, so "
+            "resolve.notice_band() REFUSES rather than preferring one."
+        ),
+    )
+    contested_reason = models.TextField(
+        blank=True, help_text="Both limbs, quoted, so the refusal names the contradiction."
+    )
 
     class Meta:
         db_table = "termination_notice_band"
@@ -1525,6 +1546,17 @@ class TerminationNoticeBand(AuditedModel, AuditMixin, CitedStatutoryModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["termination_rule_set", "sequence"], name="uniq_notice_band_sequence"
+            ),
+            # The pair, guarded both ways over the nullable column, because a
+            # CHECK that evaluates to NULL counts as SATISFIED (D-170).
+            models.CheckConstraint(
+                condition=models.Q(is_contested=True) | models.Q(notice_value__isnull=False),
+                name="notice_band_states_a_period_unless_contested",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(is_contested=False)
+                | (models.Q(notice_value__isnull=True) & ~models.Q(contested_reason="")),
+                name="notice_band_contested_has_no_value_and_a_reason",
             ),
             models.CheckConstraint(
                 condition=models.Q(service_from_value__gte=0),
@@ -1560,8 +1592,12 @@ class TerminationNoticeBand(AuditedModel, AuditMixin, CitedStatutoryModel):
                 condition=models.Q(service_from_unit__in=["days", "weeks", "months", "years"]),
                 name="termination_notice_band_service_from_unit_is_known",
             ),
+            # A contested band carries no unit because it carries no value
+            # (D-241) — the pair above already proves the two travel together,
+            # so this only has to allow the blank rather than police it twice.
             models.CheckConstraint(
-                condition=models.Q(notice_unit__in=["days", "weeks"]),
+                condition=models.Q(notice_unit__in=["days", "weeks"])
+                | models.Q(is_contested=True, notice_unit=""),
                 name="termination_notice_band_notice_unit_is_known",
             ),
             source_reference_not_blank("termination_notice_band"),
