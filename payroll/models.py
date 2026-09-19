@@ -114,3 +114,78 @@ class PayPeriod(AuditedModel, TenantScopedModel):
             f"{self.pay_group_id} period {self.period_number}: "
             f"{self.period_start} to {self.period_end}"
         )
+
+
+class PayrollCalculationTrace(AuditedModel, TenantScopedModel):
+    """What a calculator did, stored: invariant 5 (D-208).
+
+    "When an employee disputes a figure from eighteen months ago, the answer is a
+    stored record — not a re-run of today's code against today's rates." So this
+    keeps the INPUTS it was given, the PRIMARY KEYS of every statutory row it
+    read, the OUTPUTS it produced and any WARNINGS, per payslip per calculator.
+
+    **The calculator produces the structure; this row persists it.** The pure
+    function returns a ``calculators.base.CalculationTrace`` and knows nothing
+    about a database; the caller writes it here. That boundary is why the same
+    calculation can be run in a test, in a payroll run, or replayed in a dispute.
+
+    ``statutory_rows`` holds ``[["statutory_parameter", 901], ...]`` — keys, not
+    citation text. A citation can be corrected later (two have been in this
+    build); the key still opens the row the payslip was actually computed
+    against.
+
+    **Written even for a zero, and even when the calculator warned.** A missing
+    trace row means "this never ran", and it must not be able to mean anything
+    else.
+
+    **Append-only, like a ledger row.** A trace that can be edited after the fact
+    is not evidence of anything. The trigger, not a convention, is what holds
+    that (``core/db/rls.py::append_only()``).
+
+    ``payslip_id_ref`` is a plain BigIntegerField: ``payslip`` does not exist
+    yet, and P7's assembly is blocked on P2 verification. It becomes a real
+    foreign key in the chunk that builds the payslip — the same forward-reference
+    pattern ``attendance_day`` used for ``leave_application`` (D-151's chunk).
+    """
+
+    payslip_id_ref = models.BigIntegerField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Becomes a real FK to payslip when P7's assembly is built.",
+    )
+    employee = models.ForeignKey(
+        "employees.Employee", on_delete=models.PROTECT, related_name="calculation_traces"
+    )
+    calculator = models.CharField(
+        max_length=60, db_index=True, help_text="e.g. 'uif.contribution'."
+    )
+    calculated_for = models.DateField(
+        db_index=True, help_text="The date the calculation is FOR, never the date it ran."
+    )
+
+    inputs = models.JSONField(
+        help_text="Every input, as given. Strings, so it reads the same in 2029."
+    )
+    statutory_rows = models.JSONField(
+        default=list, help_text='[["table", row_id], ...] - keys, never citation text.'
+    )
+    outputs = models.JSONField(help_text="Every figure produced, unrounded.")
+    warnings = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        db_table = "payroll_calculation_trace"
+        ordering = ["-calculated_for", "-id"]
+        indexes = [
+            models.Index(fields=["tenant", "calculator", "calculated_for"]),
+            models.Index(fields=["employee", "calculated_for"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(calculator=""),
+                name="calculation_trace_names_its_calculator",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.calculator} for {self.employee_id} on {self.calculated_for}"
