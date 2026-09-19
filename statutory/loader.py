@@ -182,10 +182,18 @@ TABLES: dict[str, TableSpec] = {
         natural_key=("tax_year",),
         references={"tax_year": (TaxYear, "label")},
     ),
+    # Scoped since the BCCCI Main Agreement (D-236): one parameter code can carry
+    # a different binding figure per sector and area, so the natural key and the
+    # scope both widen to match the table's own unique constraint. Every row
+    # loaded before this leaves both references absent, which resolves to NULL.
     "statutory_parameter": TableSpec(
         StatutoryParameter,
-        natural_key=("parameter_code", "effective_from"),
-        scope=("parameter_code",),
+        natural_key=("parameter_code", "sector", "sector_area", "effective_from"),
+        references={
+            "sector": (Sector, "code"),
+            "sector_area": (SectorArea, "code"),
+        },
+        scope=("parameter_code", "sector", "sector_area"),
     ),
     # Van Wyk's interim quantum, and the adoption age limit it retains. Two
     # tables because they LAPSE IN OPPOSITE DIRECTIONS (D-203): the quantum
@@ -269,6 +277,7 @@ FIXTURE_ORDER = [
     "ref-2026.03.01-parental.json",
     "ref-2026.03.01-leave-pay.json",
     "ref-2026.03.01-termination.json",
+    "ref-2026.04.01-bccci.json",
 ]
 
 FIXTURE_DIRECTORY = "reference"

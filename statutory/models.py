@@ -1009,14 +1009,43 @@ class StatutoryParameter(AuditedModel, AuditMixin, EffectiveDatedModel, CitedSta
     )
     unit = models.CharField(max_length=20, choices=Unit.choices, default=Unit.ZAR)
 
+    # SCOPE. Both NULL is the general case and was the only case until the BCCCI
+    # Main Agreement arrived: BCEA s35(4) makes monthly remuneration four and
+    # ONE-THIRD times weekly, and the BCCCI's clause 3 makes it 4.33 for
+    # KwaZulu-Natal contract cleaning. Two binding figures for one concept,
+    # differing by the instrument that governs the employee — which is a scope,
+    # not a second parameter code (D-236). ``resolve.parameter()`` tries most
+    # specific first and falls back to the unscoped row, so every existing
+    # caller and every existing row is unaffected.
+    sector = models.ForeignKey(
+        Sector,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="statutory_parameters",
+        help_text="NULL means the figure applies wherever nothing more specific does.",
+    )
+    sector_area = models.ForeignKey(
+        SectorArea,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="statutory_parameters",
+        help_text="NULL means every area of the sector.",
+    )
+
     class Meta:
         db_table = "statutory_parameter"
         ordering = ["parameter_code", "-effective_from"]
         indexes = [models.Index(fields=["parameter_code", "-effective_from"])]
         constraints = [
+            # nulls_distinct=False because NULL = NULL is UNKNOWN in PostgreSQL,
+            # so without it the constraint permits duplicates for precisely the
+            # unscoped rows — which is every parameter this build already has.
             models.UniqueConstraint(
-                fields=["parameter_code", "effective_from"],
+                fields=["parameter_code", "sector", "sector_area", "effective_from"],
                 name="uniq_statutory_parameter_per_date",
+                nulls_distinct=False,
             ),
             models.CheckConstraint(
                 condition=models.Q(value_numeric__isnull=False) | ~models.Q(value_text=""),
@@ -1024,6 +1053,9 @@ class StatutoryParameter(AuditedModel, AuditMixin, EffectiveDatedModel, CitedSta
             ),
             effective_range_ordered("statutory_parameter"),
             source_reference_not_blank("statutory_parameter"),
+            # Coalesce on both scope columns, for the same reason: an exclusion
+            # over a nullable expression permits OVERLAPS where the column is
+            # NULL, so two unscoped rows for one code would each be unique.
             ExclusionConstraint(
                 name="statutory_parameter_no_overlapping_periods",
                 expressions=[
@@ -1032,6 +1064,8 @@ class StatutoryParameter(AuditedModel, AuditMixin, EffectiveDatedModel, CitedSta
                         RangeOperators.OVERLAPS,
                     ),
                     ("parameter_code", RangeOperators.EQUAL),
+                    (Coalesce("sector", Value(0)), RangeOperators.EQUAL),
+                    (Coalesce("sector_area", Value(0)), RangeOperators.EQUAL),
                 ],
             ),
         ]

@@ -79,14 +79,54 @@ def in_force_on(queryset, on_date: datetime.date):
 # ------------------------------------------------------------- scalar parameters
 
 
-def parameter_or_none(code: str, on_date: datetime.date) -> StatutoryParameter | None:
-    """The ``statutory_parameter`` row for a code on a date, or None."""
-    return in_force_on(StatutoryParameter.objects.filter(parameter_code=code), on_date).first()
+def parameter_or_none(
+    code: str,
+    on_date: datetime.date,
+    *,
+    sector: Sector | None = None,
+    sector_area=None,
+) -> StatutoryParameter | None:
+    """The ``statutory_parameter`` row for a code on a date, or None.
+
+    **Most specific first, then fall back** — the same shape ``minimum_wage()``
+    uses, and for the same reason (D-236). A figure may be scoped to a sector
+    and an area because the instrument that sets it is:
+
+    1. this sector AND this area
+    2. this sector, any area
+    3. unscoped — what applies wherever nothing more specific does
+
+    Every parameter loaded before the BCCCI Main Agreement is unscoped, and a
+    caller that passes no scope still lands on attempt 3, so nothing that
+    existed before this change behaves differently.
+    """
+    attempts = [
+        {"sector": sector, "sector_area": sector_area},
+        {"sector": sector, "sector_area": None},
+        {"sector": None, "sector_area": None},
+    ]
+    seen = []
+    for scope in attempts:
+        if scope in seen:
+            continue
+        seen.append(scope)
+        row = in_force_on(
+            StatutoryParameter.objects.filter(parameter_code=code, **scope), on_date
+        ).first()
+        if row is not None:
+            return row
+    return None
 
 
-def parameter(code: str, on_date: datetime.date) -> StatutoryParameter:
+def parameter(
+    code: str,
+    on_date: datetime.date,
+    *,
+    sector: Sector | None = None,
+    sector_area=None,
+) -> StatutoryParameter:
     """The ``statutory_parameter`` row for a code on a date. Raises if absent."""
-    row = parameter_or_none(code, on_date)
+    row = parameter_or_none(code, on_date, sector=sector, sector_area=sector_area)
     if row is None:
         raise StatutoryValueMissingError(
             f"No value for statutory parameter '{code}' on {on_date:%d %B %Y}. "
@@ -95,7 +135,13 @@ def parameter(code: str, on_date: datetime.date) -> StatutoryParameter:
     return row
 
 
-def parameter_value(code: str, on_date: datetime.date) -> Decimal:
+def parameter_value(
+    code: str,
+    on_date: datetime.date,
+    *,
+    sector: Sector | None = None,
+    sector_area=None,
+) -> Decimal:
     """The numeric value of a statutory parameter on a date.
 
     Raises if the parameter is absent, and raises again if it is present but holds
@@ -103,7 +149,7 @@ def parameter_value(code: str, on_date: datetime.date) -> Decimal:
     fail much further downstream, in arithmetic, where the message says nothing
     about which figure was missing.
     """
-    row = parameter(code, on_date)
+    row = parameter(code, on_date, sector=sector, sector_area=sector_area)
     if row.value_numeric is None:
         raise StatutoryValueMissingError(
             f"Statutory parameter '{code}' on {on_date:%d %B %Y} holds text "
@@ -112,7 +158,46 @@ def parameter_value(code: str, on_date: datetime.date) -> Decimal:
     return row.value_numeric
 
 
-# ------------------------------------------------------------------ minimum wage
+def _refuse_bargaining_council_gap(on_date: datetime.date, *, sector, sector_area) -> None:
+    """An area whose rates come from a bargaining council NEVER falls back.
+
+    Contract cleaning Area B is all of KwaZulu-Natal, and the gazette states no
+    figure for it at all: it points at the BCCCI Main Collective Agreement
+    instead (D-118). So the ordinary narrowing fallback — area, then sector,
+    then the National Minimum Wage — is wrong here in a way it is right
+    everywhere else. The NMW is the floor under a sector the Minister has simply
+    not set a rate for; it is NOT the rate for a sector whose rate is set by a
+    different instrument that nobody has loaded.
+
+    Falling back would pay a KwaZulu-Natal cleaner R30,23 where the agreement in
+    force says R32,40 — a plausible figure, silently short by R2,17 an hour, and
+    invisible on the payslip.
+
+    **1–31 March 2026 is not a vacuum**, which is what makes this a load gap
+    rather than a legal one: the agreement's own clause 2(1)(a) says "the
+    parties agree that the current Main Agreement shall continue to be enforced"
+    and clause 2(3) carries prevailing terms forward until replacement. A
+    predecessor agreement therefore governs March 2026 and it is not loaded.
+    """
+    if sector_area is None or not getattr(sector_area, "uses_bargaining_council_rates", False):
+        return
+    if in_force_on(
+        MinimumWageRate.objects.filter(sector=sector, sector_area=sector_area), on_date
+    ).exists():
+        return
+
+    raise StatutoryValueMissingError(
+        f"No bargaining council wage rate is loaded for "
+        f"{sector.code if sector else 'this sector'} {sector_area.code} on "
+        f"{on_date:%d %B %Y}. This area takes its rates from a collective agreement, "
+        f"not from the sectoral determination, so there is nothing to fall back to: "
+        f"the National Minimum Wage is the floor under a sector the Minister has not "
+        f"set a rate for, not the rate for one set by an instrument nobody has loaded. "
+        f"The BCCCI Main Collective Agreement (GN R.7296, GG 54412) takes effect on "
+        f"1 April 2026; its own clause 2(1)(a) says the PREDECESSOR Main Agreement "
+        f"continues in force until then, and that predecessor is the missing "
+        f"instrument. Load it before running payroll for this period."
+    )
 
 
 def minimum_wage(
@@ -141,6 +226,8 @@ def minimum_wage(
     statutory floor under every sector, so a sector with no gazetted rate of its own
     is not un-priced, it is priced at the NMW.
     """
+    _refuse_bargaining_council_gap(on_date, sector=sector, sector_area=sector_area)
+
     attempts = [
         {
             "sector": sector,
