@@ -32,7 +32,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from core.audit import AuditedModel
-from core.models import AuditMixin
+from core.models import AuditMixin, TenantOptionalModel
 
 # ------------------------------------------------------------ constraint helpers
 #
@@ -273,6 +273,94 @@ class ReferenceDataVersion(AuditedModel, AuditMixin):
             .order_by("-applies_from", "-id")
             .first()
         )
+
+
+class ReferenceFigureCheck(TenantOptionalModel):
+    """One statutory figure, checked by one person, on one date. Evidence.
+
+    **A verification tick is evidence, and evidence does not live in an
+    unmergeable binary** (D-256). The verification workbook used to be the only
+    place a tick existed, which made two things true at once: git could not
+    merge two people's work, and ``exportverification --force`` threw away every
+    evening of checking the moment a new reference row had to be loaded — which
+    P2 still has three of to do.
+
+    **Append-only, like every other evidence table here.** A correction inserts
+    a new row and the old one stands; ``core/db/rls.py::append_only()`` binds the
+    owner too, which a REVOKE would not. "What is checked now" is the most
+    recently recorded row for a ``row_key``, so the history of a figure that was
+    queried, fixed and then checked reads in order instead of being overwritten
+    into a single reassuring Y.
+
+    **TenantOptionalModel, deliberately, and the NULL means platform.** This is
+    not employer or employee data and no tenant may see it: it records which
+    member of Labourmax staff read which gazette, and no employer-facing query
+    has any business in it. ``TenantSharedModel``'s NULL means the opposite —
+    *available to all* — and would put the platform's own audit trail on every
+    subscriber's screen; the test CLAUDE.md gives for the shared base is whether
+    a row would be safe on a competitor's screen, and "who at Labourmax checked
+    what, and what they queried about it" is an operations record, not a
+    catalogue. ``TenantScopedModel`` cannot hold it at all, there being no tenant
+    to attribute it to. The third access rule is what makes the commands work:
+    a session with no tenant pinned — which is every management command — reads
+    and writes exactly the NULL-tenant rows.
+
+    Deliberately NOT ``AuditMixin``: a row is written once by an importer and
+    never edited, so ``updated_by_user`` would be a permanently empty column and
+    ``updated_at`` a permanently equal one. ``recorded_at`` is when the import
+    ran; ``checked_on`` is the date the person says they did the checking, and
+    the two differ whenever somebody works on Tuesday and imports on Thursday.
+    """
+
+    class Outcome(models.TextChoices):
+        CHECKED = "checked", "Checked against the source and correct"
+        QUERIED = "queried", "Something is wrong — see the note"
+
+    #: ``table:pk:field``, the same key the workbook prints. Not a foreign key:
+    #: it points at one FIELD of one row across thirteen tables, which no FK can
+    #: express, and it has to survive the row being superseded — the evidence
+    #: that somebody checked a 2026 figure does not stop being true in 2027.
+    row_key = models.CharField(max_length=200, db_index=True)
+    #: The version the figure belonged to WHEN IT WAS CHECKED, recorded rather
+    #: than derived, because that is what the person was working through.
+    version_label = models.CharField(max_length=60, db_index=True)
+    outcome = models.CharField(max_length=20, choices=Outcome.choices)
+    #: What the figure read at the moment it was checked. The importer refuses a
+    #: value that has drifted from the database, so this is always the loaded
+    #: value — kept so a later reader can see what was in front of the person.
+    value_at_check = models.CharField(max_length=400)
+    checked_by = models.ForeignKey(
+        "core.AppUser", on_delete=models.PROTECT, related_name="reference_figure_checks"
+    )
+    checked_on = models.DateField(help_text="The date the person did the checking.")
+    note = models.TextField(
+        blank=True, help_text="Mandatory on a QUERY, which is the point of one."
+    )
+    recorded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "reference_figure_check"
+        indexes = [models.Index(fields=["row_key", "-recorded_at"])]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(outcome__in=["checked", "queried"]),
+                name="reference_figure_check_outcome_is_known",
+            ),
+            # A QUERY that does not say what is wrong is a tick nobody can act
+            # on. Both branches explicit, because a CHECK that evaluates to NULL
+            # counts as SATISFIED (D-170).
+            models.CheckConstraint(
+                condition=~models.Q(outcome="queried") | ~models.Q(note=""),
+                name="reference_figure_check_a_query_says_what_is_wrong",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(row_key=""),
+                name="reference_figure_check_names_a_figure",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.row_key} {self.outcome} by {self.checked_by_id} on {self.checked_on}"
 
 
 class ParentalLeaveQuantum(AuditedModel, AuditMixin, EffectiveDatedModel, CitedStatutoryModel):
