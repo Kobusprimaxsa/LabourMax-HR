@@ -101,6 +101,23 @@ class Money:
 
 
 @dataclasses.dataclass(frozen=True)
+class PayslipLine:
+    """One line a payslip will show, named by its ``payroll_component`` code.
+
+    Every earnings calculator produces these, so the shape lives here rather
+    than in whichever module happened to need it first. The code is a plain
+    string: a calculator may not import the component catalogue, and the
+    catalogue is what the assembly resolves it against.
+    """
+
+    component_code: str
+    description: str
+    units: Decimal
+    rate: Decimal
+    amount: Money
+
+
+@dataclasses.dataclass(frozen=True)
 class CalculationTrace:
     """What a calculator did, as data. Invariant 5.
 

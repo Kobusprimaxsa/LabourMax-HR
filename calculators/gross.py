@@ -95,6 +95,7 @@ from calculators.base import (
     ZERO,
     CalculationTrace,
     Money,
+    PayslipLine,
     as_text,
     rows_of,
 )
@@ -214,19 +215,8 @@ class GrossInput:
 
 
 @dataclasses.dataclass(frozen=True)
-class GrossLine:
-    """One payslip line, named by its ``payroll_component`` code."""
-
-    component_code: str
-    description: str
-    units: Decimal
-    rate: Decimal
-    amount: Money
-
-
-@dataclasses.dataclass(frozen=True)
 class GrossResult:
-    lines: tuple[GrossLine, ...]
+    lines: tuple[PayslipLine, ...]
     gross: Money
     trace: CalculationTrace
 
@@ -370,7 +360,7 @@ def _salaried_basic(data: GrossInput) -> tuple[Decimal, Decimal]:
     return (data.working_days_in_period - unpaid) / data.working_days_in_period, unpaid
 
 
-def _night_line(data: GrossInput, warnings: list[str]) -> GrossLine | None:
+def _night_line(data: GrossInput, warnings: list[str]) -> PayslipLine | None:
     """BCEA s17(2)(a). Only SD1 states a figure for it."""
     rates = data.rates
     night_hours = sum((pay.hours.night_hours for pay in data.days), ZERO)
@@ -380,7 +370,7 @@ def _night_line(data: GrossInput, warnings: list[str]) -> GrossLine | None:
 
     if rates.night_allowance_type is NightAllowanceKind.PERCENTAGE:
         rate = data.hourly_rate * rates.night_allowance_value / PER_CENT
-        return GrossLine(
+        return PayslipLine(
             component_code="NIGHT_ALLOW",
             description="Night work allowance",
             units=night_hours,
@@ -388,7 +378,7 @@ def _night_line(data: GrossInput, warnings: list[str]) -> GrossLine | None:
             amount=Money.of(night_hours * rate),
         )
     if rates.night_allowance_type is NightAllowanceKind.FIXED_AMOUNT:
-        return GrossLine(
+        return PayslipLine(
             component_code="NIGHT_ALLOW",
             description="Night work allowance",
             units=shifts,
@@ -409,10 +399,12 @@ def _night_line(data: GrossInput, warnings: list[str]) -> GrossLine | None:
     return None
 
 
-def _premium_line(code: str, description: str, hours: Decimal, amount: Decimal) -> GrossLine | None:
+def _premium_line(
+    code: str, description: str, hours: Decimal, amount: Decimal
+) -> PayslipLine | None:
     if not hours or amount <= ZERO:
         return None
-    return GrossLine(
+    return PayslipLine(
         component_code=code,
         description=description,
         units=hours,
@@ -428,7 +420,7 @@ def gross_pay(data: GrossInput) -> GrossResult:
     _refuse_unread_threshold_exclusions(data)
 
     rates = data.rates
-    lines: list[GrossLine] = []
+    lines: list[PayslipLine] = []
 
     if data.pay_basis is PayBasis.HOURLY:
         units = sum((_basic_hours(pay, rates) for pay in data.days), ZERO)
@@ -446,7 +438,7 @@ def gross_pay(data: GrossInput) -> GrossResult:
             )
 
     lines.append(
-        GrossLine(
+        PayslipLine(
             component_code="BASIC",
             description="Basic wage",
             units=units,
