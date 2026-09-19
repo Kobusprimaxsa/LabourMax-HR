@@ -324,8 +324,27 @@ FIELD_LABELS = {
     "annual_amount": "annual amount",
     "tax_threshold_annual": "annual tax threshold",
     "min_age": "minimum age",
-    "code_group": "code group",
-    "description": "description",
+    # The SARS guide is the largest document in the workbook at 126 figures, so
+    # its six-per-code summary has to read like the guide's own column headings
+    # rather than like column names.
+    "code_group": "group",
+    "description": "is",
+    "is_taxable": "PAYE",
+    "is_uif_remuneration": "UIF",
+    "is_sdl_remuneration": "SDL",
+    "is_coida_remuneration": "COIDA",
+    "service_from_value": "from",
+    "service_from_unit": "from unit",
+    "service_from_inclusive": "from inclusive",
+    "service_to_value": "to",
+    "service_to_unit": "to unit",
+    "service_to_inclusive": "to inclusive",
+    "notice_value": "notice",
+    "notice_unit": "notice unit",
+    "is_contested": "contested",
+    "holiday_date": "date",
+    "is_statutory": "statutory",
+    "shifted_from_date": "shifted from",
 }
 
 
@@ -347,6 +366,11 @@ class Line:
     effective_from: str
     effective_to: str
     key: str
+    #: The row's own name, without the field appended - a group prints it once
+    #: as its heading rather than on every figure it covers.
+    row_description: str = ""
+    #: This figure's own name within the row.
+    figure_label: str = ""
 
     @property
     def sort_key(self):
@@ -418,6 +442,8 @@ def lines() -> list[Line]:
                         version=version,
                         table=table_name,
                         description=f"{description} — {field_label(field)}",
+                        row_description=description,
+                        figure_label=field_label(field),
                         value=value,
                         effective_from=(
                             f"{row.effective_from:%Y-%m-%d}" if dated and row.effective_from else ""
@@ -430,6 +456,118 @@ def lines() -> list[Line]:
                 )
     out.sort(key=lambda line: line.sort_key)
     return out
+
+
+#: The most figures one group may carry. A SARS source code is six - the code,
+#: its description, its group and its three base flags - and it renders on one
+#: line legibly, so six is the benchmark and eight is the headroom. Above that
+#: the inline summary wraps to three lines in Excel and the tick stops meaning
+#: "I read all of these", which is the only thing making a group safe.
+GROUP_CAP = 8
+
+
+@dataclasses.dataclass(frozen=True)
+class Group:
+    """One lookup, one question, one tick.
+
+    The workbook used to ask for 582 ticks because there are 582 figures. But
+    114 of them were nineteen SARS source codes at six cells each, and all six
+    come off one row of one table: one lookup, six cells, one question — does
+    what the guide says match what is loaded? Asking it six times is how
+    somebody stops at row 200 (D-258).
+
+    **The grouping is presentation only.** Ticking a group writes a
+    ``ReferenceFigureCheck`` for every figure in it, because the evidence is
+    per figure and always was.
+    """
+
+    key: str
+    document: str
+    clause: str
+    source_url: str
+    version: str
+    table: str
+    description: str
+    effective_from: str
+    effective_to: str
+    figures: tuple[Line, ...]
+    part: int
+    parts: int
+
+    @property
+    def label(self) -> str:
+        """What the person is looking at, including which slice of a big row."""
+        if self.parts == 1:
+            return self.description
+        return f"{self.description} (part {self.part} of {self.parts})"
+
+    @property
+    def summary(self) -> str:
+        """Every figure this tick covers, inline, so nothing hides inside it."""
+        return "  ·  ".join(f"{figure.figure_label} {figure.value}" for figure in self.figures)
+
+    @property
+    def row_keys(self) -> tuple[str, ...]:
+        return tuple(figure.key for figure in self.figures)
+
+
+def check_groups(lines_: list[Line] | None = None) -> list[Group]:
+    """Every figure, arranged as the lookups a person actually makes.
+
+    Grouped by source document, pinpoint, effective date AND the database row.
+    The row is in the key because the pinpoint alone is not granular enough
+    anywhere it matters: the SARS code guide is cited with no pinpoint at all,
+    so all 126 of its figures would be one group; the Public Holidays Act cites
+    Schedule 1 for all 63; and a rule set cites a whole range — "clauses 3, 4.3,
+    5, 8, 11, 16 and 17" — for 24 figures drawn from seven different clauses.
+    Grouping on the pinpoint alone would put a tick over figures the person
+    never looked at, which is the one thing a group must not do.
+
+    Rows above ``GROUP_CAP`` are split into numbered parts. That split is by
+    field order and NOT by clause, because the citation does not say which
+    figure came from which clause — so a person checking part 2 of a rule set
+    is still working against the whole cited range, and the part number says
+    only how the reading was divided up.
+    """
+    lines_ = lines() if lines_ is None else lines_
+    buckets: dict[tuple, list[Line]] = {}
+    for line in lines_:
+        row = line.key.rsplit(":", 1)[0]
+        buckets.setdefault((line.document, line.clause, line.effective_from, row), []).append(line)
+
+    out: list[Group] = []
+    for (document, clause, effective_from, row), members in buckets.items():
+        chunks = [members[i : i + GROUP_CAP] for i in range(0, len(members), GROUP_CAP)]
+        for index, chunk in enumerate(chunks, start=1):
+            first = chunk[0]
+            out.append(
+                Group(
+                    key=f"grp:{row}:{index}",
+                    document=document,
+                    clause=clause,
+                    source_url=first.source_url,
+                    version=first.version,
+                    table=first.table,
+                    description=first.row_description,
+                    effective_from=effective_from,
+                    effective_to=first.effective_to,
+                    figures=tuple(chunk),
+                    part=index,
+                    parts=len(chunks),
+                )
+            )
+    out.sort(key=lambda group: (group.document, group.clause, group.effective_from, group.key))
+    return out
+
+
+def group_by_key(key: str) -> Group | None:
+    """Recompute one group from the database, so a workbook cannot assert its
+    own membership. The importer compares the inline summary before recording
+    anything, exactly as it compares a single figure's value (D-251)."""
+    for group in check_groups():
+        if group.key == key:
+            return group
+    return None
 
 
 def parse_key(key: str) -> tuple[str, int, str]:

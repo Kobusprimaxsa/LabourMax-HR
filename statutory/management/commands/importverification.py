@@ -1,9 +1,15 @@
 """``python manage.py importverification`` — read the ticks back.
 
 Ticks in a spreadsheet that nothing reads are ticks nobody makes twice. This
-reads a completed verification workbook and, for each reference version whose
-figures are ALL marked checked with a verifier and a date, calls the existing
-``verifystatutory`` path.
+reads the CHECKS sheet of a completed verification workbook and, for each
+reference version whose figures are ALL marked checked with a verifier and a
+date, calls the existing ``verifystatutory`` path.
+
+**One ticked row is a CHECK GROUP and records a figure each** (D-258). The
+grouping is presentation - the evidence stays per figure, because that is what
+somebody will want to interrogate in 2031. A group's membership is recomputed
+from the database and its inline summary compared before anything is recorded,
+so a workbook cannot assert what it covers.
 
 **Every tick becomes a row in ``reference_figure_check``** (D-256), so the
 workbook is disposable and the next export pre-fills what is already done. A
@@ -46,8 +52,9 @@ IMPORTED_AS = {
     "QUERY": ReferenceFigureCheck.Outcome.QUERIED,
 }
 
+#: The CHECKS sheet's own layout, named where exportverification names it.
 VERSION_COLUMN = 4
-VALUE_COLUMN = 7
+VALUE_COLUMN = 7  # the inline summary of every figure the group covers
 KEY_COLUMN = 10
 CHECKED_COLUMN = 11
 BY_COLUMN = 12
@@ -88,15 +95,17 @@ class Command(BaseCommand):
             raise CommandError("--current-through must be YYYY-MM-DD.") from exc
 
         book = load_workbook(path, data_only=True)
-        if "Figures" not in book.sheetnames:
+        if "Checks" not in book.sheetnames:
             raise CommandError(
-                f"{path} has no 'Figures' sheet. This reads a workbook produced by "
-                f"`manage.py exportverification`."
+                f"{path} has no 'Checks' sheet. This reads a workbook produced by "
+                f"`manage.py exportverification`. A workbook whose tick sheet is called "
+                f"'Figures' predates check groups (D-258) — export a fresh one; every "
+                f"tick already imported is in the database and will be pre-filled."
             )
 
-        rows = self._read(book["Figures"])
+        rows = self._read(book["Checks"])
         if not rows:
-            raise CommandError("The Figures sheet holds no rows.")
+            raise CommandError("The Checks sheet holds no rows.")
 
         by_version: dict[str, list[dict]] = {}
         for row in rows:
@@ -236,10 +245,10 @@ class Command(BaseCommand):
         """Split a version's rows into what blocks it and what can be recorded.
 
         A QUERY blocks the version AND is recorded — that is the whole value of
-        one, and a query nobody wrote down is a question asked twice. A row
-        whose value has drifted from the database blocks the version and is NOT
-        recorded: it was not checked against what is loaded, whatever the cell
-        says.
+        one, and a query nobody wrote down is a question asked twice. A group
+        whose summary has drifted from the database blocks the version and is
+        NOT recorded: it was not checked against what is loaded, whatever the
+        cell says.
         """
         problems, sound = [], []
 
@@ -248,19 +257,25 @@ class Command(BaseCommand):
             if state is None:
                 continue  # blank, N, or anything else: not yet done.
 
-            try:
-                loaded = verification.current_value(row["key"])
-            except ValueError as exc:
-                problems.append(f"row {row['line']}: {exc}")
+            group = verification.group_by_key(row["key"])
+            if group is None:
+                problems.append(
+                    f"row {row['line']}: '{row['key']}' is not a check group in this "
+                    f"database. The reference data has moved since this workbook was "
+                    f"exported — export a fresh one, which will pre-fill everything "
+                    f"already imported."
+                )
                 continue
 
-            if row["value"] != loaded:
+            if row["value"] != group.summary:
                 problems.append(
-                    f"row {row['line']} {row['key']}: the workbook says "
-                    f"'{row['value']}' and the loaded value is '{loaded}'. This command "
-                    f"NEVER writes a figure. If the workbook is right the gazette was "
-                    f"transcribed wrongly and that is a new load, not a tick; if the "
-                    f"loaded value is right, restore the cell."
+                    f"row {row['line']} {row['key']}: the workbook says\n"
+                    f"        '{row['value']}'\n"
+                    f"      and the loaded figures are\n"
+                    f"        '{group.summary}'\n"
+                    f"      This command NEVER writes a figure. If the workbook is right "
+                    f"the gazette was transcribed wrongly and that is a new load, not a "
+                    f"tick; if the loaded values are right, restore the cell."
                 )
                 continue
 
@@ -274,13 +289,17 @@ class Command(BaseCommand):
             if state is ReferenceFigureCheck.Outcome.QUERIED:
                 note = row["note"] or ""
                 problems.append(
-                    f"row {row['line']} QUERY on {row['key']}: "
+                    f"row {row['line']} QUERY on {row['key']} ({group.label}): "
                     + (note or "(no note — the QUERY does not say what is wrong)")
                 )
                 if not note:
                     continue  # the CHECK would refuse it anyway, and rightly.
 
-            sound.append({**row, "outcome": state, "loaded": loaded})
+            # One ticked group, one record per figure it covers.
+            for figure in group.figures:
+                sound.append(
+                    {**row, "outcome": state, "row_key": figure.key, "loaded": figure.value}
+                )
 
         return problems, sound
 
@@ -306,7 +325,7 @@ class Command(BaseCommand):
                         when = datetime.date.fromisoformat(when.strip()[:10])
                     except ValueError:
                         continue
-                current = existing.get(row["key"])
+                current = existing.get(row["row_key"])
                 same = (
                     current is not None
                     and current.outcome == row["outcome"]
@@ -317,7 +336,7 @@ class Command(BaseCommand):
                 if same:
                     continue
                 ReferenceFigureCheck.objects.create(
-                    row_key=row["key"],
+                    row_key=row["row_key"],
                     version_label=label,
                     outcome=row["outcome"],
                     value_at_check=row["loaded"][:400],

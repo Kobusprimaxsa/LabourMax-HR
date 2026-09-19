@@ -72,13 +72,13 @@ def workbook(loaded, tmp_path):
 
 
 def figures(path):
-    return load_workbook(path)["Figures"]
+    return load_workbook(path)["Checks"]
 
 
 def mark_all(path, *, checked="Y", by="checker@example.com", when="2026-09-20"):
     """Tick the whole workbook the way a person would, and save it."""
     book = load_workbook(path)
-    sheet = book["Figures"]
+    sheet = book["Checks"]
     for row in range(2, sheet.max_row + 1):
         sheet.cell(row=row, column=11, value=checked)
         sheet.cell(row=row, column=12, value=by)
@@ -249,10 +249,10 @@ def test_a_figure_edited_in_the_workbook_refuses_the_version_and_names_the_row(w
     reference data, and must not quietly verify around it either."""
     mark_all(workbook)
     book = load_workbook(workbook)
-    sheet = book["Figures"]
+    sheet = book["Checks"]
     edited_key = sheet.cell(row=2, column=10).value
     original = sheet.cell(row=2, column=7).value
-    sheet.cell(row=2, column=7, value="R 99,99")
+    sheet.cell(row=2, column=7, value="value R 99,99")
     book.save(workbook)
 
     with pytest.raises(CommandError) as raised:
@@ -266,17 +266,21 @@ def test_a_figure_edited_in_the_workbook_refuses_the_version_and_names_the_row(w
 
     assert "refused" in str(raised.value).lower()
 
-    edited_version = next(line.version for line in verification.lines() if line.key == edited_key)
-    assert ReferenceDataVersion.objects.get(version_label=edited_version).verified_at is None
-    assert verification.current_value(edited_key) == original, "the figure must not have moved"
+    group = verification.group_by_key(edited_key)
+    assert ReferenceDataVersion.objects.get(version_label=group.version).verified_at is None
+    assert group.summary == original, "not one figure in the group may have moved"
+    assert not ReferenceFigureCheck.objects.filter(row_key__in=group.row_keys).exists(), (
+        "a group whose summary drifted was not checked against what is loaded, "
+        "so none of its figures may be recorded"
+    )
 
 
 def test_the_refusal_names_the_row_and_both_values(workbook, checker, capsys):
     mark_all(workbook)
     book = load_workbook(workbook)
-    sheet = book["Figures"]
+    sheet = book["Checks"]
     key = sheet.cell(row=2, column=10).value
-    sheet.cell(row=2, column=7, value="R 99,99")
+    sheet.cell(row=2, column=7, value="value R 99,99")
     book.save(workbook)
 
     with pytest.raises(CommandError):
@@ -294,7 +298,7 @@ def test_the_refusal_names_the_row_and_both_values(workbook, checker, capsys):
 def test_a_queried_row_refuses_the_version_and_repeats_the_note(workbook, checker):
     mark_all(workbook)
     book = load_workbook(workbook)
-    sheet = book["Figures"]
+    sheet = book["Checks"]
     sheet.cell(row=2, column=11, value="QUERY")
     sheet.cell(row=2, column=14, value="Gazette says 27 days, not 26.")
     book.save(workbook)
@@ -308,7 +312,7 @@ def test_a_queried_row_refuses_the_version_and_repeats_the_note(workbook, checke
 def test_a_query_with_no_note_is_refused_for_saying_nothing(workbook, checker, capsys):
     mark_all(workbook)
     book = load_workbook(workbook)
-    book["Figures"].cell(row=2, column=11, value="QUERY")
+    book["Checks"].cell(row=2, column=11, value="QUERY")
     book.save(workbook)
 
     with pytest.raises(CommandError):
@@ -347,7 +351,7 @@ def test_a_half_finished_workbook_verifies_nothing_and_says_how_far_it_got(
 ):
     mark_all(workbook, checked="N")
     book = load_workbook(workbook)
-    sheet = book["Figures"]
+    sheet = book["Checks"]
     for row in range(2, sheet.max_row + 1):
         if sheet.cell(row=row, column=4).value == SICK:
             sheet.cell(row=row, column=11, value="Y")
@@ -406,7 +410,7 @@ def test_a_dry_run_writes_nothing(workbook, checker):
 def mark_keys(path, keys, *, checked="Y", by="checker@example.com", when="2026-09-20", note=""):
     """Tick only the named row keys, leaving the rest blank."""
     book = load_workbook(path)
-    sheet = book["Figures"]
+    sheet = book["Checks"]
     wanted = set(keys)
     for row in range(2, sheet.max_row + 1):
         if sheet.cell(row=row, column=10).value in wanted:
@@ -421,7 +425,7 @@ def mark_keys(path, keys, *, checked="Y", by="checker@example.com", when="2026-0
 
 def ticks(path) -> dict[str, str]:
     """What the workbook says is checked, keyed by row key."""
-    sheet = load_workbook(path)["Figures"]
+    sheet = load_workbook(path)["Checks"]
     return {
         sheet.cell(row=row, column=10).value: (sheet.cell(row=row, column=11).value or "")
         for row in range(2, sheet.max_row + 1)
@@ -479,7 +483,7 @@ def test_two_partial_workbooks_accumulate_the_same_way_in_either_order(
     call_command("exportverification", str(second), verbosity=0)
 
     keys = sorted(ticks(first))
-    assert len(keys) >= 4, "too few figures to split between two people"
+    assert len(keys) >= 2, "too few check groups to split between two people"
     mark_keys(first, keys[::2])
     mark_keys(second, keys[1::2])
 
@@ -491,9 +495,16 @@ def test_two_partial_workbooks_accumulate_the_same_way_in_either_order(
         for check in ReferenceFigureCheck.objects.all()
     }
 
-    assert state == {
-        key: (ReferenceFigureCheck.Outcome.CHECKED, "checker@example.com") for key in keys
-    }, "every figure recorded exactly once, whoever ticked it and in whichever order"
+    expected = {
+        figure_key: (ReferenceFigureCheck.Outcome.CHECKED, "checker@example.com")
+        for key in keys
+        for figure_key in verification.group_by_key(key).row_keys
+    }
+    assert state == expected, (
+        "every FIGURE recorded exactly once - the grouping is presentation, the "
+        "evidence is per figure - whoever ticked it and in whichever order"
+    )
+    assert len(expected) > len(keys), "the groups must actually cover several figures each"
 
 
 def test_a_check_record_can_never_be_edited_or_deleted(workbook, checker):
@@ -529,12 +540,15 @@ def test_changing_your_mind_inserts_a_second_row_and_keeps_the_first(workbook, c
     mark_keys(workbook, [key], checked="Y", when="2026-09-22", note="Checked again; 26 is right.")
     call_command("importverification", str(workbook), current_through="2027-02-28", verbosity=0)
 
-    history = list(ReferenceFigureCheck.objects.filter(row_key=key).order_by("recorded_at", "id"))
+    figure = verification.group_by_key(key).row_keys[0]
+    history = list(
+        ReferenceFigureCheck.objects.filter(row_key=figure).order_by("recorded_at", "id")
+    )
     assert [c.outcome for c in history] == [
         ReferenceFigureCheck.Outcome.QUERIED,
         ReferenceFigureCheck.Outcome.CHECKED,
     ]
-    assert verification.latest_checks()[key].outcome == ReferenceFigureCheck.Outcome.CHECKED
+    assert verification.latest_checks()[figure].outcome == ReferenceFigureCheck.Outcome.CHECKED
 
 
 def test_the_summary_counts_are_right_before_anyone_opens_the_file(workbook, checker, tmp_path):
@@ -551,8 +565,82 @@ def test_the_summary_counts_are_right_before_anyone_opens_the_file(workbook, che
     summary = load_workbook(fresh, data_only=True)["Summary"]
     totals = [row for row in summary.iter_rows(values_only=True) if row and row[0] == "TOTAL"]
     assert totals, "the summary has no total row"
-    figures, checked, queried, outstanding = totals[0][1:5]
-    assert figures == len(keys)
-    assert checked == 1, "the one imported tick must show without Excel recalculating"
+    checks_total, figures_total, done, queried, outstanding = totals[0][1:6]
+    assert checks_total == len(keys)
+    assert figures_total == len(verification.lines())
+    assert done == 1, "the one imported tick must show without Excel recalculating"
     assert queried == 0
     assert outstanding == len(keys) - 1
+
+
+# ------------------------------------------- D-258: one lookup, one tick
+
+
+def test_a_group_covers_one_row_of_one_table_and_never_spans_two(loaded):
+    """The clause column alone is not granular enough anywhere it matters — the
+    SARS guide cites no pinpoint at all, the Public Holidays Act cites Schedule 1
+    for all of them, and a rule set cites a seven-clause range for 24 figures. So
+    the database row is part of the key, or a tick would cover figures the person
+    never looked at."""
+    for group in verification.check_groups():
+        rows = {key.rsplit(":", 1)[0] for key in group.row_keys}
+        assert len(rows) == 1, f"{group.key} spans {rows}"
+        assert len({(f.document, f.clause) for f in group.figures}) == 1
+
+
+def test_no_group_is_bigger_than_the_cap(loaded):
+    """Above the cap the inline summary wraps to three lines in Excel and the
+    tick stops meaning "I read all of these", which is what makes a group safe."""
+    for group in verification.check_groups():
+        assert 1 <= len(group.figures) <= verification.GROUP_CAP, group.key
+
+
+def test_every_figure_belongs_to_exactly_one_group(loaded):
+    """Nothing may fall between two groups and go unchecked, and nothing may be
+    counted twice."""
+    lines = verification.lines()
+    seen = [key for group in verification.check_groups(lines) for key in group.row_keys]
+
+    assert sorted(seen) == sorted(line.key for line in lines)
+    assert len(seen) == len(set(seen))
+
+
+def test_a_split_row_says_which_part_it_is(db):
+    """A rule set is 22 to 26 figures and splits into parts. The person has to
+    know the clause reference is the whole row's, not the part's - the split is
+    by cap and NOT by clause, because the citation does not say which figure
+    came from which clause."""
+    from statutory.loader import FIXTURE_ORDER
+
+    for name in FIXTURE_ORDER:
+        path = REFERENCE / name
+        if path.exists():
+            load_reference_data(json.loads(path.read_text(encoding="utf-8")))
+
+    split = [g for g in verification.check_groups() if g.parts > 1]
+    assert split, "the rule set rows are above the cap and must split"
+    for group in split:
+        assert f"part {group.part} of {group.parts}" in group.label
+
+
+def test_the_group_row_shows_every_figure_it_covers(loaded):
+    """A tick means "all of these match". It can only mean that if all of them
+    are on the row."""
+    for group in verification.check_groups():
+        for figure in group.figures:
+            assert figure.value in group.summary
+            assert figure.figure_label in group.summary
+
+
+def test_ticking_one_group_records_one_check_per_figure(workbook, checker):
+    """D-258's load-bearing sentence: the grouping is presentation, the evidence
+    stays per figure."""
+    key = sorted(ticks(workbook))[0]
+    group = verification.group_by_key(key)
+    assert len(group.figures) > 1, "pick a fixture whose first group covers several figures"
+
+    mark_keys(workbook, [key])
+    call_command("importverification", str(workbook), current_through="2027-02-28", verbosity=0)
+
+    recorded = set(ReferenceFigureCheck.objects.values_list("row_key", flat=True))
+    assert recorded == set(group.row_keys)
