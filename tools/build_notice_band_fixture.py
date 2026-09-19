@@ -312,7 +312,19 @@ DOCUMENT = {
 #: Shortened deliberately: source_reference is 200 characters and the full
 #: council name plus a clause reference does not fit. The gazette number is the
 #: part that identifies the instrument unambiguously.
-BCCCI = "BCCCI (KwaZulu-Natal) Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026"
+# O-33: one instrument, one citation. This agreement was cited two ways -
+# the council's full name with 'Government Gazette' spelled out on the wage
+# and rule set rows, and a short 'BCCCI ... GG' form on the notice bands,
+# where the long one plus a pinpoint would not fit source_reference's 200
+# characters. The verification workbook groups by source document, so the
+# two spellings read as two documents and a person could verify one to
+# completion with the version still showing incomplete (D-257). This form
+# keeps the council's full name, abbreviates only the province, and leaves
+# room for the longest pinpoint in the set.
+BCCCI = (
+    "Bargaining Council for the Contract Cleaning Services Industry (KZN) "
+    "Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026"
+)
 
 #: Clause 2(1): the agreement "shall only come into operation from the 1st day of
 #: the month following the date of promulgation by the Minister", and GN R.7296
@@ -323,7 +335,7 @@ BCCCI = "BCCCI (KwaZulu-Natal) Main Collective Agreement, GN R.7296 in GG 54412,
 BCCCI_FROM = "2026-04-01"
 
 DOCUMENT_BCCCI_BANDS = {
-    "version_label": "REF-2026.04.01-BCCCI-NOTICE-r2",
+    "version_label": "REF-2026.04.01-BCCCI-NOTICE-r3",
     "applies_from": "2026-04-01",
     "description": (
         "termination_notice_band for contract cleaning Area B under the BCCCI Main "

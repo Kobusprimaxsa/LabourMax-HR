@@ -49,14 +49,22 @@ import pathlib
 
 OUTPUT = pathlib.Path(__file__).resolve().parents[1] / "reference" / "ref-2026.03.01-lumpsum.json"
 
+# O-33: the same guide the other 19 source codes cite, so one string for both
+# (D-257). The revision and its effective date are kept - they are the more
+# precise half of the two spellings, and a verifier wants to know which
+# revision of the 2026 guide they are holding.
 GUIDE = (
-    "SARS PAYE-AE-06-G06, Guide for Codes Applicable to Employees Tax Certificates "
-    "2026, revision 13, effective 19 September 2025"
+    "SARS Guide for Codes Applicable to Employees Tax Certificates "
+    "(PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025"
 )
-GUIDE_URL = "https://www.sars.gov.za/types-of-tax/pay-as-you-earn/"
+# The guide itself, not the landing page: the other fixture already had it.
+GUIDE_URL = (
+    "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-G"
+    "uide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf"
+)
 
 FIXTURE = {
-    "version_label": "REF-2026.03.01-LUMPSUM",
+    "version_label": "REF-2026.03.01-LUMPSUM-r2",
     "applies_from": "2026-03-01",
     "description": (
         "Termination lump sum source codes 3901 and 3907, from SARS's 2026 code guide. "

@@ -458,14 +458,23 @@ DOCUMENT_SD1 = {
 #   and nothing resolves them.
 # ---------------------------------------------------------------------------
 
+# O-33: one instrument, one citation. This agreement was cited two ways -
+# the council's full name with 'Government Gazette' spelled out on the wage
+# and rule set rows, and a short 'BCCCI ... GG' form on the notice bands,
+# where the long one plus a pinpoint would not fit source_reference's 200
+# characters. The verification workbook groups by source document, so the
+# two spellings read as two documents and a person could verify one to
+# completion with the version still showing incomplete (D-257). This form
+# keeps the council's full name, abbreviates only the province, and leaves
+# room for the longest pinpoint in the set.
 BCCCI = (
-    "Bargaining Council for the Contract Cleaning Services Industry (KwaZulu-Natal) "
-    "Main Collective Agreement, GN R.7296 in Government Gazette 54412, 27 March 2026"
+    "Bargaining Council for the Contract Cleaning Services Industry (KZN) "
+    "Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026"
 )
 BCCCI_FROM = "2026-04-01"
 
 DOCUMENT_BCCCI = {
-    "version_label": "REF-2026.04.01-BCCCI-RULES-r2",
+    "version_label": "REF-2026.04.01-BCCCI-RULES-r3",
     "applies_from": BCCCI_FROM,
     "description": (
         "BCCCI (KwaZulu-Natal) Main Collective Agreement rule sets for contract "

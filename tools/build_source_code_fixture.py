@@ -27,7 +27,8 @@ from __future__ import annotations
 import json
 
 SARS_GUIDE = (
-    "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue"
+    "SARS Guide for Codes Applicable to Employees Tax Certificates "
+    "(PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025"
 )
 SARS_GUIDE_URL = (
     "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/"
@@ -88,7 +89,7 @@ def code(
 
 
 DOCUMENT = {
-    "version_label": "REF-2026.03.01-CODES",
+    "version_label": "REF-2026.03.01-CODES-r2",
     "applies_from": "2026-03-01",
     "description": (
         "SARS source codes used by the domestic and contract cleaning sectors, with "

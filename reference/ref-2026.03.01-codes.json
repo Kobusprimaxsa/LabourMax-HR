@@ -1,5 +1,5 @@
 {
-  "version_label": "REF-2026.03.01-CODES",
+  "version_label": "REF-2026.03.01-CODES-r2",
   "applies_from": "2026-03-01",
   "description": "SARS source codes used by the domestic and contract cleaning sectors, with the PAYE, UIF, SDL and COIDA base flags and the reasoning behind each. Researched 13 September 2026. NOT verified.",
   "tables": {
@@ -12,7 +12,7 @@
         "is_uif_remuneration": true,
         "is_sdl_remuneration": true,
         "is_coida_remuneration": true,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "Ordinary salary and wages - the code carrying most of every payslip in both sectors. In all four bases. UIF base: Unemployment Insurance Contributions Act 4 of 2002, s6 read with the s1 definition of remuneration. SDL base: Skills Development Levies Act 9 of 1999, s3, on the leviable amount - remuneration as defined in the Fourth Schedule to the Income Tax Act. COIDA base: Compensation for Occupational Injuries and Diseases Act 130 of 1993, s1 definition of earnings."
       },
@@ -24,7 +24,7 @@
         "is_uif_remuneration": false,
         "is_sdl_remuneration": false,
         "is_coida_remuneration": false,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "Outside the Fourth Schedule definition of remuneration, so outside the PAYE, UIF and SDL bases that are built on it."
       },
@@ -36,7 +36,7 @@
         "is_uif_remuneration": true,
         "is_sdl_remuneration": true,
         "is_coida_remuneration": true,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "The December bonus, and the contract cleaning sector's 4,333-week statutory bonus. In every base - bonuses are NOT excluded from UIF, unlike commission. The classic PAYE error lives here: annualise regular pay by twelve, then add the annual payment ONCE. Multiplying the bonus by twelve is the December over-deduction. UIF base: Unemployment Insurance Contributions Act 4 of 2002, s6 read with the s1 definition of remuneration."
       },
@@ -48,7 +48,7 @@
         "is_uif_remuneration": false,
         "is_sdl_remuneration": true,
         "is_coida_remuneration": true,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "THE ROW THIS TABLE EXISTS FOR. Commission is taxable, is inside the SDL leviable amount, and is OUTSIDE the UIF contribution base. A single is_taxable flag would get that wrong silently, and the error surfaces at a UI-19 reconciliation months later. UIF base: Unemployment Insurance Contributions Act 4 of 2002, s6 read with the s1 definition of remuneration. The exclusion is confirmed by the Payroll Authors Group of South Africa; VERIFY the exact paragraph of the s1 definition against the Act before this version is signed off."
       },
@@ -60,7 +60,7 @@
         "is_uif_remuneration": true,
         "is_sdl_remuneration": true,
         "is_coida_remuneration": true,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "VERIFY THE COIDA FLAG. Overtime is plainly taxable and plainly in the UIF and SDL bases. COIDA's definition of earnings treats overtime differently depending on whether it is regular or casual, and this row takes the inclusive reading, which over-declares rather than under-declares on the Return of Earnings. A wrong answer here costs an assessment, not a payslip. One for the labour law review (O-06). COIDA base: Compensation for Occupational Injuries and Diseases Act 130 of 1993, s1 definition of earnings."
       },
@@ -72,7 +72,7 @@
         "is_uif_remuneration": true,
         "is_sdl_remuneration": true,
         "is_coida_remuneration": true,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "Where the sectoral allowances land: SD1's night allowance of 10 percent of the hourly wage, and SD7's standby allowance per shift. Both are remuneration in the ordinary sense and sit in every base."
       },
@@ -84,7 +84,7 @@
         "is_uif_remuneration": false,
         "is_sdl_remuneration": false,
         "is_coida_remuneration": false,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "Non-taxable by definition, and therefore outside the bases built on it."
       },
@@ -96,7 +96,7 @@
         "is_uif_remuneration": true,
         "is_sdl_remuneration": true,
         "is_coida_remuneration": true,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "The domestic sector's live case is accommodation. SD7 permits a deduction of up to 10 percent of the wage for a room that meets its standard - a DEDUCTION from pay, which is a different thing from the taxable value of a benefit, and the two must not be netted against each other on a payslip."
       },
@@ -108,7 +108,7 @@
         "is_uif_remuneration": true,
         "is_sdl_remuneration": true,
         "is_coida_remuneration": true,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "The employer's contribution to a medical scheme, taxed as a fringe benefit. Rare in both sectors, and the medical scheme fees tax credit that offsets it is code 4116."
       },
@@ -120,7 +120,7 @@
         "is_uif_remuneration": false,
         "is_sdl_remuneration": false,
         "is_coida_remuneration": false,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "A total or a deduction, not a pay line. All four base flags are False because nothing is ever calculated FROM this code - it is calculated INTO it. A calculator that reads a base flag here has asked the wrong question."
       },
@@ -132,7 +132,7 @@
         "is_uif_remuneration": false,
         "is_sdl_remuneration": false,
         "is_coida_remuneration": false,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "A total or a deduction, not a pay line. All four base flags are False because nothing is ever calculated FROM this code - it is calculated INTO it. A calculator that reads a base flag here has asked the wrong question."
       },
@@ -144,7 +144,7 @@
         "is_uif_remuneration": false,
         "is_sdl_remuneration": false,
         "is_coida_remuneration": false,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "A total or a deduction, not a pay line. All four base flags are False because nothing is ever calculated FROM this code - it is calculated INTO it. A calculator that reads a base flag here has asked the wrong question. VERIFY THE WORDING before P8 generates an IRP5. The description here is the conventional one; it was not transcribed character for character from the SARS guide, which gives full wording only for selected codes."
       },
@@ -156,7 +156,7 @@
         "is_uif_remuneration": false,
         "is_sdl_remuneration": false,
         "is_coida_remuneration": false,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "The contract cleaning sector has a national provident fund under SD1 clause 32, so this code carries real traffic there. Its contribution rates are not loaded - they are not in this table's scope and were not researched. A total or a deduction, not a pay line. All four base flags are False because nothing is ever calculated FROM this code - it is calculated INTO it. A calculator that reads a base flag here has asked the wrong question. VERIFY THE WORDING before P8 generates an IRP5. The description here is the conventional one; it was not transcribed character for character from the SARS guide, which gives full wording only for selected codes."
       },
@@ -168,7 +168,7 @@
         "is_uif_remuneration": false,
         "is_sdl_remuneration": false,
         "is_coida_remuneration": false,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "A total or a deduction, not a pay line. All four base flags are False because nothing is ever calculated FROM this code - it is calculated INTO it. A calculator that reads a base flag here has asked the wrong question. VERIFY THE WORDING before P8 generates an IRP5. The description here is the conventional one; it was not transcribed character for character from the SARS guide, which gives full wording only for selected codes."
       },
@@ -180,7 +180,7 @@
         "is_uif_remuneration": false,
         "is_sdl_remuneration": false,
         "is_coida_remuneration": false,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "A total or a deduction, not a pay line. All four base flags are False because nothing is ever calculated FROM this code - it is calculated INTO it. A calculator that reads a base flag here has asked the wrong question. VERIFY THE WORDING before P8 generates an IRP5. The description here is the conventional one; it was not transcribed character for character from the SARS guide, which gives full wording only for selected codes."
       },
@@ -192,7 +192,7 @@
         "is_uif_remuneration": false,
         "is_sdl_remuneration": false,
         "is_coida_remuneration": false,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "Offsets PAYE rather than reducing income, which is why it is a credit and not a deduction from remuneration. A total or a deduction, not a pay line. All four base flags are False because nothing is ever calculated FROM this code - it is calculated INTO it. A calculator that reads a base flag here has asked the wrong question. VERIFY THE WORDING before P8 generates an IRP5. The description here is the conventional one; it was not transcribed character for character from the SARS guide, which gives full wording only for selected codes."
       },
@@ -204,7 +204,7 @@
         "is_uif_remuneration": false,
         "is_sdl_remuneration": false,
         "is_coida_remuneration": false,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "Carries BOTH contributions - the employee's one percent and the employer's - as a single figure on the certificate. Reporting only the employee half is a common reconciliation error. A total or a deduction, not a pay line. All four base flags are False because nothing is ever calculated FROM this code - it is calculated INTO it. A calculator that reads a base flag here has asked the wrong question. VERIFY THE WORDING before P8 generates an IRP5. The description here is the conventional one; it was not transcribed character for character from the SARS guide, which gives full wording only for selected codes."
       },
@@ -216,7 +216,7 @@
         "is_uif_remuneration": false,
         "is_sdl_remuneration": false,
         "is_coida_remuneration": false,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "An employer liability, never deducted from the employee. A total or a deduction, not a pay line. All four base flags are False because nothing is ever calculated FROM this code - it is calculated INTO it. A calculator that reads a base flag here has asked the wrong question. VERIFY THE WORDING before P8 generates an IRP5. The description here is the conventional one; it was not transcribed character for character from the SARS guide, which gives full wording only for selected codes."
       },
@@ -228,7 +228,7 @@
         "is_uif_remuneration": false,
         "is_sdl_remuneration": false,
         "is_coida_remuneration": false,
-        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue",
+        "source_reference": "SARS Guide for Codes Applicable to Employees Tax Certificates (PAYE-AE-06-G06), 2026 issue, revision 13 effective 19 September 2025",
         "source_url": "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-AE-06-G06-Guide-for-Codes-Applicable-to-Employees-Tax-Certificates-2026-External-Guide.pdf",
         "notes": "A total or a deduction, not a pay line. All four base flags are False because nothing is ever calculated FROM this code - it is calculated INTO it. A calculator that reads a base flag here has asked the wrong question. VERIFY THE WORDING before P8 generates an IRP5. The description here is the conventional one; it was not transcribed character for character from the SARS guide, which gives full wording only for selected codes."
       }

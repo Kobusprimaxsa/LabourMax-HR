@@ -48,9 +48,18 @@ import pathlib
 
 OUTPUT = pathlib.Path(__file__).resolve().parents[1] / "reference" / "ref-2026.04.01-bccci.json"
 
+# O-33: one instrument, one citation. This agreement was cited two ways -
+# the council's full name with 'Government Gazette' spelled out on the wage
+# and rule set rows, and a short 'BCCCI ... GG' form on the notice bands,
+# where the long one plus a pinpoint would not fit source_reference's 200
+# characters. The verification workbook groups by source document, so the
+# two spellings read as two documents and a person could verify one to
+# completion with the version still showing incomplete (D-257). This form
+# keeps the council's full name, abbreviates only the province, and leaves
+# room for the longest pinpoint in the set.
 GAZETTE = (
-    "Bargaining Council for the Contract Cleaning Services Industry (KwaZulu-Natal) "
-    "Main Collective Agreement, GN R.7296 in Government Gazette 54412, 27 March 2026"
+    "Bargaining Council for the Contract Cleaning Services Industry (KZN) "
+    "Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026"
 )
 GAZETTE_URL = "https://www.gov.za/sites/default/files/gcis_document/202603/54412rg11965gon7296.pdf"
 
@@ -115,7 +124,7 @@ def wage(
 
 
 FIXTURE = {
-    "version_label": "REF-2026.04.01-BCCCI",
+    "version_label": "REF-2026.04.01-BCCCI-r2",
     "applies_from": "2026-04-01",
     "description": (
         "BCCCI (KwaZulu-Natal) Main Collective Agreement wage rates and monthly wage "
@@ -228,7 +237,7 @@ ADDITIVE = (
 )
 
 MATERNITY_FIXTURE = {
-    "version_label": "REF-2026.04.01-BCCCI-MATERNITY",
+    "version_label": "REF-2026.04.01-BCCCI-MATERNITY-r2",
     "applies_from": "2026-04-01",
     "description": (
         "The two ADDITIVE maternity benefits in the BCCCI Main Agreement, clause 13.2 "

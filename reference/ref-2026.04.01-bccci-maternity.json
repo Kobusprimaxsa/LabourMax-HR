@@ -1,5 +1,5 @@
 {
-  "version_label": "REF-2026.04.01-BCCCI-MATERNITY",
+  "version_label": "REF-2026.04.01-BCCCI-MATERNITY-r2",
   "applies_from": "2026-04-01",
   "description": "The two ADDITIVE maternity benefits in the BCCCI Main Agreement, clause 13.2 and clause 13.4(a), scoped to contract cleaning Area B. The rest of clause 13 is void under BCEA s49(1)(d) and is not loaded. NOT verified.",
   "tables": {
@@ -11,7 +11,7 @@
         "value_numeric": "1.000000",
         "unit": "days",
         "effective_from": "2026-04-01",
-        "source_reference": "Bargaining Council for the Contract Cleaning Services Industry (KwaZulu-Natal) Main Collective Agreement, GN R.7296 in Government Gazette 54412, 27 March 2026, clause 13.2",
+        "source_reference": "Bargaining Council for the Contract Cleaning Services Industry (KZN) Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026, clause 13.2",
         "source_url": "https://www.gov.za/sites/default/files/gcis_document/202603/54412rg11965gon7296.pdf",
         "notes": "One day's FULLY PAID leave, on satisfactory proof of attendance at a prenatal clinic. Paid leave, not time off: the day costs the employee nothing. ADDITIVE, which is why it is loaded when most of clause 13 is not. BCEA s49(1)(d) forbids a bargaining council agreement from REDUCING the s25 entitlement; clause 13.3's twelve-week cap does that and is void to that extent. This benefit takes nothing from anyone and is separable from it (D-244). Clause 13.5 extends clause 13 to a still birth and to a legal adoption of a child under one year old. READ AS: a still birth reaches this benefit; an adoption reaches clause 13.4(a) and cannot reach clause 13.2, which pays for prenatal clinic attendance an adoptive parent has no confinement to precede. A reading, flagged for the labour law review, not a figure (O-06)."
       },
@@ -22,7 +22,7 @@
         "value_numeric": "3.000000",
         "unit": "months",
         "effective_from": "2026-04-01",
-        "source_reference": "Bargaining Council for the Contract Cleaning Services Industry (KwaZulu-Natal) Main Collective Agreement, GN R.7296 in Government Gazette 54412, 27 March 2026, clause 13.2",
+        "source_reference": "Bargaining Council for the Contract Cleaning Services Industry (KZN) Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026, clause 13.2",
         "source_url": "https://www.gov.za/sites/default/files/gcis_document/202603/54412rg11965gon7296.pdf",
         "notes": "The day is given in EACH of the three months prior to the expected date of confinement, so the entitlement is three days in total and one is not carried from one month into the next. Two parameters rather than a pre-multiplied three, because the clause states two figures and a month in which no clinic was attended pays nothing. ADDITIVE, which is why it is loaded when most of clause 13 is not. BCEA s49(1)(d) forbids a bargaining council agreement from REDUCING the s25 entitlement; clause 13.3's twelve-week cap does that and is void to that extent. This benefit takes nothing from anyone and is separable from it (D-244). Clause 13.5 extends clause 13 to a still birth and to a legal adoption of a child under one year old. READ AS: a still birth reaches this benefit; an adoption reaches clause 13.4(a) and cannot reach clause 13.2, which pays for prenatal clinic attendance an adoptive parent has no confinement to precede. A reading, flagged for the labour law review, not a figure (O-06)."
       },
@@ -33,7 +33,7 @@
         "value_numeric": "3.000000",
         "unit": "ratio",
         "effective_from": "2026-04-01",
-        "source_reference": "Bargaining Council for the Contract Cleaning Services Industry (KwaZulu-Natal) Main Collective Agreement, GN R.7296 in Government Gazette 54412, 27 March 2026, clause 13.4(a)",
+        "source_reference": "Bargaining Council for the Contract Cleaning Services Industry (KZN) Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026, clause 13.4(a)",
         "source_url": "https://www.gov.za/sites/default/files/gcis_document/202603/54412rg11965gon7296.pdf",
         "notes": "On RETURN from maternity leave, payment of one third of one month's wage at the rate the employee was on at the time of going on leave - not the rate on return, so an increase during the leave does not raise it. THE DIVISOR IS LOADED, NOT A THIRD: 0.333333 is a rounded figure standing where an exact one belongs, and a third of R9 000 is R3 000 exactly where 0.333333 x 9000 is R2 999,997. Payable on return, so an employee who does not return does not earn it. ADDITIVE, which is why it is loaded when most of clause 13 is not. BCEA s49(1)(d) forbids a bargaining council agreement from REDUCING the s25 entitlement; clause 13.3's twelve-week cap does that and is void to that extent. This benefit takes nothing from anyone and is separable from it (D-244). Clause 13.5 extends clause 13 to a still birth and to a legal adoption of a child under one year old. READ AS: a still birth reaches this benefit; an adoption reaches clause 13.4(a) and cannot reach clause 13.2, which pays for prenatal clinic attendance an adoptive parent has no confinement to precede. A reading, flagged for the labour law review, not a figure (O-06)."
       }
