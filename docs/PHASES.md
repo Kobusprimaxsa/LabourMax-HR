@@ -448,8 +448,8 @@ wrong the first time.
 
 The one that has to be right.
 
-**Chunk 1 built** (19 September 2026, D-207 to D-211): the calculator contract, the trace,
-UIF and SDL. **The assembly is BLOCKED and deliberately not started.** Reference data version
+**Chunks 1 and 2 built** (19 September 2026, D-207 to D-215): the calculator contract, the
+trace, UIF, SDL and PAYE. **The assembly is BLOCKED and deliberately not started.** Reference data version
 REF-2026.03.01 is loaded and reconciles but is NOT verified, so `in_force_on()` cannot see it
 and no payroll run can start — periods, runs and payslips all read effective-dated rows.
 Calculators are not blocked by that, because a pure function takes its statutory figures as
@@ -470,7 +470,13 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
 - [ ] `pay_period` generation and lifecycle — ASSEMBLY, blocked on P2 verification
 - [ ] `payroll_run` state machine: draft → calculating → calculated → approved → finalised
 - [ ] Gross pay calculators, one per pay basis
-- [ ] PAYE: annual equivalent method, bonus annualised **once**, directives
+- [x] PAYE: annual equivalent method, bonus annualised **once**, directives — CHUNK 2
+      (D-212 to D-215). One formula with `periods_worked`, which carries 1 for an ordinary
+      month, 7 for a mid-year leaver and SARS's own decimal portion 3 ÷ 7 for a part-period
+      starter. Statutory rates, not the deduction tables — both are sanctioned and SARS's
+      worked examples use the other one, so the golden file splits into exact reproductions
+      (six cumulative band bases, three tax thresholds, the medical credit scale, SARS's own
+      annual-equivalent arithmetic) and method reproductions of the two fully worked examples
 - [ ] COIDA accumulation (UIF and SDL are done — see chunk 1 above)
 - [ ] Leave pay, including the variable-earnings average
 - [ ] `termination_payout` — notice, pro-rata leave, severance, pro-rata bonus

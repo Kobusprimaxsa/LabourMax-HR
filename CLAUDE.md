@@ -289,6 +289,8 @@ payslip was computed against. Every monetary output is a `Money` carrying `.exac
 and `.rounded` (two, ROUND_HALF_UP); only the payslip line reads `.rounded`. The import guard
 reads each module's source and refuses anything outside decimal / dataclasses / datetime /
 typing / enum / collections / calculators, and refuses a clock call however it is spelled.
+Provenance is a PROTOCOL, `base.Sourced` (D-215): a PAYE bracket is four numbers off one row,
+so it carries the key once rather than repeating it on four `StatutoryFigure`s.
 
 **100% branch coverage on `calculators/`. Nothing less ships.**
 
@@ -342,7 +344,9 @@ Things that are easy to get wrong, and have been got wrong before:
   computed from history. It is a human-set flag.
 - **Director PAYE**: the flat 25% rate was repealed in 2017. Directors use the ordinary tables.
 - **PAYE rounding**: SARS sanctions two legitimate methods that are *expected* to differ
-  slightly. A small variance against another package is not automatically a bug.
+  slightly. A small variance against another package is not automatically a bug. This build
+  uses the **statutory rates**; every SARS worked example uses the **deduction tables**, and
+  the gap runs about R30 a year on a small salary and R124 at R336 000 (D-212).
 - **BCEA earnings threshold**: a high earner loses only s18(3), **not all of s18** — they keep
   the public holiday pay entitlement.
 - **Commission is excluded** from the UIF contribution base. Bonuses are not.
@@ -1048,6 +1052,35 @@ Calculators are unblocked by construction — a pure function takes its figures 
 UIF's base is `min(remuneration, ceiling)` (s6(2) excludes only the excess, so AT the ceiling
 contributes in full); SDL liability is a declared boolean because s4(b) is forward-looking, and
 the R500 000 threshold is an input to the SCREEN, never to the calculator.
+
+**P7 chunk 2 — PAYE, the annual equivalent and directives** (19 September 2026, D-212 to
+D-215). 1 320 tests green. `calculators/paye.py` is the statutory-rates method, and the
+tables-versus-rates note above is now a settled design point rather than a warning: **every
+worked example in both SARS employer guides is computed on the deduction TABLES**, which this
+module does not implement and SARS itself calls interchangeable with the statutory rates
+("small differences may occur … these methods are acceptable in terms of the Income Tax Act",
+PAYE-GEN-01-G01 §5). So the golden file splits: everything the statutory rates settle exactly
+is reproduced to the cent from published figures — six cumulative band bases, the marginal
+formula, all three tax thresholds producing precisely nil, the medical credit scale, and
+SARS's own annual-equivalent and pro-rata arithmetic — and the two fully worked examples are
+reproduced by METHOD with both figures named and the gap held inside a bound the file labels
+as a test-only sanity check.
+
+**One formula, not four.** Paragraph 9(2)'s annual equivalent is remuneration × periods in the
+year ÷ periods worked, and `periods_worked` carries 1 for an ordinary month, 7 for a mid-year
+leaver, and SARS's own decimal portion 3 ÷ 7 for someone who starts on the fifth day of a
+week. A bonus is added to the annual equivalent ONCE and its tax is the difference — annualise
+it with the salary and the employee pays R104 528 for a year in which R55 005 was due, a
+mistake that is a few hundred rand in the month itself and lands in February.
+
+**A directive REPLACES the calculation.** No bands, no rebates, no medical credit; a fixed
+percentage runs on GROSS, before the paragraph 2(4) deductions, because the guide says so in
+terms. A directive with no instruction on it, and an EXPIRED directive, both raise rather than
+falling back to the tables — falling back is deviating from the directive. `TaxStatus` is a
+hand-copy of `EmployeeTaxProfile.TaxStatus`, and `payroll/tests/test_paye_boundary.py` asserts
+the two never drift. Three readings are flagged for a tax practitioner rather than asserted
+(O-23): whether a directive suppresses the medical credit, what `FOREIGN` means, and whether
+`directive_amount` is per pay period.
 
 **P6 — Leave: ALL FIVE CHUNKS BUILT** (18 September 2026). Chunk 5 — maternity, parental
 under Van Wyk and adoption — is in: the two totals as cited reference data, the declaration
