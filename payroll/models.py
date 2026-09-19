@@ -493,3 +493,91 @@ class YtdAccumulator(AuditedModel, TenantScopedModel):
 
     def __str__(self):
         return f"YTD {self.source_code} for {self.employee_id}: {self.amount}"
+
+
+class PayrollValidationIssue(AuditedModel, TenantScopedModel):
+    """What a run must answer for before anyone is paid.
+
+    Every issue belongs to a run, and most name an employee. ``severity``
+    decides whether it merely warns or actually stops the run: a BLOCKING issue
+    standing unresolved makes ``payroll/runs.py::approve()`` refuse outright.
+
+    **Issues are DERIVED, not accumulated.** ``validate()`` deletes the run's
+    unresolved issues and rewrites them from scratch every time it is called, in
+    the same shape as ``ytd_accumulator`` (D-231) and ``timesheet_summary``
+    before it (D-153): a list maintained incrementally that has drifted cannot
+    be told apart from a correct one. An issue somebody RESOLVED survives, with
+    its reason, because that resolution is a human decision and a record of one.
+
+    **A resolved BLOCKING issue no longer blocks**, which is the whole point of
+    being able to resolve one — an employer who has looked at a below-minimum
+    wage and accepted it (D-108's own shape) must be able to proceed, and their
+    name and reason are on the row for ever.
+    """
+
+    class Severity(models.TextChoices):
+        BLOCKING = "blocking", "Blocking"
+        WARNING = "warning", "Warning"
+
+    payroll_run = models.ForeignKey(
+        "payroll.PayrollRun", on_delete=models.CASCADE, related_name="validation_issues"
+    )
+    employee = models.ForeignKey(
+        "employees.Employee",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="payroll_validation_issues",
+        help_text="Null for an issue about the run or the period rather than a person.",
+    )
+
+    code = models.CharField(
+        max_length=60, db_index=True, help_text="A stable identifier, e.g. 'reference_data'."
+    )
+    severity = models.CharField(max_length=20, choices=Severity.choices, db_index=True)
+    message = models.TextField(help_text="What is wrong, in the terms the employer must act on.")
+
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="resolved_payroll_issues",
+    )
+    resolution_reason = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "payroll_validation_issue"
+        ordering = ["payroll_run_id", "severity", "employee_id", "code"]
+        indexes = [
+            models.Index(fields=["tenant", "severity"]),
+            models.Index(fields=["payroll_run", "resolved_at"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(code=""), name="validation_issue_has_a_code"
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(message=""), name="validation_issue_says_what_is_wrong"
+            ),
+            # Resolving is a human act with a name and a reason on it. All three
+            # together or none of them — and guarded both ways over the nullable
+            # columns, because a CHECK that evaluates to NULL counts as satisfied.
+            models.CheckConstraint(
+                condition=models.Q(
+                    resolved_at__isnull=True,
+                    resolved_by_user__isnull=True,
+                    resolution_reason="",
+                )
+                | models.Q(
+                    resolved_at__isnull=False,
+                    resolved_by_user__isnull=False,
+                )
+                & ~models.Q(resolution_reason=""),
+                name="validation_issue_resolution_is_named_and_reasoned",
+            ),
+        ]
+
+    def __str__(self):
+        return f"[{self.severity}] {self.code} on run {self.payroll_run_id}"
