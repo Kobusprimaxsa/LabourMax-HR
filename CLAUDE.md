@@ -333,16 +333,19 @@ python manage.py seedcomponents
 
 **Verification is a person with a gazette, and this is the shape of that job.**
 `exportverification` writes every loaded figure to a workbook grouped by SOURCE
-DOCUMENT, so each gazette is opened once; `importverification` reads the ticks back
-and calls `verifystatutory` for each version whose figures are all checked. The
-workbook is a WORK AID and never a source of truth: a value edited in it REFUSES
-that version and names the row, because an importer that could write a figure is
-every loader guard routed around by a spreadsheet (D-251).
+DOCUMENT, so each gazette is opened once; `importverification` reads the ticks back,
+records each one in `reference_figure_check`, and calls `verifystatutory` for every
+version the DATABASE now says is fully checked. **The workbook is disposable and the
+database holds the record** (D-256): export as often as you like, each one pre-fills
+what is already done and leaves newly loaded figures blank. A value edited in the
+spreadsheet REFUSES its version and names the row, because an importer that could
+write a figure is every loader guard routed around by a spreadsheet (D-251).
 
 ```powershell
 python manage.py exportverification --verifier you@example.com   # reference/verification/
 python manage.py importverification <file.xlsx> --current-through 2027-02-28 --golden-tests-passed
 python manage.py importverification <file.xlsx> --current-through 2027-02-28 --dry-run
+# import before re-exporting over a file: --force only ever loses ticks never imported
 ```
 
 **Never load them with a shell glob.** Alphabetical order puts the rule set fixtures before
