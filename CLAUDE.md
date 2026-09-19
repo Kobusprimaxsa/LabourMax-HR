@@ -281,6 +281,15 @@ This is what makes the payroll engine testable against SARS worked examples with
 database, and what stops calculation logic leaking into views and models where it becomes
 impossible to verify.
 
+**The contract is `calculators/base.py`, and `calculators/tests/test_contract.py` enforces
+it** (D-207). One frozen input structure in, one frozen result out. Every statutory figure
+arrives as a `StatutoryFigure` carrying the TABLE and PRIMARY KEY of the row it came from — the
+key, not the citation, because a citation gets corrected and the key still opens the row a 2026
+payslip was computed against. Every monetary output is a `Money` carrying `.exact` (six places)
+and `.rounded` (two, ROUND_HALF_UP); only the payslip line reads `.rounded`. The import guard
+reads each module's source and refuses anything outside decimal / dataclasses / datetime /
+typing / enum / collections / calculators, and refuses a clock call however it is spelled.
+
 **100% branch coverage on `calculators/`. Nothing less ships.**
 
 A calculator without a golden-file test — reproducing a published SARS or DEL worked
@@ -417,7 +426,7 @@ employees/      master file, engagements, remuneration, schedules
 attendance/     daily capture, import, timesheet aggregation
 leave/          types, cycles, ledger, applications, accrual engine
 payroll/        periods, runs, payslips, YTD, terminations
-calculators/    pure calculation functions — no ORM, no I/O
+calculators/    pure calculation functions — no ORM, no I/O (the contract: base.py)
 statutory_out/  EMP201, UI-19, IRP5, COIDA, bank files
 discipline/     cases, actions, evidence
 documents/      filing, categories, templates, generation, secure links
@@ -1031,11 +1040,20 @@ gateway), so starting it means stopping to ask.
 **Statutory figures are never invented.** If a rate is needed and cannot be cited, say so and
 stop. That applies to filling in a fixture as much as to writing code.
 
+**P7 — Payroll Engine: chunk 1 built, assembly BLOCKED** (19 September 2026). The calculator
+contract (D-207), `payroll_calculation_trace` (D-208), UIF (D-210) and SDL (D-209) are in.
+**No payroll run can start until P2 is verified**: REF-2026.03.01 reconciles but is unverified,
+so `in_force_on()` cannot see it, and periods, runs and payslips all read effective-dated rows.
+Calculators are unblocked by construction — a pure function takes its figures as inputs.
+UIF's base is `min(remuneration, ceiling)` (s6(2) excludes only the excess, so AT the ceiling
+contributes in full); SDL liability is a declared boolean because s4(b) is forward-looking, and
+the R500 000 threshold is an input to the SCREEN, never to the calculator.
+
 **P6 — Leave: ALL FIVE CHUNKS BUILT** (18 September 2026). Chunk 5 — maternity, parental
 under Van Wyk and adoption — is in: the two totals as cited reference data, the declaration
 captured rather than computed, s25(4B)'s single sequence enforced, and the two opposite lapse
 behaviours loaded as data (D-201 to D-206).
-1,206 tests collected, all passing. An unpaid leave day never also spends leave: an overdraw
+1,262 tests collected, all passing. An unpaid leave day never also spends leave: an overdraw
 (D-188), uncertified sick leave (D-196) and an unauthorised absence elected unpaid (D-195)
 all charge nothing. See D-186 to D-197 for 4b and 4c. The leave
 catalogue, cycles, the append-only ledger, the accrual engine (ANNUAL, SICK and

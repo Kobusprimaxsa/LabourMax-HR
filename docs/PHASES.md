@@ -448,16 +448,34 @@ wrong the first time.
 
 The one that has to be right.
 
-- [ ] `pay_period` generation and lifecycle
+**Chunk 1 built** (19 September 2026, D-207 to D-211): the calculator contract, the trace,
+UIF and SDL. **The assembly is BLOCKED and deliberately not started.** Reference data version
+REF-2026.03.01 is loaded and reconciles but is NOT verified, so `in_force_on()` cannot see it
+and no payroll run can start — periods, runs and payslips all read effective-dated rows.
+Calculators are not blocked by that, because a pure function takes its statutory figures as
+inputs, so they are what chunk 1 built. **P2 verification by a second person is the gate:
+nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
+
+- [x] The calculator contract (D-207) — one frozen input, one frozen result, provenance as
+      row KEYS, `Money` carrying exact and rounded, enforced by a source-reading import guard
+      that is itself tested against violating snippets
+- [x] `payroll_calculation_trace` — inputs, reference rows read, outputs, warnings (D-208).
+      Tenant-scoped with `enable_rls()`, append-only by trigger, written even for a zero. The
+      calculator produces the structure; `payroll.trace.record()` persists it.
+      `payslip_id_ref` is a forward reference until the payslip exists
+- [x] UIF with ceiling (D-210) — base is `min(remuneration, ceiling)` from s6(2)'s "as
+      exceeds"; commission out, bonus in; the s4(1)(a) exemption declared, never computed
+- [x] SDL with the human-set exemption flag (D-209) — forward-looking s4(b), so liability is
+      a boolean input and there is nowhere to hand it a payroll history
+- [ ] `pay_period` generation and lifecycle — ASSEMBLY, blocked on P2 verification
 - [ ] `payroll_run` state machine: draft → calculating → calculated → approved → finalised
 - [ ] Gross pay calculators, one per pay basis
 - [ ] PAYE: annual equivalent method, bonus annualised **once**, directives
-- [ ] UIF with ceiling; SDL with the human-set exemption flag; COIDA accumulation
+- [ ] COIDA accumulation (UIF and SDL are done — see chunk 1 above)
 - [ ] Leave pay, including the variable-earnings average
 - [ ] `termination_payout` — notice, pro-rata leave, severance, pro-rata bonus
 - [ ] `annual_bonus_cycle` accruing monthly
 - [ ] `payslip`, `payslip_line` with SARS source codes and employee snapshot
-- [ ] `payroll_calculation_trace` — inputs, reference rows read, outputs
 - [ ] `ytd_accumulator`, rebuildable from finalised payslips
 - [ ] `payroll_validation_issue` and the approval gate
 - [ ] Golden-file tests against every published SARS and DEL worked example
