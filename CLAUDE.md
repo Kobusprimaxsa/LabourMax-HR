@@ -1168,10 +1168,14 @@ the gate names it.
   Collective Agreement (GN R.7296, GG 54412, 27 March 2026) is loaded as
   `reference/ref-2026.04.01-bccci.json`: R32,40 from 1 April 2026, R34,02 from 1 March 2027,
   R35,72 from 1 March 2028. **A KwaZulu-Natal contract cleaning employer can now be
-  onboarded.** What is still missing is the PREDECESSOR agreement covering 1–31 March 2026
-  (O-30) — the resolver refuses that period by name rather than answering the National
-  Minimum Wage (D-238). (Area B, not Area C — D-61 had the lettering the wrong way round,
-  and D-118 corrected it)
+  onboarded.** ~~What is still missing is the PREDECESSOR agreement covering 1–31 March
+  2026 (O-30)~~ **CLOSED 20 September 2026 (D-259)**: Notice 1726 of 2023 in GG 48356 is
+  loaded — R27,50 from 1 April 2023, R29,12 from 1 March 2024, R30,86 from 1 March 2025 —
+  so March 2026 resolves R30,86 with clause 3's 4,33 factor. Only that gazette's wage
+  rates and factor were read, so Area B's March 2026 leave, hours, termination and notice
+  rules still fall back to SD1. The refusal (D-238) is unchanged and still fires for a
+  date neither agreement covers. (Area B, not Area C — D-61 had the lettering the wrong
+  way round, and D-118 corrected it)
 - Account number lengths per bank (D-72, searched and still NULL — D-254). The
   BankservAfrica/PayInc EFT specification is not published, and the per-bank lengths on the
   open web contradict each other, so nothing citable was found and nothing was loaded. O-04

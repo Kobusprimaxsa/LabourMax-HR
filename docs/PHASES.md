@@ -163,8 +163,11 @@ The most important phase in the build. Can overlap P1.
       and D-118 says the table stops there (D-255)
 - [ ] Bank account number lengths — searched, nothing citable, still NULL (D-254). Waits
       on the payment partner's EFT specification (O-04)
-- [ ] The predecessor BCCCI agreement — FOUND (GG 48356, Notice 1726 of 2023, 31 March
-      2023) and transcribed; R30,86 an hour governs March 2026. Not yet loaded (O-30)
+- [x] The predecessor BCCCI agreement — LOADED 20 Sep 2026 (D-259, O-30 closed).
+      Notice 1726 of 2023 in GG 48356: R27,50 from 1 April 2023, R29,12 from 1 March 2024,
+      R30,86 from 1 March 2025, plus clause 3's 4,33 monthly factor. Found, reported and
+      loaded in three separate passes. Its leave, hours, termination and notice provisions
+      were not read and are not loaded, so March 2026 still falls back to SD1 for those.
 - [ ] Golden tests reproducing the published SARS and DEL worked examples
 
 `source_url` is deliberately optional rather than mandatory as this plan originally
