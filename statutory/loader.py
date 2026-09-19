@@ -625,6 +625,53 @@ def load_reference_data(
     return report
 
 
+def natural_key_lookup(spec: TableSpec, values: dict, *, where: str) -> dict:
+    """The filter that identifies ``values``' row within its own table.
+
+    Evaluated exactly as the row would be CREATED, or an omitted nullable scope
+    column turns a duplicate into a second row: a minimum wage fixture naming
+    only a sector means "no area, no grade, all hours", and the lookup has to say
+    so explicitly rather than leave those columns out.
+
+    Shared with ``statutory/verification.py`` so the verification workbook matches
+    a fixture row to its database row the same way the loader does. Two matchers
+    would be two answers to "is this the same row", and they drift.
+    """
+    lookup = {}
+    for key in spec.natural_key:
+        if key in values:
+            lookup[key] = values[key]
+            continue
+        field_object = spec.model._meta.get_field(key)
+        if field_object.has_default():
+            lookup[key] = field_object.get_default()
+        elif field_object.null:
+            lookup[key] = None
+        else:
+            raise ReferenceDataLoadError(
+                f"{where}: '{key}' is part of this table's identity and is missing."
+            )
+    return lookup
+
+
+def locate_row(spec: TableSpec, raw: dict, *, where: str):
+    """The database row a fixture row refers to, or None if it was never loaded.
+
+    Read-only: resolves the fixture's natural keys to instances and looks the row
+    up. Writes nothing, so it is safe to call over every shipped fixture.
+    """
+    values = _resolve_references(spec, raw, where=where)
+    for name in list(values):
+        field_object = spec.model._meta.get_field(name)
+        is_plain_date = isinstance(field_object, models.DateField) and not isinstance(
+            field_object, models.DateTimeField
+        )
+        if is_plain_date and values[name] is not None:
+            values[name] = _as_date(values[name], where=f"{where}.{name}")
+    lookup = natural_key_lookup(spec, values, where=where)
+    return spec.model.objects.filter(**lookup).first()
+
+
 def _load_row(spec: TableSpec, raw: dict, *, where: str, closes_from, report: LoadReport) -> None:
     if not isinstance(raw, dict):
         raise ReferenceDataLoadError(f"{where}: expected an object, found {type(raw).__name__}.")
@@ -651,24 +698,7 @@ def _load_row(spec: TableSpec, raw: dict, *, where: str, closes_from, report: Lo
         if is_plain_date and values[name] is not None:
             values[name] = _as_date(values[name], where=f"{where}.{name}")
 
-    # The natural key has to be evaluated exactly as the row would be created, or an
-    # omitted nullable scope column turns a duplicate into a second row. A minimum
-    # wage fixture that names only a sector means "no area, no grade, all hours", and
-    # the lookup has to say so explicitly rather than leave those columns out.
-    lookup = {}
-    for key in spec.natural_key:
-        if key in values:
-            lookup[key] = values[key]
-            continue
-        field_object = spec.model._meta.get_field(key)
-        if field_object.has_default():
-            lookup[key] = field_object.get_default()
-        elif field_object.null:
-            lookup[key] = None
-        else:
-            raise ReferenceDataLoadError(
-                f"{where}: '{key}' is part of this table's identity and is missing."
-            )
+    lookup = natural_key_lookup(spec, values, where=where)
 
     table = spec.model._meta.db_table
     existing = spec.model.objects.filter(**lookup).first()
