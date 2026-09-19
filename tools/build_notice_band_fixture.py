@@ -87,13 +87,19 @@ def band(
     to_value,
     to_unit,
     to_inclusive,
-    notice_value,
-    notice_unit,
+    notice_value=None,
+    notice_unit="",
     sector=None,
+    sector_area=None,
+    is_contested=False,
+    contested_reason="",
     notes="",
 ):
     row = {
         "sector": sector,
+        "sector_area": sector_area,
+        "is_contested": is_contested,
+        "contested_reason": contested_reason,
         "effective_from": EFFECTIVE_FROM,
         "sequence": sequence,
         "source_reference": source,
@@ -269,5 +275,136 @@ DOCUMENT = {
 }
 
 
+# ---------------------------------------------------------------------------
+# The BCCCI Main Agreement's own notice regime, contract cleaning AREA B only.
+# Area B and Area A DO NOT SHARE A NOTICE RULE: SD1 gives one working day for
+# the first four weeks and four weeks thereafter; this agreement gives one
+# working day, then a CONTESTED window, then two weeks.
+#
+# CLAUSE 21.1(b) CONTRADICTS ITSELF AND THE SUB-NUMBERING IS CORRUPT. As
+# published, two items are both printed "i)":
+#
+#   i)   "Not less than one working day's notice shall be given during the
+#         first four weeks of such employment;"
+#   i)   "Not less than two weeks notice shall be given after the first four
+#         weeks of such employment."
+#   ii)  "Not less than one weeks notice shall be given to an employee whilst
+#         on probation, as defined, for the period of employment between
+#         4 weeks as in sub clause (i) above and six months."
+#
+# Clause 21.2(a)(ii) pays "double the weekly wage ... in lieu of the two weeks
+# notice called for in sub-clause 21.1 b) ii)", which shows the drafter treated
+# the TWO WEEKS rule as item (ii) — so the printed "ii)" is a mis-numbered
+# third item. That fixes the numbering and NOT the conflict: probation is
+# defined as a maximum of four months, so between four weeks and six months an
+# employee is covered by BOTH the two-week rule and the one-week rule.
+#
+# There is also NO payment-in-lieu figure for the one-week probation notice —
+# 21.2(a) prices only the one working day and the two weeks — which is a second
+# reason the window cannot be resolved by reading the instrument harder.
+#
+# So the middle band is loaded as CONTESTED (D-241) and resolve.notice_band()
+# refuses it by name. After six months the probation rule has expired on its
+# own terms and only the two-week rule can apply, which is unambiguous.
+# ---------------------------------------------------------------------------
+
+#: Shortened deliberately: source_reference is 200 characters and the full
+#: council name plus a clause reference does not fit. The gazette number is the
+#: part that identifies the instrument unambiguously.
+BCCCI = "BCCCI (KwaZulu-Natal) Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026"
+
+DOCUMENT_BCCCI_BANDS = {
+    "version_label": "REF-2026.04.01-BCCCI-NOTICE",
+    "applies_from": "2026-04-01",
+    "description": (
+        "termination_notice_band for contract cleaning Area B under the BCCCI Main "
+        "Agreement, clause 21.1(b). The four-weeks-to-six-months band is CONTESTED and "
+        "refuses rather than resolving. NOT verified."
+    ),
+    "tables": {
+        "termination_notice_band": [
+            band(
+                sequence=1,
+                sector="CONTRACT_CLEANING",
+                sector_area="AREA_B",
+                source=f"{BCCCI}, clause 21.1(b)(i)",
+                from_value="0",
+                from_unit="weeks",
+                from_inclusive=True,
+                to_value="4",
+                to_unit="weeks",
+                # "DURING the first four weeks" - the boundary belongs to this
+                # band, read off the clause's own wording the way D-158 taught.
+                to_inclusive=True,
+                notice_value="1",
+                notice_unit="days",
+                notes=(
+                    "One WORKING day, so the unit is days and nothing here converts it "
+                    "to a fraction of a week - contract cleaning runs six-day weeks and "
+                    "a day is worth a sixth of one, not a fifth (D-68). Clause "
+                    "21.2(a)(i) prices it at the daily wage being received at the time "
+                    "of termination."
+                ),
+            ),
+            band(
+                sequence=2,
+                sector="CONTRACT_CLEANING",
+                sector_area="AREA_B",
+                source=f"{BCCCI}, clause 21.1(b), second 'i)' and 'ii)' as published",
+                from_value="4",
+                from_unit="weeks",
+                from_inclusive=False,
+                to_value="6",
+                to_unit="months",
+                to_inclusive=True,
+                is_contested=True,
+                contested_reason=(
+                    'TWO LIMBS, TWO ANSWERS. The clause says both "Not less than two '
+                    "weeks notice shall be given after the first four weeks of such "
+                    'employment" and "Not less than one weeks notice shall be given to '
+                    "an employee whilst on probation, as defined, for the period of "
+                    "employment between 4 weeks as in sub clause (i) above and six "
+                    'months". Probation is defined in clause 3 as a maximum of four '
+                    "months, so an employee between four weeks and six months falls "
+                    "under both. Clause 21.2(a) prices only the one working day and the "
+                    "two weeks, giving no payment in lieu for the one-week probation "
+                    "notice, so the payment clause does not settle it either."
+                ),
+                notes=(
+                    "Loaded as a band so the range is covered and the contradiction is "
+                    "visible, with no value because inventing one would put a period "
+                    "nobody can stand behind where a gazetted one belongs."
+                ),
+            ),
+            band(
+                sequence=3,
+                sector="CONTRACT_CLEANING",
+                sector_area="AREA_B",
+                source=f"{BCCCI}, clause 21.1(b), second 'i)' as published",
+                from_value="6",
+                from_unit="months",
+                from_inclusive=False,
+                to_value=None,
+                to_unit="",
+                to_inclusive=None,
+                notice_value="2",
+                notice_unit="weeks",
+                notes=(
+                    "Unambiguous from six months on: the one-week rule is expressly "
+                    "limited to the window 'between 4 weeks ... and six months' and "
+                    "probation is capped at four months, so only the two-week rule can "
+                    "reach an employee of longer service. Clause 21.2(a)(ii) prices it "
+                    "at double the weekly wage being received at the time of "
+                    "termination."
+                ),
+            ),
+        ]
+    },
+}
+
 if __name__ == "__main__":
-    print(json.dumps(DOCUMENT, indent=2, ensure_ascii=False))
+    import sys
+
+    which = sys.argv[1] if len(sys.argv) > 1 else ""
+    document = DOCUMENT_BCCCI_BANDS if which == "bccci" else DOCUMENT
+    print(json.dumps(document, indent=2, ensure_ascii=False))

@@ -1,0 +1,63 @@
+{
+  "version_label": "REF-2026.04.01-BCCCI-NOTICE",
+  "applies_from": "2026-04-01",
+  "description": "termination_notice_band for contract cleaning Area B under the BCCCI Main Agreement, clause 21.1(b). The four-weeks-to-six-months band is CONTESTED and refuses rather than resolving. NOT verified.",
+  "tables": {
+    "termination_notice_band": [
+      {
+        "sector": "CONTRACT_CLEANING",
+        "sector_area": "AREA_B",
+        "is_contested": false,
+        "contested_reason": "",
+        "effective_from": "2026-03-01",
+        "sequence": 1,
+        "source_reference": "BCCCI (KwaZulu-Natal) Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026, clause 21.1(b)(i)",
+        "notes": "One WORKING day, so the unit is days and nothing here converts it to a fraction of a week - contract cleaning runs six-day weeks and a day is worth a sixth of one, not a fifth (D-68). Clause 21.2(a)(i) prices it at the daily wage being received at the time of termination.",
+        "service_from_value": "0",
+        "service_from_unit": "weeks",
+        "service_from_inclusive": true,
+        "service_to_value": "4",
+        "service_to_unit": "weeks",
+        "service_to_inclusive": true,
+        "notice_value": "1",
+        "notice_unit": "days"
+      },
+      {
+        "sector": "CONTRACT_CLEANING",
+        "sector_area": "AREA_B",
+        "is_contested": true,
+        "contested_reason": "TWO LIMBS, TWO ANSWERS. The clause says both \"Not less than two weeks notice shall be given after the first four weeks of such employment\" and \"Not less than one weeks notice shall be given to an employee whilst on probation, as defined, for the period of employment between 4 weeks as in sub clause (i) above and six months\". Probation is defined in clause 3 as a maximum of four months, so an employee between four weeks and six months falls under both. Clause 21.2(a) prices only the one working day and the two weeks, giving no payment in lieu for the one-week probation notice, so the payment clause does not settle it either.",
+        "effective_from": "2026-03-01",
+        "sequence": 2,
+        "source_reference": "BCCCI (KwaZulu-Natal) Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026, clause 21.1(b), second 'i)' and 'ii)' as published",
+        "notes": "Loaded as a band so the range is covered and the contradiction is visible, with no value because inventing one would put a period nobody can stand behind where a gazetted one belongs.",
+        "service_from_value": "4",
+        "service_from_unit": "weeks",
+        "service_from_inclusive": false,
+        "service_to_value": "6",
+        "service_to_unit": "months",
+        "service_to_inclusive": true,
+        "notice_value": null,
+        "notice_unit": ""
+      },
+      {
+        "sector": "CONTRACT_CLEANING",
+        "sector_area": "AREA_B",
+        "is_contested": false,
+        "contested_reason": "",
+        "effective_from": "2026-03-01",
+        "sequence": 3,
+        "source_reference": "BCCCI (KwaZulu-Natal) Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026, clause 21.1(b), second 'i)' as published",
+        "notes": "Unambiguous from six months on: the one-week rule is expressly limited to the window 'between 4 weeks ... and six months' and probation is capped at four months, so only the two-week rule can reach an employee of longer service. Clause 21.2(a)(ii) prices it at double the weekly wage being received at the time of termination.",
+        "service_from_value": "6",
+        "service_from_unit": "months",
+        "service_from_inclusive": false,
+        "service_to_value": null,
+        "service_to_unit": "",
+        "service_to_inclusive": null,
+        "notice_value": "2",
+        "notice_unit": "weeks"
+      }
+    ]
+  }
+}

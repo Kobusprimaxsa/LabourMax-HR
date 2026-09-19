@@ -1,5 +1,5 @@
 {
-  "version_label": "REF-2026.03.01-SD1-r3",
+  "version_label": "REF-2026.03.01-SD1-r4",
   "applies_from": "2026-03-01",
   "description": "Contract cleaning sector rule sets from Sectoral Determination 1, clauses 3 and 8 to 24. Researched 13 September 2026 from two independent transcriptions of the consolidated determination. NOT verified.",
   "tables": {
@@ -17,6 +17,11 @@
         "annual_leave_cycle_months": 12,
         "annual_leave_forfeit_months": 6,
         "annual_leave_payable_on_termination": true,
+        "has_long_service_annual_leave": false,
+        "long_service_annual_leave_years": null,
+        "long_service_years_inclusive": null,
+        "long_service_annual_leave_days_5day": null,
+        "long_service_annual_leave_days_6day": null,
         "sick_leave_cycle_months": 36,
         "sick_leave_weeks_equivalent": "6.00",
         "sick_leave_first_six_months_ratio": 26,

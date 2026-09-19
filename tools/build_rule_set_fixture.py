@@ -102,8 +102,29 @@ HAS_STATUTORY_BONUS = (
 )
 
 
-def leave_rules(*, sector, source, family_days, extra_notes=""):
+DERIVED_LONG_SERVICE_DAYS = (
+    "DERIVED the same way the 15 and the 18 above are, and by the same arithmetic "
+    "the BCEA itself uses: 28 CONSECUTIVE days is four weeks, which is 20 working "
+    "days on a five-day week and 24 on a six-day week - exactly as 21 consecutive "
+    "days is three weeks, 15 and 18. Nothing new is read into the clause."
+)
+
+
+def leave_rules(
+    *,
+    sector,
+    source,
+    family_days,
+    sector_area=None,
+    extra_notes="",
+    long_service_years=None,
+    long_service_years_inclusive=None,
+    long_service_days_5day=None,
+    long_service_days_6day=None,
+):
     notes = [EFFECTIVE_NOTE, DERIVED_LEAVE_DAYS]
+    if long_service_years is not None:
+        notes.append(DERIVED_LONG_SERVICE_DAYS)
     if extra_notes:
         notes.append(extra_notes)
     row = {
@@ -119,6 +140,13 @@ def leave_rules(*, sector, source, family_days, extra_notes=""):
         "annual_leave_cycle_months": 12,
         "annual_leave_forfeit_months": 6,
         "annual_leave_payable_on_termination": True,
+        # NOT NULL with no default (D-243). FALSE is a statement about what this
+        # instrument says, carried by every row that does not pass a band.
+        "has_long_service_annual_leave": long_service_years is not None,
+        "long_service_annual_leave_years": long_service_years,
+        "long_service_years_inclusive": long_service_years_inclusive,
+        "long_service_annual_leave_days_5day": long_service_days_5day,
+        "long_service_annual_leave_days_6day": long_service_days_6day,
         "sick_leave_cycle_months": 36,
         "sick_leave_weeks_equivalent": "6.00",
         "sick_leave_first_six_months_ratio": 26,
@@ -134,6 +162,8 @@ def leave_rules(*, sector, source, family_days, extra_notes=""):
     }
     if sector:
         row["sector"] = sector
+    if sector_area:
+        row["sector_area"] = sector_area
     return row
 
 
@@ -141,6 +171,7 @@ def working_time_rules(
     *,
     sector,
     source,
+    sector_area=None,
     max_overtime_week,
     standby_allowance,
     standby_start,
@@ -196,6 +227,8 @@ def working_time_rules(
     }
     if sector:
         row["sector"] = sector
+    if sector_area:
+        row["sector_area"] = sector_area
     return row
 
 
@@ -203,6 +236,7 @@ def termination_rules(
     *,
     sector,
     source,
+    sector_area=None,
     bonus_weeks="0.000",
     bonus_month=None,
     bonus_pro_rata=False,
@@ -228,11 +262,13 @@ def termination_rules(
     }
     if sector:
         row["sector"] = sector
+    if sector_area:
+        row["sector_area"] = sector_area
     return row
 
 
 DOCUMENT = {
-    "version_label": "REF-2026.03.01-RULES-r3",
+    "version_label": "REF-2026.03.01-RULES-r4",
     "applies_from": "2026-03-01",
     "description": (
         "Sector rule sets: the BCEA default and the domestic sector's Sectoral "
@@ -326,7 +362,7 @@ SD1 = (
 SD1_URL = "https://www.acts.co.za/basic/sd1_nr622_3__remuneration.php"
 
 DOCUMENT_SD1 = {
-    "version_label": "REF-2026.03.01-SD1-r3",
+    "version_label": "REF-2026.03.01-SD1-r4",
     "applies_from": "2026-03-01",
     "description": (
         "Contract cleaning sector rule sets from Sectoral Determination 1, clauses 3 "
@@ -391,8 +427,148 @@ DOCUMENT_SD1 = {
 }
 
 
+# ---------------------------------------------------------------------------
+# The BCCCI Main Collective Agreement (KwaZulu-Natal), GN R.7296 in GG 54412,
+# 27 March 2026. Contract cleaning AREA B ONLY - SD1 still governs Areas A and
+# C of the same sector, which is why these rows carry an area and SD1's do not
+# (D-240). Every figure verified against the gazette page by page.
+#
+# What is deliberately NOT here, and why:
+#
+# * Maternity, clause 13.3 and clause 17(b). BCEA s49(1)(d) forbids a
+#   bargaining council agreement from reducing the s25 entitlement, and 13.3
+#   caps the return at twelve weeks after the birth where an employee who works
+#   to the birth is entitled to roughly seventeen and a half. Void to that
+#   extent, so it is transcribed in the register and NOT loaded as a rule.
+# * The clause 10.3(a)(i) certificate rule. It requires a certificate after
+#   "more than one consecutive day" where BCEA s23(1) says more than two -
+#   caught by s49(1)(e), and contradicted by cl 10.2(a) in the same agreement.
+#   SICK_CERTIFICATE_MAX_CONSECUTIVE_DAYS stays at 2.
+# * Notice between four weeks and six months. Clause 21.1(b) gives two answers
+#   and nothing resolves them.
+# ---------------------------------------------------------------------------
+
+BCCCI = (
+    "Bargaining Council for the Contract Cleaning Services Industry (KwaZulu-Natal) "
+    "Main Collective Agreement, GN R.7296 in Government Gazette 54412, 27 March 2026"
+)
+BCCCI_FROM = "2026-04-01"
+
+DOCUMENT_BCCCI = {
+    "version_label": "REF-2026.04.01-BCCCI-RULES",
+    "applies_from": BCCCI_FROM,
+    "description": (
+        "BCCCI (KwaZulu-Natal) Main Collective Agreement rule sets for contract "
+        "cleaning Area B. Transcribed from GN R.7296 in GG 54412 page by page. "
+        "NOT verified."
+    ),
+    "tables": {
+        "leave_rule_set": [
+            leave_rules(
+                sector="CONTRACT_CLEANING",
+                sector_area="AREA_B",
+                source=f"{BCCCI}, clauses 9, 10 and 12",
+                family_days=3,
+                long_service_years=10,
+                # "MORE THAN ten years": ten years exactly stays in the LOWER
+                # band, read off the clause's own wording (D-158).
+                long_service_years_inclusive=False,
+                long_service_days_5day="20.000",
+                long_service_days_6day="24.000",
+                extra_notes=(
+                    "Clause 9.1(a) gives 21 consecutive days for an employee working not "
+                    "more than 6 days a week, which is the BCEA s20 position. Clause "
+                    "9.1(b) gives 28 CONSECUTIVE days to an employee with MORE THAN ten "
+                    "years service, loaded into the long_service columns (D-243). "
+                    "Clause 10's sick leave QUANTUM mirrors BCEA s22 exactly: a 36-month "
+                    "cycle (cl 10.1(a)), six weeks worth (cl 10.1(b)), one day per 26 days "
+                    "worked in the first six months (cl 10.1(c)) and the first-cycle "
+                    "reduction (cl 10.1(d)). The clause 10.3(a)(i) CERTIFICATE rule is not "
+                    "loaded - it demands a certificate after more than ONE consecutive day "
+                    "where BCEA s23(1) says two, which s49(1)(e) forbids and which cl "
+                    "10.2(a) in the same agreement contradicts. Family responsibility "
+                    "follows the BCEA three days; the agreement adds nothing. Clause 12's "
+                    "study leave has no column here and is recorded as scope."
+                ),
+            )
+        ],
+        "working_time_rule_set": [
+            working_time_rules(
+                sector="CONTRACT_CLEANING",
+                sector_area="AREA_B",
+                source=f"{BCCCI}, clauses 3, 4.3, 5, 8, 11, 16 and 17",
+                max_overtime_week="10.00",
+                standby_allowance="0.00",
+                standby_start="00:00:00",
+                standby_end="00:00:00",
+                standby_hours="0.00",
+                accommodation_capped=False,
+                accommodation_source="the BCCCI Main Collective Agreement",
+                night_allowance_type="percentage",
+                night_allowance_value="10.0000",
+                min_paid_hours="6.00",
+                extra_notes=(
+                    "Clause 4.3: a night work allowance of 10 percent of the employee's "
+                    "hourly wage for each night hour or part thereof, IN ADDITION TO the "
+                    "ordinary wage; clause 3 puts the night window at 18:00 to 06:00 for "
+                    "work other than overtime. Clause 5: an employer may not employ a "
+                    "cleaner for less than 6 hours a day and pays 6 if fewer are worked. "
+                    "Clause 8.3: 45 hours a week, 9 a day on five days or fewer, 8 a day "
+                    "on more than five. Clause 8.5: 3 overtime hours a day, 10 a week, at "
+                    "least one and a half times. Clause 8.8: 12 consecutive hours daily "
+                    "rest, 10 for an employee living on the premises whose meal interval "
+                    "is at least three hours; 36 weekly, need not include Sunday; or 60 "
+                    "every two weeks. Clause 8.4: no more than five hours continuous work "
+                    "without a meal interval. CLAUSE 11 REPRODUCES BCEA s16 AND s18 ALMOST "
+                    "VERBATIM, including 11.1(b)(ii) 'whichever is the greater' and "
+                    "11.2(b)'s daily-wage floor on a short Sunday, so Area B prices exactly "
+                    "as the BCEA does and calculators/gross.py needs no new code (D-217). "
+                    "Standby and accommodation are SD7 concepts; this agreement has "
+                    "neither. Clause 8.6's compressed week and 8.7's four-month averaging "
+                    "have no columns here and are recorded as scope."
+                ),
+            )
+        ],
+        "termination_rule_set": [
+            termination_rules(
+                sector="CONTRACT_CLEANING",
+                sector_area="AREA_B",
+                source=f"{BCCCI}, clauses 4.5, 29, 30 and 36",
+                bonus_weeks="4.330",
+                bonus_month=12,
+                bonus_pro_rata=True,
+                extra_notes=(
+                    "THE BONUS MULTIPLIER IS 4.33, NOT 4.333. Clause 4.5(a) gives an amount "
+                    "equivalent to 4.33 (four point three three) times the employee's "
+                    "weekly wage. SD1's own annual_bonus_weeks is 4.333 and the two are "
+                    "different figures in different instruments that look almost identical. "
+                    "Clause 4.5(b) pro-rates on full calendar months of service divided by "
+                    "12, and PRO RATA IS IN FORCE NOW: clause 4.6 is a re-lettered "
+                    "restatement of 4.5 whose own (h) cross-references 4.5's corrected "
+                    "letters, so the heading saying its inclusion will come into effect in "
+                    "the increase year of 2028 governs that restatement, not the "
+                    "entitlement. The 2026 and 2027 bonuses are pro-rated. Paid to all "
+                    "cleaners in employment on 1 December, in December, no later than the "
+                    "20th. Clause 4.5(f): casual employees do not qualify. Clause 36.2: "
+                    "severance of at least one week's remuneration per completed year of "
+                    "continuous service, calculated per clause 4 - the BCEA s41 position. "
+                    "Clause 30: retirement at the state pension qualification age. Clause "
+                    "29: absence of more than three days without satisfactory explanation "
+                    "is desertion. NOT MODELLED HERE: clause 4.5(d)'s prevailing-rate "
+                    "split, 4.5(e)'s absence penalties. 4.5(g) makes 4.5(c)(ii), "
+                    "4.5(d) and 4.5(f) MINIMUMS the employer may improve on, so all "
+                    "three are employer elections in employers/onboarding.py with the "
+                    "gazetted position as the default (D-242), never fixed rules here."
+                ),
+            )
+        ],
+    },
+}
+
+
 if __name__ == "__main__":
     import sys
 
     which = sys.argv[1] if len(sys.argv) > 1 else "bcea"
-    print(json.dumps(DOCUMENT_SD1 if which == "sd1" else DOCUMENT, indent=2, ensure_ascii=False))
+    documents = {"sd1": DOCUMENT_SD1, "bccci": DOCUMENT_BCCCI}
+    print(json.dumps(documents.get(which, DOCUMENT), indent=2, ensure_ascii=False))
