@@ -448,8 +448,8 @@ wrong the first time.
 
 The one that has to be right.
 
-**Chunks 1 and 2 built** (19 September 2026, D-207 to D-215): the calculator contract, the
-trace, UIF, SDL and PAYE. **The assembly is BLOCKED and deliberately not started.** Reference data version
+**Chunks 1 to 3 built** (19 September 2026, D-207 to D-219): the calculator contract, the
+trace, UIF, SDL, PAYE and gross pay. **The assembly is BLOCKED and deliberately not started.** Reference data version
 REF-2026.03.01 is loaded and reconciles but is NOT verified, so `in_force_on()` cannot see it
 and no payroll run can start — periods, runs and payslips all read effective-dated rows.
 Calculators are not blocked by that, because a pure function takes its statutory figures as
@@ -469,7 +469,12 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       a boolean input and there is nowhere to hand it a payroll history
 - [ ] `pay_period` generation and lifecycle — ASSEMBLY, blocked on P2 verification
 - [ ] `payroll_run` state machine: draft → calculating → calculated → approved → finalised
-- [ ] Gross pay calculators, one per pay basis
+- [x] Gross pay calculators, one per pay basis — CHUNK 3 (D-216 to D-219). ONE calculator,
+      because BCEA ss 10, 16 and 18 each state a TOTAL for the day: the premium is that total
+      less what the basic already paid, and what the basic covers is a fact about the basis.
+      s18 prices a DAY and not the hours in it, and s16(2) floors a short Sunday at a daily
+      wage — both read from the Act, both different from what the multiplier columns suggest.
+      Standby and the earnings-threshold exclusions REFUSE rather than guess (O-22, O-24)
 - [x] PAYE: annual equivalent method, bonus annualised **once**, directives — CHUNK 2
       (D-212 to D-215). One formula with `periods_worked`, which carries 1 for an ordinary
       month, 7 for a mid-year leaver and SARS's own decimal portion 3 ÷ 7 for a part-period

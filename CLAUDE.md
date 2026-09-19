@@ -367,6 +367,11 @@ Things that are easy to get wrong, and have been got wrong before:
 - **The maternity restriction runs after the birth, not before it.** A birth mother may not
   work for six weeks after giving birth unless certified fit; separately, she may start leave
   up to four weeks before. Two different rules, two columns.
+- **A premium's multiplier may not be per HOUR — read the section.** s10(2) and s16(1) are per
+  hour; **s18(2)(b) is per DAY** ("double the amount referred to in paragraph (a)", and (a) is the
+  wage for that day), and s16(2) floors a short Sunday at the ordinary daily wage. The columns are
+  all called `*_multiplier` and sit in a row together, which is exactly how the public holiday one
+  gets priced per hour and underpays every short holiday shift (D-217).
 - **An absent statutory figure is a boolean, never a zero.**
   `working_time_rule_set.accommodation_deduction_capped` (NOT NULL, **no database default**) plus a
   nullable `accommodation_deduction_max_pct`, two CHECKs holding them together, and
@@ -375,7 +380,11 @@ Things that are easy to get wrong, and have been got wrong before:
   UNLIMITED and — the one that would have bitten — made any new rule set row whose author never
   thought about the column silently uncapped. No default, so such a row fails instead. The other
   zero-means-no-figure columns (`night_allowance_value`, the three standby columns) still carry the
-  old encoding; the same reasoning applies to them when one is next touched.
+  old encoding; the same reasoning applies to them when one is next touched. **The night
+  allowance is no longer one of them** (D-218, O-22's night half): `night_allowance_type` is a
+  `TextChoices` with a CHECK and `night_allowance_value` is NULL where the instrument states no
+  amount, which is the BCEA's and SD7's position under s17(2)(a). `calculators/gross.py` refuses
+  to price a **standby** day at all until the three standby columns get the same treatment.
 - **The s22(3) sick ratio is not a second entitlement.** One per 26 days worked restricts how
   much of the ONE s22(2) cycle entitlement is available in the first six months. So the first
   cycle resolves to E − A by default, and s22(4)'s "may" is the employer's election
@@ -1081,6 +1090,38 @@ hand-copy of `EmployeeTaxProfile.TaxStatus`, and `payroll/tests/test_paye_bounda
 the two never drift. Three readings are flagged for a tax practitioner rather than asserted
 (O-23): whether a directive suppresses the medical credit, what `FOREIGN` means, and whether
 `directive_amount` is per pay period.
+
+**P7 chunk 3 — gross pay, one calculator for five pay bases** (19 September 2026, D-216 to
+D-219). 1 386 tests green. `calculators/gross.py` prices the buckets
+`calculators/attendance.py` produced. **BCEA ss 10, 16 and 18 each state a TOTAL for the day,
+not an amount to add on top**, so there is one rule and not five: the premium line is the
+section's total less what BASIC already paid for that day, and what the basic covers is a fact
+about the pay basis — hourly pays the ordinary bucket (never a Sunday or holiday hour, the
+buckets being disjoint), daily pays `days_worked_equivalent` (which does cover them, and cannot
+cover overtime because it caps at 1.000), and a salary buys every ordinary working day. The
+proof is that the same Sunday costs the same on all three.
+
+**Two premiums were read from the Act and neither is what the column name suggests** (D-217).
+**s18 prices a DAY**: s18(2)(b) is "at least double the amount referred to in paragraph (a)",
+and (a) is the wage for that DAY, so four hours on a public holiday is two days' wages, not
+four hours at double time. **s16(2) floors a short Sunday** at the ordinary daily wage. The
+first version of this calculator priced both per hour, read as correct, and only the Act's own
+text caught it — `public_holiday_worked_multiplier` sits beside three columns that genuinely
+are per hour. Every section is transcribed verbatim in `calculators/tests/test_gross_golden.py`
+beside the test holding the code to it, because no regulator publishes a worked premium example
+(D-150's position, restated for pay).
+
+**O-22's night half is closed, on the deadline it set** (D-218): `night_allowance_value` is
+nullable, `night_allowance_type` is a `TextChoices` with a CHECK, and three constraints hold
+the pair together. The generic rule-set test helper had been writing the literal `"x"` into
+that column for a year, which the new CHECK caught on its first run.
+
+**Two things REFUSE rather than guess** (D-219). A **standby day** raises, naming O-19, O-20 and
+O-22 — the standby columns still carry the sentinel the night allowance just shed, and O-22
+records that they cannot be settled until the standby modelling is. An employee **above the BCEA
+earnings threshold** raises where the period carries overtime, Sunday or night hours: s6(3) has
+the Minister determine which provisions fall away, that determination has not been read (O-24),
+and s18(3) is the one exclusion already settled.
 
 **P6 — Leave: ALL FIVE CHUNKS BUILT** (18 September 2026). Chunk 5 — maternity, parental
 under Van Wyk and adoption — is in: the two totals as cited reference data, the declaration
