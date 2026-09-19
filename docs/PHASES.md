@@ -448,10 +448,14 @@ wrong the first time.
 
 The one that has to be right.
 
-**Chunks 1 to 6 built** (19 September 2026, D-207 to D-231): the calculator contract, the
-trace, UIF, SDL, PAYE, gross pay, leave pay, the termination payout, and the payslip and
-year-to-date TABLES. **The run that would populate them is still blocked** — that is what P2
-verification gates, and it has not moved: 0 of 21 reference data versions are verified. **The assembly is BLOCKED and deliberately not started.** Reference data version
+**Chunks 1 to 7 built** (19 September 2026, D-207 to D-235): the calculator contract, the
+trace, UIF, SDL, PAYE, gross pay, leave pay, the termination payout, the payslip and
+year-to-date tables, and the run lifecycle with its validation gate. **P2 verification has
+still not happened — 0 of 21 versions — and that is now ENFORCED rather than described**: a
+run refuses at approval, by the gate, with a message naming `verifystatutory`. What remains
+before a payroll can actually run is that verification, and the payslip ASSEMBLY (chunk 8):
+reading each employee's attendance, leave, remuneration and tax profile, resolving the
+statutory rows and calling the calculators. `calculate()` refuses by name until then. **The assembly is BLOCKED and deliberately not started.** Reference data version
 REF-2026.03.01 is loaded and reconciles but is NOT verified, so `in_force_on()` cannot see it
 and no payroll run can start — periods, runs and payslips all read effective-dated rows.
 Calculators are not blocked by that, because a pure function takes its statutory figures as
@@ -470,9 +474,11 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
 - [x] SDL with the human-set exemption flag (D-209) — forward-looking s4(b), so liability is
       a boolean input and there is nowhere to hand it a payroll history
 - [ ] `pay_period` generation and lifecycle — ASSEMBLY, blocked on P2 verification
-- [ ] `payroll_run` state machine: draft → calculating → calculated → approved → finalised
-      — the TABLE is built (chunk 6); the TRANSITIONS are assembly and are not. A test
-      asserts the CHECK does not police them, so nobody reads it as though it did
+- [x] `payroll_run` state machine: draft → calculating → calculated → approved → finalised
+      — CHUNK 7 (D-233). `LEGAL_TRANSITIONS` is data and `transition()` is the one place a
+      status moves. Finalisation freezes the snapshots, locks the attendance, closes the
+      period and rebuilds the year-to-date cache in one transaction; reversal is a new run
+      with a mirrored payslip per payslip and the original untouched (D-235)
 - [x] Gross pay calculators, one per pay basis — CHUNK 3 (D-216 to D-219). ONE calculator,
       because BCEA ss 10, 16 and 18 each state a TOTAL for the day: the premium is that total
       less what the basic already paid, and what the basic covers is a fact about the basis.
@@ -508,7 +514,11 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       the SARS source code, rebuilt from scratch every time with no incremental path
       (D-153's lesson), and checked by a ground truth that never reads the cache's own
       bookkeeping
-- [ ] `payroll_validation_issue` and the approval gate
+- [x] `payroll_validation_issue` and the approval gate — CHUNK 7 (D-232, D-234). **The P2
+      gate now refuses rather than being described**: nothing had ever called
+      `in_force_on()` or read `data_current_through`, and the gate is where they are read.
+      Issues are derived and rewritten; a resolution is keyed on the PROBLEM, not the row,
+      so it survives re-validation — with a named person and a mandatory reason on it
 - [ ] Golden-file tests against every published SARS and DEL worked example
 - [ ] Property-based invariants: balance equals ledger, net never negative, UIF never over ceiling
 

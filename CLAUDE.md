@@ -1229,6 +1229,37 @@ NOT transcribed from sheet 02, which was not available to the session that built
 earlier table in this build was reconciled against the workbook. These should be, before the
 assembly writes a row.
 
+**P7 chunk 7 — the payroll run and the validation gate** (19 September 2026, D-232 to
+D-235). 1 559 tests green. `payroll/runs.py` is the lifecycle and `payroll/validation.py` is
+the gate.
+
+**THE P2 GATE IS NOW A REFUSAL RATHER THAN A NOTE, and this chunk is what enforces it.**
+`ReferenceDataVersion.in_force_on()` has filtered on `verified_at` and `golden_tests_passed`
+since P2's own migration, and `data_current_through` has carried the words "THE STALENESS
+GUARD" just as long — and **nothing had ever called either** (`employers/areas.py` is the only
+caller of `in_force_on()` in the whole build). Every note saying "the assembly is blocked on
+P2 verification" was describing an intention, and an intention with no caller is the silent
+guard this codebase keeps shipping. On this database today a run refuses at approval, naming
+`verifystatutory`, and a test pins exactly that.
+
+**Transitions are enforced in `transition()`, and the legal moves are DATA** (D-233).
+`LEGAL_TRANSITIONS` is a dict, every status change goes through one function, and a test
+asserts every enum value appears in the map — a status added and forgotten there would be
+treated as terminal by accident. Chunk 6 shipped the test proving the CHECK does *not* police
+transitions; this is the other half. **`calculate()` refuses by name**: assembling a payslip
+is chunk 8, and a run reporting itself calculated while holding nothing is a run somebody
+approves.
+
+**A resolution is against a PROBLEM, not a ROW** (D-234) — keyed on (code, employee) for the
+run, because issues are derived and rewritten and the first design let a resolution last
+exactly until the next validation. Caught by its own test. The reason is mandatory and the
+person named, held by a CHECK guarded both ways over the nullable columns. `approve()`
+re-validates rather than trusting an earlier pass.
+
+**Finalisation does five things in one transaction** (D-235) and reads the snapshot at the
+PERIOD's date, not today's — `current_pay_basis` is a cache refreshed as at today (D-107), and
+today is not the date the payslip is for.
+
 **P6 — Leave: ALL FIVE CHUNKS BUILT** (18 September 2026). Chunk 5 — maternity, parental
 under Van Wyk and adoption — is in: the two totals as cited reference data, the declaration
 captured rather than computed, s25(4B)'s single sequence enforced, and the two opposite lapse
