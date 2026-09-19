@@ -284,3 +284,115 @@ def test_every_check_is_in_the_registry():
     }
 
     assert defined == registered, f"not registered: {sorted(defined - registered)}"
+
+
+# ------ P2 chunk C: one version verified is not "the reference data verified"
+
+
+def test_a_later_verified_version_does_not_vouch_for_an_earlier_unverified_one(
+    household, tax_year, approver
+):
+    """THE HOLE CHUNK C's VERIFICATION OPENED (D-250).
+
+    ``in_force_on()`` returns THE NEWEST usable version and nothing else, which
+    was right when this build had one monolithic version and is wrong now that
+    it has eighteen. Verifying the four BCCCI versions — KwaZulu-Natal wage
+    rates, rule sets, notice bands and two maternity benefits, all applying from
+    1 April 2026 — makes one of them the newest usable version, and the gate
+    then passes for a June 2026 run whose PAYE, UIF and National Minimum Wage
+    figures sit in REF-2026.03.01 with nobody's name against them.
+
+    The gate went from refusing to passing because a KwaZulu-Natal wage schedule
+    was checked. It must refuse while ANY version applying on that date is
+    unverified, not merely find one that is.
+    """
+    ReferenceDataVersion.objects.create(
+        version_label="REF-2026.03.01",
+        applies_from=datetime.date(2026, 3, 1),
+        description="PAYE, UIF and the NMW. Loaded, reconciles, NOBODY HAS CHECKED IT.",
+    )
+    ReferenceDataVersion.objects.create(
+        version_label="REF-2026.04.01-BCCCI",
+        applies_from=datetime.date(2026, 4, 1),
+        description="KwaZulu-Natal contract cleaning wage rates.",
+        verified_at=WHEN,
+        verified_by_user=approver,
+        golden_tests_passed=True,
+        data_current_through=datetime.date(2029, 2, 28),
+    )
+
+    # June 2026 - AFTER the BCCCI applies from, which is what makes it the
+    # newest usable version and hides the unverified one behind it.
+    period = a_period(household, tax_year, start=datetime.date(2026, 6, 1))
+    run = a_run(household, period)
+    issues = validation.validate(run)
+
+    assert "reference_data_not_verified" in codes(issues), (
+        "the run reads PAYE from REF-2026.03.01, which nobody has verified; a verified "
+        "BCCCI wage schedule does not vouch for it"
+    )
+    message = next(i for i in issues if i.code == "reference_data_not_verified").message
+    assert "REF-2026.03.01" in message, "the refusal must name the version that is missing"
+
+
+def test_the_gate_passes_only_when_every_applicable_version_is_verified(
+    household, tax_year, approver
+):
+    """The other direction, so the fix cannot be "always refuse"."""
+    for label, applies in (
+        ("REF-2026.03.01", datetime.date(2026, 3, 1)),
+        ("REF-2026.04.01-BCCCI", datetime.date(2026, 4, 1)),
+    ):
+        ReferenceDataVersion.objects.create(
+            version_label=label,
+            applies_from=applies,
+            description="Checked.",
+            verified_at=WHEN,
+            verified_by_user=approver,
+            golden_tests_passed=True,
+            data_current_through=datetime.date(2029, 2, 28),
+        )
+
+    period = a_period(household, tax_year, start=datetime.date(2026, 6, 1))
+    run = a_run(household, period)
+    issues = validation.validate(run)
+
+    assert "reference_data_not_verified" not in codes(issues)
+
+
+def test_a_superseded_version_is_not_demanded_of_the_verifier(household, tax_year, approver):
+    """A re-encoded version is kept forever (D-199) and must not hold the gate
+    shut for the rest of time — its successor is what anything reads."""
+    old = ReferenceDataVersion.objects.create(
+        version_label="REF-2026.04.01-BCCCI-RULES",
+        applies_from=datetime.date(2026, 4, 1),
+        description="The first encoding. Never verified; superseded.",
+    )
+    new = ReferenceDataVersion.objects.create(
+        version_label="REF-2026.04.01-BCCCI-RULES-r2",
+        applies_from=datetime.date(2026, 4, 1),
+        description="Corrected.",
+        verified_at=WHEN,
+        verified_by_user=approver,
+        golden_tests_passed=True,
+        data_current_through=datetime.date(2029, 2, 28),
+    )
+    new.supersedes = old
+    new.supersede_reason = "Re-encoded with the corrected effective date (D-247)."
+    new.save(update_fields=["supersedes", "supersede_reason"])
+
+    ReferenceDataVersion.objects.create(
+        version_label="REF-2026.03.01",
+        applies_from=datetime.date(2026, 3, 1),
+        description="Checked.",
+        verified_at=WHEN,
+        verified_by_user=approver,
+        golden_tests_passed=True,
+        data_current_through=datetime.date(2029, 2, 28),
+    )
+
+    period = a_period(household, tax_year, start=datetime.date(2026, 6, 1))
+    run = a_run(household, period)
+    issues = validation.validate(run)
+
+    assert "reference_data_not_verified" not in codes(issues)

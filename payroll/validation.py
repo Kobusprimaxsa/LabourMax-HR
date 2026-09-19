@@ -15,9 +15,17 @@ payroll run to call them in. Every note in this build saying "the assembly is
 blocked on P2 verification" was describing an intention; this module is where
 the intention becomes a refusal.
 
-So on this database today, with 0 of 21 versions verified, a run refuses. That
-is not this module failing to work — it is this module working, and there is a
-test that pins exactly that.
+So on this database today a run refuses, because REF-2026.03.01 — every PAYE
+bracket, the UIF ceiling, the National Minimum Wage — has nobody's name against
+it. That is not this module failing to work; it is this module working, and
+there is a test that pins exactly that.
+
+**The check asks about EVERY applicable version, not the newest one** (D-250).
+Verifying P2 chunk C's four BCCCI versions — KwaZulu-Natal wage rates and
+conditions, nothing else — made one of them the newest usable version and, under
+the first version of this check, silently opened the gate for a June 2026 run
+whose tax figures were still unchecked. The staleness half reads the SHORTEST
+vouch across those versions for the same reason.
 
 **Issues are DERIVED and rewritten, never accumulated** (D-231's shape, D-153's
 reasoning). What survives a re-validation is a RESOLVED issue, because a
@@ -34,7 +42,7 @@ import dataclasses
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 
 from attendance.completeness import missing_attendance_days
 from core.managers import tenant_context_of
@@ -67,12 +75,56 @@ class Finding:
 def check_reference_data(run) -> list[Finding]:
     """The P2 gate, finally with a caller.
 
-    Two separate failures, and they are not the same thing. There may be no
+    THREE separate failures, and they are not the same thing. There may be no
     usable version AT ALL for the period — nothing verified, or nothing applying
-    that far back — or there may be one whose author said, in
-    ``data_current_through``, how far they were willing to vouch for it.
+    that far back. There may be one whose author said, in
+    ``data_current_through``, how far they were willing to vouch for it. Or —
+    the one this build actually walked into (D-250) — there may be a verified
+    version sitting in front of an UNVERIFIED one that the same run reads.
+
+    ``in_force_on()`` answers "the newest usable version", which was the right
+    question when this build had one monolithic version and is the wrong one now
+    that it has eighteen. Verifying the four BCCCI versions, which carry nothing
+    but KwaZulu-Natal wage rates and conditions, made one of them the newest
+    usable version and stopped the gate asking about REF-2026.03.01 — where
+    every PAYE bracket, the UIF ceiling and the National Minimum Wage live. The
+    gate went from refusing to passing because a wage schedule for one province
+    was checked.
+
+    So the question is not "is there a verified version" but "is EVERY version
+    this period could read verified". A superseded version is excluded: it is
+    kept forever as the audit record (D-199) and nothing resolves against it, so
+    demanding its verification would hold the gate shut permanently.
     """
     period = run.pay_period
+
+    unverified = list(
+        ReferenceDataVersion.objects.filter(
+            applies_from__lte=period.payment_date,
+            superseded_by__isnull=True,
+        )
+        .filter(Q(verified_at__isnull=True) | Q(golden_tests_passed=False))
+        .order_by("applies_from", "version_label")
+    )
+    if unverified:
+        named = ", ".join(v.version_label for v in unverified)
+        return [
+            Finding(
+                "reference_data_not_verified",
+                BLOCKING,
+                f"{len(unverified)} reference data version(s) applying on "
+                f"{period.payment_date:%d %B %Y} have not been verified: {named}. A "
+                f"version is unusable until a SECOND person has checked every figure "
+                f"against its source document and recorded it with "
+                f"`manage.py verifystatutory`, including that the golden tests passed. "
+                f"Every applicable version must be verified, not merely the newest one "
+                f"— a run reads figures from all of them, so a verified wage schedule "
+                f"does not vouch for an unverified tax table sitting behind it (D-250). "
+                f"Running payroll against unchecked figures is the failure this gate "
+                f"exists for.",
+            )
+        ]
+
     version = ReferenceDataVersion.in_force_on(period.payment_date)
 
     if version is None:
@@ -91,7 +143,26 @@ def check_reference_data(run) -> list[Finding]:
             )
         ]
 
-    if version.data_current_through and period.period_end > version.data_current_through:
+    # The SHORTEST vouch wins, for the same reason the check above looks at every
+    # version: the run reads figures from all of them, so the date it may safely
+    # be computed for is the earliest any of their verifiers was willing to go.
+    # Reading only the newest version's date would let a wage schedule vouched to
+    # 2029 carry a tax table vouched to 2027.
+    stalest = min(
+        (
+            candidate
+            for candidate in ReferenceDataVersion.objects.filter(
+                applies_from__lte=period.payment_date,
+                superseded_by__isnull=True,
+                data_current_through__isnull=False,
+            )
+        ),
+        key=lambda candidate: candidate.data_current_through,
+        default=version,
+    )
+
+    if stalest.data_current_through and period.period_end > stalest.data_current_through:
+        version = stalest  # the one whose verifier vouched least far, and so the one to name
         return [
             Finding(
                 "reference_data_stale",
