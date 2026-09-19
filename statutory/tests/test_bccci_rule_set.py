@@ -148,8 +148,14 @@ def test_a_kzn_employee_absent_two_consecutive_days_needs_no_certificate(loaded)
     where BCEA s23(1) says more than two. **BCEA s49(1)(e) forbids a bargaining
     council agreement from reducing the s22-to-s24 entitlement**, and requiring
     proof sooner than the Act allows lets pay be withheld where s23 says it may
-    not be — so the clause is void to that extent and is NOT loaded. The
-    agreement also contradicts itself: cl 10.2(a) tracks s23(1).
+    not be — so the clause is void to that extent and is NOT loaded.
+
+    CORRECTED in chunk C against the gazette (D-248): cl 10.2(a) does NOT track
+    s23(1) and the agreement does NOT contradict itself here. 10.2(a) states the
+    same ONE-day threshold, and drops a word on top of it — "An employer is
+    required to pay ... if the employee has been absent from work for one day",
+    where s23(1) says an employer is NOT required to pay. So the reduction rests
+    on one ground, not two, and that ground is enough.
 
     The threshold therefore stays at 2 for Area B, and a KwaZulu-Natal employee
     absent for exactly two consecutive days is not required to produce one.
@@ -539,3 +545,80 @@ def test_the_void_maternity_cap_is_nowhere_in_the_loaded_data(maternity):
     assert not StatutoryParameter.objects.filter(
         parameter_code__startswith="MATERNITY_MAX"
     ).exists()
+
+
+# ------ P2 chunk C: the verification pass, and what it found in the load
+
+
+def test_no_area_b_row_is_in_force_before_the_agreement_binds_anyone(loaded):
+    """THE DEFECT THE VERIFICATION PASS FOUND (D-247).
+
+    Clause 2(1): "This Agreement shall only come into operation from the 1st day
+    of the month following the date of promulgation by the Minister", and GN
+    R.7296 binds non-parties "with effect from the first day of the month after
+    the date of publication of this Notice". Published 27 March 2026, so
+    1 April 2026 — which is the version's own ``applies_from`` and the
+    ``effective_from`` on every wage rate.
+
+    The rule sets and notice bands went in at 2026-03-01 instead, because they
+    were built through helpers carrying the 1 March constant every OTHER
+    instrument in this repo uses. A month of KwaZulu-Natal employees would have
+    been given this agreement's leave, hours, bonus and notice terms while the
+    PREDECESSOR agreement still governed them (O-30) — including the contested
+    notice refusal, which would have blocked a March termination that the
+    previous agreement may well have answered.
+
+    The wage rate refusal (D-238) masks part of it and not the whole: nothing
+    makes a leave accrual or a notice band wait for a wage lookup.
+    """
+    from statutory.models import (
+        LeaveRuleSet,
+        TerminationNoticeBand,
+        TerminationRuleSet,
+        WorkingTimeRuleSet,
+    )
+
+    binds_from = datetime.date(2026, 4, 1)
+    offenders = []
+
+    for model in (LeaveRuleSet, WorkingTimeRuleSet, TerminationRuleSet):
+        for row in model.objects.filter(sector_area__code="AREA_B"):
+            if row.effective_from < binds_from:
+                offenders.append(f"{model._meta.db_table}={row.effective_from}")
+
+    for band in TerminationNoticeBand.objects.filter(
+        termination_rule_set__sector_area__code="AREA_B"
+    ):
+        if band.termination_rule_set.effective_from < binds_from:
+            offenders.append(f"notice band {band.sequence}")
+
+    assert not offenders, (
+        f"in force before the agreement binds anyone: {offenders}. Clause 2(1) and "
+        f"GN R.7296 both put that at 1 April 2026."
+    )
+
+
+def test_march_2026_resolves_to_sd1_for_area_b_not_to_the_bccci(loaded):
+    """The same defect stated as the behaviour that matters. Before 1 April 2026
+    an Area B employer is governed by whatever governed them before — which for
+    the rule sets this build holds is SD1's sector-wide row, and the wage is
+    refused by name (D-238) because the predecessor agreement is not loaded."""
+    sector, made = loaded
+    march = datetime.date(2026, 3, 15)
+
+    rules = resolve.termination_rules(sector, march, made["AREA_B"])
+
+    assert rules.sector_area_id is None, (
+        "March 2026 must fall through to SD1's sector-wide row; the BCCCI does not "
+        "bind anyone until 1 April 2026"
+    )
+    assert rules.annual_bonus_weeks == Decimal("4.333"), "SD1's figure, not the BCCCI's"
+
+
+def test_from_the_first_of_april_area_b_is_on_the_agreement(loaded):
+    """The other side of the boundary, to the day."""
+    sector, made = loaded
+
+    assert resolve.termination_rules(
+        sector, datetime.date(2026, 4, 1), made["AREA_B"]
+    ).annual_bonus_weeks == Decimal("4.330")
