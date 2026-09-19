@@ -145,8 +145,18 @@ The most important phase in the build. Can overlap P1.
       `importverification` reads the ticks back and calls `verifystatutory`. A value edited
       in the spreadsheet REFUSES that version and names the row; the workbook can never
       write a figure.
-- [ ] **Kobus works the workbook.** 14 of 18 versions unverified, and the four
-      machine-verified BCCCI ones need a human pass too. This is what P7 assembly waits on.
+- [ ] **Kobus works the workbook. 129 check groups over 582 figures, 17 source
+      documents.** The largest are the Public Holidays Act (24 checks), the SARS code
+      guide (21), the BCCCI Main Agreement (19) and the BCEA (18); nine documents are a
+      single check each. 20 of 24 versions unverified — the four BCCCI ones lost their
+      machine verification when their citations were normalised (D-257) and need a human
+      pass like the rest. This is what P7 assembly waits on.
+- [x] Check groups: one row per lookup rather than per figure, capped at 8 and showing
+      every figure the tick covers (D-258)
+- [x] Duplicate citation spellings normalised, and a check that reports the next pair
+      (D-257, O-33 closed)
+- [x] The superseded `tools/build_verification_workbook.py` removed — it grouped by table,
+      had no import path, and was a second workbook in the same directory
 - [x] Source code 3901 and the SEVERANCE component — already closed by D-114; the note
       saying otherwise was stale (D-253)
 - [x] Municipality-to-area — closed; the twelve named municipalities are the whole of it

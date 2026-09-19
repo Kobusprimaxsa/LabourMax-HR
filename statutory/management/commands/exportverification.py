@@ -120,7 +120,8 @@ class Command(BaseCommand):
         groups = verification.check_groups(lines)
         versions = verification.version_state()
         checks = verification.latest_checks()
-        machine = {v["label"] for v in versions if v["machine_verified"]}
+        # A superseded version needs nothing from anybody, whoever verified it.
+        machine = {v["label"] for v in versions if v["machine_verified"] and not v["superseded"]}
 
         book = Workbook()
         self._summary_sheet(
@@ -256,7 +257,7 @@ class Command(BaseCommand):
                 )
                 if blocked:
                     blocked_cell.font = Font(bold=True, color="9C0006")
-            if version["machine_verified"]:
+            if version["machine_verified"] and not version["superseded"]:
                 for column in range(1, width + 1):
                     sheet.cell(row=row, column=column).fill = MACHINE_FILL
                 state_cell.font = Font(bold=True)
@@ -388,10 +389,13 @@ def _state(checks, group) -> str:
 
 
 def _version_text(version) -> str:
+    # Superseded FIRST: a re-encoded version is kept forever as the audit record
+    # and nothing resolves against it, so however it was verified is history and
+    # asking for a human pass on it would be asking for work nobody needs.
+    if version["superseded"]:
+        return "superseded — nothing to check"
     if version["machine_verified"]:
         return "MACHINE ONLY — still needs a human"
     if version["verified"]:
         return "verified"
-    if version["superseded"]:
-        return "superseded (no verification needed)"
     return "NOT verified"

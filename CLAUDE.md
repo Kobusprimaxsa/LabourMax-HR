@@ -332,14 +332,21 @@ python manage.py seedcomponents
 ```
 
 **Verification is a person with a gazette, and this is the shape of that job.**
-`exportverification` writes every loaded figure to a workbook grouped by SOURCE
-DOCUMENT, so each gazette is opened once; `importverification` reads the ticks back,
-records each one in `reference_figure_check`, and calls `verifystatutory` for every
+`exportverification` writes a workbook grouped by SOURCE DOCUMENT, so each gazette is
+opened once. **The CHECKS sheet is the tick surface and one row is one LOOKUP, not one
+database figure** (D-258): 582 figures are 129 questions, because a SARS source code is
+six cells off one row and asking about it six times is how somebody stops at row 200.
+Every figure a tick covers is printed on its row, so the tick can only mean "all of
+these match"; ticking one still records evidence per figure. `importverification` reads
+the ticks back into `reference_figure_check` and calls `verifystatutory` for every
 version the DATABASE now says is fully checked. **The workbook is disposable and the
 database holds the record** (D-256): export as often as you like, each one pre-fills
 what is already done and leaves newly loaded figures blank. A value edited in the
 spreadsheet REFUSES its version and names the row, because an importer that could
 write a figure is every loader guard routed around by a spreadsheet (D-251).
+**One instrument gets one citation string** (D-257) — two spellings read as two source
+documents, so a version can be fully checked and still show incomplete;
+`checkstatutory` reports a near-duplicate rather than waiting for somebody to notice.
 
 ```powershell
 python manage.py exportverification --verifier you@example.com   # reference/verification/

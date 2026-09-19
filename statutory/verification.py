@@ -713,9 +713,13 @@ def version_state() -> list[dict]:
                 "verified_by": verifier,
                 "machine_verified": verifier.endswith("@labourmax.invalid"),
                 "current_through": version.data_current_through,
-                "superseded": version.superseded_by_set.exists()
-                if hasattr(version, "superseded_by_set")
-                else False,
+                # The reverse of ``supersedes`` is ``superseded_by`` and it is a
+                # ONE-to-one: the loader itself reads it as hasattr/attribute,
+                # not as a related set. The first version of this asked for
+                # ``superseded_by_set``, which does not exist, so the flag was
+                # always False and a superseded version read as though it still
+                # needed verifying.
+                "superseded": hasattr(version, "superseded_by"),
             }
         )
     return out
