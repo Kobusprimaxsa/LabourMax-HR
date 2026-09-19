@@ -568,15 +568,24 @@ lives in `working_time_rule_set` with its citation (D-88). The four base flags a
 the SARS source code and `clean()` refuses any other combination, so "is this taxable" is still
 decided in one place (D-89).
 
-`SEVERANCE` ships **inactive** — source code 3901 is not loaded and severance is taxed on a
-directive, so pointing it at 3601 would be wrong on the IRP5 and wrong on the rate (D-90).
+~~`SEVERANCE` ships **inactive**~~ **CLOSED** (D-90, closed by D-114, restated D-253).
+It shipped inactive because 3901 was not loaded and pointing it at 3601 would be wrong on
+the IRP5 and wrong on the rate. 3901 and 3907 are loaded from SARS PAYE-AE-06-G06 revision
+13 with their base flags copied from the guide, and `seedcomponents` now seeds SEVERANCE
+**active** against 3901. What it still needs is P7 chunk 8 assembly: the s41 amount comes
+from `calculators/termination.py`, the tax comes from `calculators/paye.py`'s directive
+path, and nothing yet joins them on a payslip line.
 
 ```powershell
 python manage.py seedcomponents          # after loadstatutory --all; idempotent
 python manage.py seedcomponents --list   # the catalogue, without touching the database
 ```
 
-Still open in P3: the municipality-to-area data.
+~~Still open in P3: the municipality-to-area data.~~ **CLOSED 20 September 2026
+(D-255)** — all twelve municipalities GN R.7083 itself names are loaded against Area A,
+and under D-118 the table stops there: Area B is a province and Area C is a residual, so
+neither is a list and neither has rows. Nothing is missing, and the table must not become
+a gazetteer.
 
 **P4 — Employee Master File: COMPLETE** (14 September 2026). 824 tests green. `employee`,
 `employee_address`, `employee_contact`, `employee_engagement`, `employee_position` and
@@ -1139,7 +1148,12 @@ the gate names it.
 
 **What remains in P2:**
 
-- Kobus verifies every figure against its source document, then `verifystatutory`
+- Kobus verifies every figure against its source document, then `verifystatutory`. **The
+  job now has a shape**: `exportverification` writes all 582 figures to a workbook grouped
+  by source document — 19 of them, the largest being the SARS code guide at 114 figures and
+  the BCEA at 86 — and `importverification` reads the ticks back (D-251). Nothing is
+  pre-ticked: no earlier pass recorded which figures it checked, so the count is 582 and not
+  a remainder
 - ~~Contract cleaning Area B has no rate~~ **CLOSED 19 Sep 2026 (D-237).** The BCCCI Main
   Collective Agreement (GN R.7296, GG 54412, 27 March 2026) is loaded as
   `reference/ref-2026.04.01-bccci.json`: R32,40 from 1 April 2026, R34,02 from 1 March 2027,
@@ -1148,8 +1162,11 @@ the gate names it.
   (O-30) — the resolver refuses that period by name rather than answering the National
   Minimum Wage (D-238). (Area B, not Area C — D-61 had the lettering the wrong way round,
   and D-118 corrected it)
-- Account number lengths per bank (D-72). NULL today; they come from the banks or from the
-  EFT specification the payment partner supplies, and a guessed bound stops someone being paid
+- Account number lengths per bank (D-72, searched and still NULL — D-254). The
+  BankservAfrica/PayInc EFT specification is not published, and the per-bank lengths on the
+  open web contradict each other, so nothing citable was found and nothing was loaded. O-04
+  inherits two items rather than the whole question: the EFT specification the payment
+  partner supplies, or each bank's own published account format
 - The golden tests, which are what finally allows `golden_tests_passed`
 
 Chosen ahead of P1 because nothing in the payroll engine can be tested against a SARS worked

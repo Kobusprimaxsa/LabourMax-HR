@@ -140,6 +140,21 @@ The most important phase in the build. Can overlap P1.
 - [x] `sars_source_code` — 19 codes with cited base flags (D-69, D-70, D-71)
 - [x] The bank list and branch codes — 25 banks, lengths deliberately unloaded (D-72, D-73)
 - [x] Source codes 3901 and 3907 from SARS PAYE-AE-06-G06, closing the severance gap (D-114)
+- [x] **The verification workbook** (20 Sep 2026, D-251): `exportverification` writes every
+      loaded figure grouped by SOURCE DOCUMENT — 582 figures across 19 documents — and
+      `importverification` reads the ticks back and calls `verifystatutory`. A value edited
+      in the spreadsheet REFUSES that version and names the row; the workbook can never
+      write a figure.
+- [ ] **Kobus works the workbook.** 14 of 18 versions unverified, and the four
+      machine-verified BCCCI ones need a human pass too. This is what P7 assembly waits on.
+- [x] Source code 3901 and the SEVERANCE component — already closed by D-114; the note
+      saying otherwise was stale (D-253)
+- [x] Municipality-to-area — closed; the twelve named municipalities are the whole of it
+      and D-118 says the table stops there (D-255)
+- [ ] Bank account number lengths — searched, nothing citable, still NULL (D-254). Waits
+      on the payment partner's EFT specification (O-04)
+- [ ] The predecessor BCCCI agreement — FOUND (GG 48356, Notice 1726 of 2023, 31 March
+      2023) and transcribed; R30,86 an hour governs March 2026. Not yet loaded (O-30)
 - [ ] Golden tests reproducing the published SARS and DEL worked examples
 
 `source_url` is deliberately optional rather than mandatory as this plan originally
