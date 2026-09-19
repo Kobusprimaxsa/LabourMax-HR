@@ -1105,17 +1105,37 @@ class SectorRuleSet(AuditedModel, AuditMixin, EffectiveDatedModel, CitedStatutor
         related_name="+",
         help_text="NULL = the BCEA default, used where a sectoral determination is silent.",
     )
+    # AREA SCOPE, for the same reason statutory_parameter has one (D-236,
+    # extended by D-240): the BCCCI Main Agreement binds contract cleaning in
+    # KwaZulu-Natal ONLY, while Sectoral Determination 1 still governs Areas A
+    # and C of the same sector. A sector-keyed row cannot express that — loading
+    # the agreement over the sector would apply KwaZulu-Natal's terms to Cape
+    # Town. NULL means every area of the sector, which is what every row loaded
+    # before this means.
+    sector_area = models.ForeignKey(
+        SectorArea,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="%(class)s_rule_sets",
+        help_text="NULL means every area of the sector. Set where one area has its own instrument.",
+    )
 
     class Meta:
         abstract = True
 
 
 def rule_set_no_overlap(table: str) -> ExclusionConstraint:
-    """One rule set per sector per period.
+    """One rule set per sector PER AREA per period.
 
-    ``Coalesce(sector, 0)`` for the same reason as the wage table: the BCEA default
-    rows have a NULL sector, NULL is not equal to NULL, and those rows would
-    otherwise be the only ones allowed to overlap.
+    ``Coalesce`` on both scope columns for the same reason as the wage table: the
+    BCEA default rows have a NULL sector and every sector-wide row has a NULL
+    area, NULL is not equal to NULL, and those rows would otherwise be the only
+    ones allowed to overlap — which is nearly all of them.
+
+    The area column arrived with the BCCCI Main Agreement (D-240): contract
+    cleaning Area B has its own instrument while SD1 still governs Areas A and C,
+    so a sector-wide SD1 row and an Area B row must coexist over the same dates.
     """
     return ExclusionConstraint(
         name=f"{table}_no_overlapping_periods",
@@ -1125,6 +1145,7 @@ def rule_set_no_overlap(table: str) -> ExclusionConstraint:
                 RangeOperators.OVERLAPS,
             ),
             (Coalesce("sector", Value(0)), RangeOperators.EQUAL),
+            (Coalesce("sector_area", Value(0)), RangeOperators.EQUAL),
         ],
     )
 

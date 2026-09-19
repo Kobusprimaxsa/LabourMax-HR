@@ -82,6 +82,10 @@ def own_fields(model):
         and f.name
         not in {
             "sector",
+            # Scoped on area since the BCCCI Main Agreement (D-240). Like
+            # ``sector`` it is part of the row's SCOPE rather than its content,
+            # so the generic placeholder must not invent one.
+            "sector_area",
             "effective_from",
             "effective_to",
             "source_reference",
