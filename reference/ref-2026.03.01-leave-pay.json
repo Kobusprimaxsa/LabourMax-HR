@@ -1,0 +1,18 @@
+{
+  "version_label": "REF-2026.03.01-LEAVE-PAY",
+  "applies_from": "2026-03-01",
+  "description": "The BCEA s35(4) averaging window for fluctuating remuneration. Researched 19 September 2026 from the Basic Conditions of Employment Act as published in Government Gazette 18491 of 5 December 1997. NOT verified.",
+  "tables": {
+    "statutory_parameter": [
+      {
+        "parameter_code": "VARIABLE_EARNINGS_AVERAGE_WEEKS",
+        "value_numeric": "13.000000",
+        "unit": "weeks",
+        "effective_from": "1997-12-01",
+        "source_reference": "Basic Conditions of Employment Act 75 of 1997, s35(4)(a)",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/a75-97.pdf",
+        "notes": "s35(4): 'If an employee's remuneration or wage is calculated, either wholly or in part, on a basis other than time or if an employee's remuneration or wage fluctuates significantly from period to period, any payment to that employee in terms of this Act must be calculated by reference to the employee's remuneration or wage during (a) the preceding 13 weeks; or (b) if the employee has been in employment for a shorter period, that period.' The window is the DIVISOR, not the number of weeks actually worked - the Act says 'during the preceding 13 weeks' - so an unpaid stretch inside the window lowers the average. Flagged for the labour law review (O-06). WHICH payments make up that remuneration is s35(5) plus the Minister's determination in Government Notice 691 of 23 May 2003 (Government Gazette 24889, effective 1 July 2003), and in this codebase it is the payroll_component.affects_leave_pay_average flag - a per-component decision, not a figure, so it is not loaded here."
+      }
+    ]
+  }
+}
