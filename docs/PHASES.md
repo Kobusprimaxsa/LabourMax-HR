@@ -448,8 +448,8 @@ wrong the first time.
 
 The one that has to be right.
 
-**Chunks 1 to 3 built** (19 September 2026, D-207 to D-219): the calculator contract, the
-trace, UIF, SDL, PAYE and gross pay. **The assembly is BLOCKED and deliberately not started.** Reference data version
+**Chunks 1 to 4 built** (19 September 2026, D-207 to D-223): the calculator contract, the
+trace, UIF, SDL, PAYE, gross pay and leave pay. **The assembly is BLOCKED and deliberately not started.** Reference data version
 REF-2026.03.01 is loaded and reconciles but is NOT verified, so `in_force_on()` cannot see it
 and no payroll run can start — periods, runs and payslips all read effective-dated rows.
 Calculators are not blocked by that, because a pure function takes its statutory figures as
@@ -483,7 +483,12 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       (six cumulative band bases, three tax thresholds, the medical credit scale, SARS's own
       annual-equivalent arithmetic) and method reproductions of the two fully worked examples
 - [ ] COIDA accumulation (UIF and SDL are done — see chunk 1 above)
-- [ ] Leave pay, including the variable-earnings average
+- [x] Leave pay, including the variable-earnings average — CHUNK 4 (D-220 to D-223).
+      Two rates and s35 decides which; the s35(4) trigger is DECLARED because "fluctuates
+      significantly" has no statutory threshold, and the 13-week window is loaded reference
+      data. The average is not floored at the contractual rate — s21(1)(b) makes s35 the
+      calculation — and what counts as remuneration stays the component flag, held to
+      Government Notice 691 by a test that pins the flagged set by name
 - [ ] `termination_payout` — notice, pro-rata leave, severance, pro-rata bonus
 - [ ] `annual_bonus_cycle` accruing monthly
 - [ ] `payslip`, `payslip_line` with SARS source codes and employee snapshot

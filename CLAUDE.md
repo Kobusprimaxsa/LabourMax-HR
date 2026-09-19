@@ -367,6 +367,10 @@ Things that are easy to get wrong, and have been got wrong before:
 - **The maternity restriction runs after the birth, not before it.** A birth mother may not
   work for six weeks after giving birth unless certified fit; separately, she may start leave
   up to four weeks before. Two different rules, two columns.
+- **Leave pay, notice pay and severance all use the same s35(5) remuneration**, and the
+  13-week average under s35(4) applies to all three. Whether it applies at all is a DECLARED
+  boolean, because "fluctuates significantly" has no gazetted threshold (D-220). The average is
+  never floored at the contractual rate (D-221).
 - **A premium's multiplier may not be per HOUR — read the section.** s10(2) and s16(1) are per
   hour; **s18(2)(b) is per DAY** ("double the amount referred to in paragraph (a)", and (a) is the
   wage for that day), and s16(2) floors a short Sunday at the ordinary daily wage. The columns are
@@ -1122,6 +1126,35 @@ records that they cannot be settled until the standby modelling is. An employee 
 earnings threshold** raises where the period carries overtime, Sunday or night hours: s6(3) has
 the Minister determine which provisions fall away, that determination has not been read (O-24),
 and s18(3) is the one exclusion already settled.
+
+**P7 chunk 4 — leave pay and the variable-earnings average** (19 September 2026, D-220 to
+D-223). 1 419 tests green. `calculators/leave_pay.py` prices what P6 counted (D-166: leave
+computes days and hours, never money). **s21(1) gives two rates and s35 decides which**: the
+contractual rate for an employee paid by time whose pay does not swing, and the **13-week
+average** where s35(4) bites — "calculated, either wholly or in part, on a basis other than
+time **or** ... fluctuates significantly from period to period". Which one applies is
+**declared, not derived**: "fluctuates significantly" has no statutory threshold anywhere, so
+deriving it would invent the one number the Act declines to give. The window itself is
+`VARIABLE_EARNINGS_AVERAGE_WEEKS` in `statutory_parameter`, never a 13 in the module —
+`test_no_hardcoded_rates` would not have caught one, a week count being an `int` (D-100's gap
+again). s35(4)(b) shortens the window to the period of employment where that is shorter.
+
+**The average is NOT the greater of the two** (D-221). s21(1)'s "at least equivalent to" sets a
+floor on what must be PAID; limbs (a) and (b) say how the figure is ARRIVED AT, and (b) makes
+s35 the calculation. So an average below the contractual rate is paid, with a warning naming
+both figures rather than a top-up that would invent an entitlement. Two readings are flagged
+rather than asserted: the divisor is the window and not the weeks actually worked, so unpaid
+time inside it lowers the average (O-06); and the comparison runs at the working precision,
+because comparing raw warned on every hourly employee whose rate does not divide evenly.
+
+**What counts as remuneration is the component flag, and the calculator never re-decides it**
+(D-222). s35(5) and the Minister's determination (Government Notice 691 of 23 May 2003) list
+both sides; in this codebase that is `payroll_component.affects_leave_pay_average`, set per
+component with its reasoning. `payroll/tests/test_leave_pay_boundary.py` pins the flagged set
+by name against GN 691's limbs — the flag decides what an employee's leave is worth for the
+rest of their employment and appears on no screen. **O-25 raised**: `BONUS_PRO_RATA` is flagged
+FALSE, and SD1's December bonus is gazetted rather than discretionary, which GN 691(c) would
+include. Not changed, because the flag is a settled decision.
 
 **P6 — Leave: ALL FIVE CHUNKS BUILT** (18 September 2026). Chunk 5 — maternity, parental
 under Van Wyk and adoption — is in: the two totals as cited reference data, the declaration
