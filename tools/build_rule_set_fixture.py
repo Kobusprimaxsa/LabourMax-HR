@@ -116,6 +116,7 @@ def leave_rules(
     source,
     family_days,
     sector_area=None,
+    effective_from=EFFECTIVE_FROM,
     extra_notes="",
     long_service_years=None,
     long_service_years_inclusive=None,
@@ -128,7 +129,7 @@ def leave_rules(
     if extra_notes:
         notes.append(extra_notes)
     row = {
-        "effective_from": EFFECTIVE_FROM,
+        "effective_from": effective_from,
         "source_reference": source,
         "notes": " ".join(notes),
         "annual_leave_days_per_cycle_5day": "15.000",
@@ -172,6 +173,7 @@ def working_time_rules(
     sector,
     source,
     sector_area=None,
+    effective_from=EFFECTIVE_FROM,
     max_overtime_week,
     standby_allowance,
     standby_start,
@@ -196,7 +198,7 @@ def working_time_rules(
         notes.append(extra_notes)
 
     row = {
-        "effective_from": EFFECTIVE_FROM,
+        "effective_from": effective_from,
         "source_reference": source,
         "notes": " ".join(notes),
         "ordinary_hours_per_week": "45.00",
@@ -237,6 +239,7 @@ def termination_rules(
     sector,
     source,
     sector_area=None,
+    effective_from=EFFECTIVE_FROM,
     bonus_weeks="0.000",
     bonus_month=None,
     bonus_pro_rata=False,
@@ -250,7 +253,7 @@ def termination_rules(
     if extra_notes:
         notes.append(extra_notes)
     row = {
-        "effective_from": EFFECTIVE_FROM,
+        "effective_from": effective_from,
         "source_reference": source,
         "notes": " ".join(notes),
         "severance_weeks_per_completed_year": "1.00",
@@ -442,7 +445,14 @@ DOCUMENT_SD1 = {
 #   extent, so it is transcribed in the register and NOT loaded as a rule.
 # * The clause 10.3(a)(i) certificate rule. It requires a certificate after
 #   "more than one consecutive day" where BCEA s23(1) says more than two -
-#   caught by s49(1)(e), and contradicted by cl 10.2(a) in the same agreement.
+#   caught by s49(1)(e). NOTE, corrected in chunk C against the gazette: cl
+#   10.2(a) does NOT track s23(1) and does NOT contradict 10.3(a)(i). It
+#   states the SAME one-day threshold, and additionally drops a word - "An
+#   employer IS required to pay ... if the employee has been absent from work
+#   for one day", where s23(1) says an employer is NOT required to pay where
+#   the employee has been absent more than two consecutive days. So the
+#   agreement is internally consistent on one day and departs from the Act in
+#   both places; the reduction is void on that ground alone (D-248).
 #   SICK_CERTIFICATE_MAX_CONSECUTIVE_DAYS stays at 2.
 # * Notice between four weeks and six months. Clause 21.1(b) gives two answers
 #   and nothing resolves them.
@@ -455,7 +465,7 @@ BCCCI = (
 BCCCI_FROM = "2026-04-01"
 
 DOCUMENT_BCCCI = {
-    "version_label": "REF-2026.04.01-BCCCI-RULES",
+    "version_label": "REF-2026.04.01-BCCCI-RULES-r2",
     "applies_from": BCCCI_FROM,
     "description": (
         "BCCCI (KwaZulu-Natal) Main Collective Agreement rule sets for contract "
@@ -467,6 +477,7 @@ DOCUMENT_BCCCI = {
             leave_rules(
                 sector="CONTRACT_CLEANING",
                 sector_area="AREA_B",
+                effective_from=BCCCI_FROM,
                 source=f"{BCCCI}, clauses 9, 10 and 12",
                 family_days=3,
                 long_service_years=10,
@@ -486,7 +497,15 @@ DOCUMENT_BCCCI = {
                     "reduction (cl 10.1(d)). The clause 10.3(a)(i) CERTIFICATE rule is not "
                     "loaded - it demands a certificate after more than ONE consecutive day "
                     "where BCEA s23(1) says two, which s49(1)(e) forbids and which cl "
-                    "10.2(a) in the same agreement contradicts. Family responsibility "
+                    "10.2(a) states the same one-day threshold rather than contradicting it "
+                    "(D-248, corrected in chunk C). Clause 9.2(a) requires annual "
+                    "leave to COMMENCE within three months of the cycle ending, "
+                    "extendable by a further three by written agreement; "
+                    "annual_leave_forfeit_months carries the BCEA s20(4) six months "
+                    "because that is the outer limit both instruments reach, and "
+                    "clause 9.2(a)'s stricter timing duty has no column and is not "
+                    "modelled. Clause 9.1 excludes CASUAL employees from annual leave "
+                    "entirely, which is also not modelled. Family responsibility "
                     "follows the BCEA three days; the agreement adds nothing. Clause 12's "
                     "study leave has no column here and is recorded as scope."
                 ),
@@ -496,6 +515,7 @@ DOCUMENT_BCCCI = {
             working_time_rules(
                 sector="CONTRACT_CLEANING",
                 sector_area="AREA_B",
+                effective_from=BCCCI_FROM,
                 source=f"{BCCCI}, clauses 3, 4.3, 5, 8, 11, 16 and 17",
                 max_overtime_week="10.00",
                 standby_allowance="0.00",
@@ -519,6 +539,13 @@ DOCUMENT_BCCCI = {
                     "rest, 10 for an employee living on the premises whose meal interval "
                     "is at least three hours; 36 weekly, need not include Sunday; or 60 "
                     "every two weeks. Clause 8.4: no more than five hours continuous work "
+                    "without a meal interval - the FIVE is the agreement's. "
+                    "meal_interval_minutes = 60 is NOT: clause 8.4 states no general "
+                    "duration, only that it may be reduced to not less than half an "
+                    "hour by agreement, and its one-hour/two-hour rule in 8.4(b) is "
+                    "expressly limited by 8.4(b)(i) to the Health Care and Hospitality "
+                    "sectors. The hour is BCEA s14(1), which this agreement does not "
+                    "displace (D-248). "
                     "without a meal interval. CLAUSE 11 REPRODUCES BCEA s16 AND s18 ALMOST "
                     "VERBATIM, including 11.1(b)(ii) 'whichever is the greater' and "
                     "11.2(b)'s daily-wage floor on a short Sunday, so Area B prices exactly "
@@ -533,6 +560,7 @@ DOCUMENT_BCCCI = {
             termination_rules(
                 sector="CONTRACT_CLEANING",
                 sector_area="AREA_B",
+                effective_from=BCCCI_FROM,
                 source=f"{BCCCI}, clauses 4.5, 29, 30 and 36",
                 bonus_weeks="4.330",
                 bonus_month=12,
@@ -555,7 +583,16 @@ DOCUMENT_BCCCI = {
                     "Clause 30: retirement at the state pension qualification age. Clause "
                     "29: absence of more than three days without satisfactory explanation "
                     "is desertion. NOT MODELLED HERE: clause 4.5(d)'s prevailing-rate "
-                    "split, 4.5(e)'s absence penalties. 4.5(g) makes 4.5(c)(ii), "
+                    "split, 4.5(e)'s absence penalties. CLAUSE 4.6 IS A RESTATEMENT OF 4.5 "
+                    "THAT COMMENCES LATER: its own preamble says in terms that 'The "
+                    "inclusion of the pro-rata clause below (Clause 4.6) will come "
+                    "into effect in the increase year of 2028'. No figure differs - "
+                    "4.6 also gives 4.33 and the same months-over-twelve pro rata - so "
+                    "nothing here changes in 2028, but the clause to cite does, and "
+                    "4.6 carries its own incompatible sub-lettering (D-248). PRO RATA "
+                    "IS IN FORCE NOW REGARDLESS: clause 4.5(b) states it unqualified "
+                    "and clause 4.5 is in force from 1 April 2026, so the 2026 and "
+                    "2027 bonuses are pro-rated. 4.5(g) makes 4.5(c)(ii), "
                     "4.5(d) and 4.5(f) MINIMUMS the employer may improve on, so all "
                     "three are employer elections in employers/onboarding.py with the "
                     "gazetted position as the default (D-242), never fixed rules here."

@@ -91,6 +91,7 @@ def band(
     notice_unit="",
     sector=None,
     sector_area=None,
+    effective_from=EFFECTIVE_FROM,
     is_contested=False,
     contested_reason="",
     notes="",
@@ -100,7 +101,7 @@ def band(
         "sector_area": sector_area,
         "is_contested": is_contested,
         "contested_reason": contested_reason,
-        "effective_from": EFFECTIVE_FROM,
+        "effective_from": effective_from,
         "sequence": sequence,
         "source_reference": source,
         "notes": notes,
@@ -313,8 +314,16 @@ DOCUMENT = {
 #: part that identifies the instrument unambiguously.
 BCCCI = "BCCCI (KwaZulu-Natal) Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026"
 
+#: Clause 2(1): the agreement "shall only come into operation from the 1st day of
+#: the month following the date of promulgation by the Minister", and GN R.7296
+#: binds non-parties "with effect from the first day of the month after the date
+#: of publication of this Notice". Published 27 March 2026, so 1 April. These
+#: bands went in at 1 March in the first encoding, a month before the agreement
+#: bound anyone (D-247).
+BCCCI_FROM = "2026-04-01"
+
 DOCUMENT_BCCCI_BANDS = {
-    "version_label": "REF-2026.04.01-BCCCI-NOTICE",
+    "version_label": "REF-2026.04.01-BCCCI-NOTICE-r2",
     "applies_from": "2026-04-01",
     "description": (
         "termination_notice_band for contract cleaning Area B under the BCCCI Main "
@@ -327,6 +336,7 @@ DOCUMENT_BCCCI_BANDS = {
                 sequence=1,
                 sector="CONTRACT_CLEANING",
                 sector_area="AREA_B",
+                effective_from=BCCCI_FROM,
                 source=f"{BCCCI}, clause 21.1(b)(i)",
                 from_value="0",
                 from_unit="weeks",
@@ -350,6 +360,7 @@ DOCUMENT_BCCCI_BANDS = {
                 sequence=2,
                 sector="CONTRACT_CLEANING",
                 sector_area="AREA_B",
+                effective_from=BCCCI_FROM,
                 source=f"{BCCCI}, clause 21.1(b), second 'i)' and 'ii)' as published",
                 from_value="4",
                 from_unit="weeks",
@@ -380,6 +391,7 @@ DOCUMENT_BCCCI_BANDS = {
                 sequence=3,
                 sector="CONTRACT_CLEANING",
                 sector_area="AREA_B",
+                effective_from=BCCCI_FROM,
                 source=f"{BCCCI}, clause 21.1(b), second 'i)' as published",
                 from_value="6",
                 from_unit="months",
