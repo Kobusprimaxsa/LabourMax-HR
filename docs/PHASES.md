@@ -172,8 +172,12 @@ The most important phase in the build. Can overlap P1.
       sick leave 9, public holidays 10, maternity 12, and the six-hour minimum is 4.6(a) —
       so the citations carry its own numbers and a test asserts that. Every figure matches
       the successor's, which was checked rather than assumed.
-- [ ] The predecessor's TERMINATION and NOTICE provisions are still unread, so a March
-      2026 severance, December bonus quantity or notice band falls back to SD1 (D-260)
+- [x] The predecessor's TERMINATION and NOTICE provisions (D-261). Clause 4.5's 4,33
+      bonus, clause 35.2's one week per completed year, and clause 20.1(b)'s three notice
+      bands with the middle one CONTESTED. Its notice contradiction is identical to the
+      successor's, so it is a standing defect in the instrument and not a 2026 slip —
+      March 2026 notice now REFUSES for four-weeks-to-six-months where it used to borrow
+      SD1's four weeks. Nothing in March 2026 falls back to SD1 any more.
 - [ ] Golden tests reproducing the published SARS and DEL worked examples
 
 `source_url` is deliberately optional rather than mandatory as this plan originally

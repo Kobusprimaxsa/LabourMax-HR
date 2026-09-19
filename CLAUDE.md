@@ -1174,10 +1174,13 @@ the gate names it.
   so March 2026 resolves R30,86 with clause 3's 4,33 factor, and its LEAVE and WORKING
   TIME rules resolve to that agreement too (D-260). **Its clause numbering is one behind
   the 2026 agreement's** — working time is clause 7 there and 8 here, and the six-hour
-  minimum is clause 4.6(a) rather than clause 5 — so never map one onto the other. What
-  is still not read from that gazette is its TERMINATION and NOTICE provisions, so a
-  March 2026 severance, December bonus or notice band still falls back to SD1. The
-  refusal (D-238) is unchanged and still fires for a date neither agreement covers. (Area B, not Area C — D-61 had the lettering the wrong
+  minimum is clause 4.6(a) rather than clause 5 — so never map one onto the other. Its
+  TERMINATION and NOTICE provisions are loaded too (D-261), so **nothing in March 2026
+  borrows from SD1 any more**. Its clause 20.1(b) carries the SAME notice contradiction
+  the successor's 21.1(b) does, word for word, so a March 2026 employee between four
+  weeks and six months REFUSES rather than getting SD1's four weeks — less capable and
+  more correct. The refusal (D-238) is unchanged and still fires for a date neither
+  agreement covers. (Area B, not Area C — D-61 had the lettering the wrong
   way round, and D-118 corrected it)
 - Account number lengths per bank (D-72, searched and still NULL — D-254). The
   BankservAfrica/PayInc EFT specification is not published, and the per-bank lengths on the
