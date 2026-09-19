@@ -166,8 +166,14 @@ The most important phase in the build. Can overlap P1.
 - [x] The predecessor BCCCI agreement — LOADED 20 Sep 2026 (D-259, O-30 closed).
       Notice 1726 of 2023 in GG 48356: R27,50 from 1 April 2023, R29,12 from 1 March 2024,
       R30,86 from 1 March 2025, plus clause 3's 4,33 monthly factor. Found, reported and
-      loaded in three separate passes. Its leave, hours, termination and notice provisions
-      were not read and are not loaded, so March 2026 still falls back to SD1 for those.
+      loaded in three separate passes.
+- [x] The predecessor's LEAVE and WORKING TIME rules, read clause by clause (D-260). Its
+      numbering is one behind the successor's — working time is clause 7, annual leave 8,
+      sick leave 9, public holidays 10, maternity 12, and the six-hour minimum is 4.6(a) —
+      so the citations carry its own numbers and a test asserts that. Every figure matches
+      the successor's, which was checked rather than assumed.
+- [ ] The predecessor's TERMINATION and NOTICE provisions are still unread, so a March
+      2026 severance, December bonus quantity or notice band falls back to SD1 (D-260)
 - [ ] Golden tests reproducing the published SARS and DEL worked examples
 
 `source_url` is deliberately optional rather than mandatory as this plan originally
