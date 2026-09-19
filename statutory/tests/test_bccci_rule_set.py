@@ -734,3 +734,109 @@ def test_march_2026_termination_still_falls_back_and_that_is_recorded(both_agree
 
     assert rules.sector_area_id is None, "SD1's sector-wide row, not the agreement's"
     assert rules.annual_bonus_weeks == Decimal("4.333")
+
+
+# --------- D-261: termination and notice, and a defect older than the successor
+
+
+@pytest.fixture
+def with_termination(both_agreements):
+    load_reference_data(
+        json.loads(
+            (REFERENCE / "ref-2023.04.01-bccci-termination.json").read_text(encoding="utf-8")
+        )
+    )
+    return both_agreements
+
+
+def test_march_2026_prices_the_bonus_and_severance_from_the_agreement(with_termination):
+    """Before this, Area B's March 2026 December bonus was SD1's 4,333 — a
+    figure from an instrument that did not bind these employees, and one that
+    looks almost identical to the one that did."""
+    sector, made = with_termination
+
+    rules = resolve.termination_rules(sector, MARCH_2026, made["AREA_B"])
+
+    assert rules.sector_area_id == made["AREA_B"].pk
+    assert rules.annual_bonus_weeks == Decimal("4.330")
+    assert rules.severance_weeks_per_completed_year == Decimal("1.00")
+    assert rules.severance_requires_operational_reason is True
+    assert "Notice 1726 of 2023" in rules.source_reference
+    assert "clauses 4.5, 28, 29 and 35" in rules.source_reference
+
+
+def test_the_notice_contradiction_is_older_than_the_2026_agreement(with_termination):
+    """THE FINDING (D-261). Clause 20.1(b) here carries the identical defect the
+    successor carries at 21.1(b) — two items both printed "i)", and a probation
+    limb that overlaps the second. It was not introduced in 2026; it has been in
+    the gazette since at least March 2023."""
+    sector, made = with_termination
+
+    with pytest.raises(resolve.StatutoryValueMissingError) as raised:
+        resolve.notice_band(
+            sector,
+            MARCH_2026,
+            employment_start_date=datetime.date(2025, 12, 15),
+            sector_area=made["AREA_B"],
+        )
+
+    message = str(raised.value)
+    assert "two irreconcilable answers" in message
+    assert "Not less than two weeks notice" in message
+    assert "Not less than one weeks notice" in message
+    assert "clause 20.1(b)" in message, "the predecessor's own clause number, not the successor's"
+
+
+def test_loading_this_made_march_2026_notice_refuse_where_it_used_to_answer(with_termination):
+    """Stated plainly because it is a REDUCTION in what the system will do, and
+    the right one. Area B used to fall through to SD1 and get four weeks: a
+    confident answer from an instrument that did not bind these employees. The
+    one that did gives two answers and settles neither."""
+    sector, made = with_termination
+    started = datetime.date(2025, 12, 15)
+
+    assert resolve.notice_band(
+        sector, MARCH_2026, employment_start_date=started, sector_area=made["AREA_A"]
+    ).notice_value == Decimal("4.00"), "SD1 still answers four weeks for Area A"
+
+    with pytest.raises(resolve.StatutoryValueMissingError):
+        resolve.notice_band(
+            sector, MARCH_2026, employment_start_date=started, sector_area=made["AREA_B"]
+        )
+
+
+def test_the_unambiguous_bands_still_answer_in_march_2026(with_termination):
+    """Only the middle band refuses. One working day in the first four weeks and
+    two weeks after six months are both unambiguous in this agreement too."""
+    sector, made = with_termination
+
+    first = resolve.notice_band(
+        sector,
+        MARCH_2026,
+        employment_start_date=datetime.date(2026, 3, 1),
+        sector_area=made["AREA_B"],
+    )
+    later = resolve.notice_band(
+        sector,
+        MARCH_2026,
+        employment_start_date=datetime.date(2025, 6, 1),
+        sector_area=made["AREA_B"],
+    )
+
+    assert (first.notice_value, first.notice_unit) == (Decimal("1.00"), "days")
+    assert (later.notice_value, later.notice_unit) == (Decimal("2.00"), "weeks")
+
+
+def test_the_two_agreements_notice_bands_do_not_collide(with_termination):
+    """Each agreement's bands hang off its own termination rule set, so the two
+    sets of three coexist and the right three answer on each side of 1 April."""
+    sector, made = with_termination
+
+    before = resolve.termination_rules(sector, datetime.date(2026, 3, 31), made["AREA_B"])
+    after = resolve.termination_rules(sector, datetime.date(2026, 4, 1), made["AREA_B"])
+
+    assert before.pk != after.pk
+    assert before.notice_bands.count() == 3
+    assert after.notice_bands.count() == 3
+    assert "Notice 1726 of 2023" in before.notice_bands.first().source_reference
+    assert "GN R.7296" in after.notice_bands.first().source_reference

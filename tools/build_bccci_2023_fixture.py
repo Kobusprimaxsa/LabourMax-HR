@@ -423,8 +423,189 @@ RULES_FIXTURE = {
 }
 
 
+# ---------------------------------------------------------------------------
+# TERMINATION AND NOTICE. Clause 20 here is clause 21 in the successor and
+# clause 35 is clause 36, the same one-behind numbering as everything after
+# clause 5 (D-260).
+#
+# THE NOTICE CONTRADICTION IS INHERITED, NOT INTRODUCED IN 2026 (D-261). This
+# agreement's clause 20.1(b) carries the identical defect: two items both
+# printed "i)", the second giving two weeks after the first four weeks, and an
+# "ii)" giving one week on probation for the period between four weeks and six
+# months. Probation is capped at four months by clause 3, so both reach the same
+# employee, and clause 20.2(a) prices only the one working day and the two weeks
+# - so there is no payment-in-lieu figure for the one-week probation notice
+# here either. The middle band is loaded CONTESTED and resolve.notice_band()
+# refuses it, exactly as it does for the successor (D-241).
+#
+# LOADING THIS MAKES MARCH 2026 NOTICE REFUSE WHERE IT USED TO ANSWER. Before,
+# Area B fell through to Sectoral Determination 1 and got four weeks. That was a
+# confident answer from the wrong instrument. The agreement that actually bound
+# those employees gives two answers and settles neither, so refusing is correct
+# and answering was not.
+# ---------------------------------------------------------------------------
+
+TERMINATION_OUTPUT = (
+    pathlib.Path(__file__).resolve().parents[1]
+    / "reference"
+    / "ref-2023.04.01-bccci-termination.json"
+)
+
+CONTESTED = (
+    'TWO LIMBS, TWO ANSWERS. The clause says both "Not less than two weeks notice shall '
+    'be given after the first four weeks of such employment" and "Not less than one weeks '
+    "notice shall be given to an employee whilst on probation, as defined, for the period "
+    'of employment between 4 weeks as in sub clause (i) above and six months". Probation '
+    "is defined in clause 3 as a maximum of four months, so an employee between four weeks "
+    "and six months falls under both. Clause 20.2(a) prices only the one working day and "
+    "the two weeks, giving no payment in lieu for the one-week probation notice, so the "
+    "payment clause does not settle it either."
+)
+
+INHERITED = (
+    "The successor carries this defect word for word at its own clause 21.1(b), so it was "
+    "not introduced in 2026 - it has been in the gazette since at least March 2023 (D-261)."
+)
+
+TERMINATION_FIXTURE = {
+    "version_label": "REF-2023.04.01-BCCCI-TERMINATION",
+    "applies_from": "2023-04-01",
+    "description": (
+        "Termination and notice for contract cleaning Area B under the PREDECESSOR BCCCI "
+        "Main Collective Agreement, Notice 1726 of 2023 in GG 48356: clause 4.5's December "
+        "bonus, clause 35's severance pay and clause 20.1(b)'s three notice bands, the "
+        "middle one CONTESTED. Closes on 1 April 2026. NOT verified."
+    ),
+    "tables": {
+        "termination_rule_set": [
+            {
+                "sector": "CONTRACT_CLEANING",
+                "sector_area": "AREA_B",
+                "effective_from": "2023-04-01",
+                "effective_to": "2026-04-01",
+                "source_reference": f"{GAZETTE}, clauses 4.5, 28, 29 and 35",
+                "source_url": GAZETTE_URL,
+                "notes": (
+                    "Clause 4.5: an annual incentive bonus of 4,33 times the weekly wage, paid "
+                    "to all cleaners in employment on 1 December, in December - NOT the 4,333 "
+                    "weeks SD1 gives, a different figure in a different instrument that looks "
+                    "almost identical. Clause 4.5(b) pro-rates it on full calendar months of "
+                    "service divided by 12, unqualified and in force throughout this "
+                    "agreement, so a single full month earns a share and the minimum service "
+                    "is zero. Clause 4.5(g) makes 4.5(c)(ii), 4.5(d) and 4.5(f) MINIMUMS the "
+                    "employer may improve on, which are employer elections in "
+                    "employers/onboarding.py and not fixed rules here (D-242) - and this "
+                    "agreement letters clause 4.5 CLEANLY, with no duplicate c) and no clause "
+                    "4.6 restatement, so the successor's corrupted lettering was introduced in "
+                    "2026 (O-32). Clause 35.2: severance of at least one week's remuneration "
+                    "per completed year of continuous service, calculated per clause 4, on "
+                    "dismissal for operational requirements - the BCEA s41 position. Clause "
+                    '35.1 defines operational requirements as the needs "of an employee" '
+                    "where BCEA s41(1) says employer, and the successor repeats it, so that "
+                    "error is inherited too (O-32). Clause 29: retirement at the state pension "
+                    "qualification age - which is why the successor's clause 4.6.1.2 cites "
+                    '"section (29)" for retirement and is wrong only because the renumbering '
+                    "moved it to 30 (D-260). Clause 28: absence of more than three days "
+                    "without satisfactory explanation is desertion."
+                ),
+                "severance_weeks_per_completed_year": "1.00",
+                "severance_requires_operational_reason": True,
+                "annual_bonus_weeks": "4.330",
+                "annual_bonus_month": 12,
+                "annual_bonus_pro_rata_on_termination": True,
+                "annual_bonus_min_service_months": 0,
+            }
+        ],
+        "termination_notice_band": [
+            {
+                "sector": "CONTRACT_CLEANING",
+                "sector_area": "AREA_B",
+                "effective_from": "2023-04-01",
+                "sequence": 1,
+                "source_reference": f"{GAZETTE}, clause 20.1(b)(i)",
+                "source_url": GAZETTE_URL,
+                "service_from_value": "0",
+                "service_from_unit": "weeks",
+                "service_from_inclusive": True,
+                "service_to_value": "4",
+                "service_to_unit": "weeks",
+                "service_to_inclusive": True,
+                "notice_value": "1",
+                "notice_unit": "days",
+                "is_contested": False,
+                "contested_reason": "",
+                "notes": (
+                    '"DURING the first four weeks" - the boundary belongs to this band, read '
+                    "off the clause's own wording (D-158). One WORKING day, so the unit is "
+                    "days and nothing converts it to a fraction of a week: contract cleaning "
+                    "runs six-day weeks and a day is worth a sixth of one, not a fifth (D-68). "
+                    "Clause 20.2(a)(i) prices it at the daily wage being received at the time "
+                    "of termination."
+                ),
+            },
+            {
+                "sector": "CONTRACT_CLEANING",
+                "sector_area": "AREA_B",
+                "effective_from": "2023-04-01",
+                "sequence": 2,
+                "source_reference": (
+                    f"{GAZETTE}, clause 20.1(b), second 'i)' and 'ii)' as published"
+                ),
+                "source_url": GAZETTE_URL,
+                "service_from_value": "4",
+                "service_from_unit": "weeks",
+                "service_from_inclusive": False,
+                "service_to_value": "6",
+                "service_to_unit": "months",
+                "service_to_inclusive": True,
+                "notice_value": None,
+                "notice_unit": "",
+                "is_contested": True,
+                "contested_reason": CONTESTED,
+                "notes": (
+                    "Loaded as a band so the range is covered and the contradiction is "
+                    "visible, with no value because inventing one would put a period nobody "
+                    "can stand behind where a gazetted one belongs (D-241). " + INHERITED
+                ),
+            },
+            {
+                "sector": "CONTRACT_CLEANING",
+                "sector_area": "AREA_B",
+                "effective_from": "2023-04-01",
+                "sequence": 3,
+                "source_reference": f"{GAZETTE}, clause 20.1(b), second 'i)' as published",
+                "source_url": GAZETTE_URL,
+                "service_from_value": "6",
+                "service_from_unit": "months",
+                "service_from_inclusive": False,
+                "service_to_value": None,
+                "service_to_unit": "",
+                "service_to_inclusive": None,
+                "notice_value": "2",
+                "notice_unit": "weeks",
+                "is_contested": False,
+                "contested_reason": "",
+                "notes": (
+                    "Unambiguous from six months on: the one-week rule is expressly limited to "
+                    "the window 'between 4 weeks ... and six months' and probation is capped "
+                    "at four months, so only the two-week rule can reach an employee of longer "
+                    "service. Clause 20.2(a)(ii) prices it at double the weekly wage being "
+                    "received at the time of termination, and in doing so calls the two-week "
+                    "rule \"20.1 b) ii)\" - which is how we know the printed 'ii)' is a "
+                    "mis-numbered third item rather than the second."
+                ),
+            },
+        ],
+    },
+}
+
+
 def main():
-    for path, document in ((OUTPUT, FIXTURE), (RULES_OUTPUT, RULES_FIXTURE)):
+    for path, document in (
+        (OUTPUT, FIXTURE),
+        (RULES_OUTPUT, RULES_FIXTURE),
+        (TERMINATION_OUTPUT, TERMINATION_FIXTURE),
+    ):
         path.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         print(f"Wrote {path.relative_to(path.parents[1])}")
 
