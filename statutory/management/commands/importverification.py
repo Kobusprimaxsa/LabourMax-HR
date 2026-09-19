@@ -5,12 +5,20 @@ reads a completed verification workbook and, for each reference version whose
 figures are ALL marked checked with a verifier and a date, calls the existing
 ``verifystatutory`` path.
 
-**It writes the verification record and NOTHING else** (D-251). If a value in
-the workbook differs from the loaded value, that is a QUERY for a human and this
-command refuses that version and names the row. Someone editing a rate in Excel
-and having it flow into reference data is the failure the whole loader
-architecture exists to prevent, and a convenient importer is exactly how it
-would happen.
+**Every tick becomes a row in ``reference_figure_check``** (D-256), so the
+workbook is disposable and the next export pre-fills what is already done. A
+version is verified when EVERY figure in it has a checked record in the
+database, not when one workbook happens to hold them all: two people working
+two halves on two evenings complete it between them.
+
+**It writes verification records and NOTHING else** (D-251). If a value in the
+workbook differs from the loaded value, that is a QUERY for a human — this
+command refuses that version, names the row, and does not record that row as
+checked. Someone editing a rate in Excel and having it flow into reference data
+is the failure the whole loader architecture exists to prevent, and a convenient
+importer is exactly how it would happen. The OTHER rows of a refused version are
+still recorded, because discarding a hundred good ticks over one bad cell is the
+data loss this table exists to stop.
 """
 
 from __future__ import annotations
@@ -20,15 +28,23 @@ from pathlib import Path
 
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 
 from core.models import AppUser
 from statutory import verification
-from statutory.models import ReferenceDataVersion
+from statutory.models import ReferenceDataVersion, ReferenceFigureCheck
 
 try:  # pragma: no cover
     from openpyxl import load_workbook
 except ModuleNotFoundError as exc:  # pragma: no cover
     raise CommandError("openpyxl is required: pip install openpyxl") from exc
+
+#: The workbook's vocabulary for an outcome, and the inverse of
+#: ``exportverification.CHECKED_TEXT``. Anything else in the cell is "not yet".
+IMPORTED_AS = {
+    "Y": ReferenceFigureCheck.Outcome.CHECKED,
+    "QUERY": ReferenceFigureCheck.Outcome.QUERIED,
+}
 
 VERSION_COLUMN = 4
 VALUE_COLUMN = 7
@@ -87,6 +103,20 @@ class Command(BaseCommand):
             by_version.setdefault(row["version"], []).append(row)
 
         verified, refused, incomplete, already = [], [], [], []
+        recorded = 0
+
+        # PASS ONE: record every sound tick, whatever its version's fate. A
+        # version refused over one bad cell must not cost the other hundred.
+        problems_by_version = {}
+        for label in sorted(by_version):
+            problems, sound = self._sift(by_version[label])
+            problems_by_version[label] = problems
+            if not options["dry_run"]:
+                recorded += self._record(label, sound)
+
+        # PASS TWO: a version verifies when the DATABASE says every figure in it
+        # is checked - not when one workbook happens to hold them all.
+        complete = verification.fully_checked_versions()
 
         for label in sorted(by_version):
             version = ReferenceDataVersion.objects.filter(version_label=label).first()
@@ -96,22 +126,37 @@ class Command(BaseCommand):
             if version.verified_at and version.golden_tests_passed:
                 already.append(label)
                 continue
-
-            problems = self._problems(by_version[label])
-            if problems:
-                refused.append((label, problems))
+            if problems_by_version[label]:
+                refused.append((label, problems_by_version[label]))
                 continue
 
-            outstanding = [r for r in by_version[label] if r["checked"] != "Y"]
-            if outstanding:
-                incomplete.append((label, len(outstanding), len(by_version[label])))
+            checkers = complete.get(label)
+            if checkers is None:
+                total = verification.progress_by_version(
+                    verification.lines(), verification.latest_checks()
+                ).get(label)
+                incomplete.append(
+                    (
+                        label,
+                        (total.outstanding + total.queried) if total else 0,
+                        total.figures if total else 0,
+                    )
+                )
+                continue
+            if len(checkers) > 1:
+                refused.append(
+                    (
+                        label,
+                        [
+                            "more than one person has checked figures in this version: "
+                            + ", ".join(checkers)
+                            + ". verifystatutory records one verifier, so agree who signs."
+                        ],
+                    )
+                )
                 continue
 
-            verifier = self._one_verifier(by_version[label])
-            if isinstance(verifier, list):
-                refused.append((label, verifier))
-                continue
-
+            verifier = checkers[0]
             user = AppUser.objects.filter(email__iexact=verifier).first()
             if user is None:
                 refused.append((label, [f"no user with email {verifier}"]))
@@ -138,6 +183,9 @@ class Command(BaseCommand):
                     verbosity=0,
                 )
             verified.append((label, verifier, len(by_version[label])))
+
+        if recorded:
+            self.stdout.write(f"Recorded {recorded} check(s).\n")
 
         self._report(verified, refused, incomplete, already, by_version, dry_run=options["dry_run"])
 
@@ -184,21 +232,28 @@ class Command(BaseCommand):
 
     # ------------------------------------------------------------------ checking
 
-    def _problems(self, rows: list[dict]) -> list[str]:
-        """Everything that makes a version unverifiable, named row by row."""
-        problems = []
+    def _sift(self, rows: list[dict]) -> tuple[list[str], list[dict]]:
+        """Split a version's rows into what blocks it and what can be recorded.
 
-        queried = [r for r in rows if r["checked"] == "QUERY"]
-        for row in queried:
-            note = row["note"] or "(no note — the QUERY does not say what is wrong)"
-            problems.append(f"row {row['line']} QUERY on {row['key']}: {note}")
+        A QUERY blocks the version AND is recorded — that is the whole value of
+        one, and a query nobody wrote down is a question asked twice. A row
+        whose value has drifted from the database blocks the version and is NOT
+        recorded: it was not checked against what is loaded, whatever the cell
+        says.
+        """
+        problems, sound = [], []
 
         for row in rows:
+            state = IMPORTED_AS.get(row["checked"])
+            if state is None:
+                continue  # blank, N, or anything else: not yet done.
+
             try:
                 loaded = verification.current_value(row["key"])
             except ValueError as exc:
                 problems.append(f"row {row['line']}: {exc}")
                 continue
+
             if row["value"] != loaded:
                 problems.append(
                     f"row {row['line']} {row['key']}: the workbook says "
@@ -207,25 +262,71 @@ class Command(BaseCommand):
                     f"transcribed wrongly and that is a new load, not a tick; if the "
                     f"loaded value is right, restore the cell."
                 )
+                continue
 
-        checked = [r for r in rows if r["checked"] == "Y"]
-        for row in checked:
             if not row["by"]:
-                problems.append(f"row {row['line']} is checked with no 'checked by'")
+                problems.append(f"row {row['line']} is ticked with no 'checked by'")
+                continue
             if not row["when"]:
-                problems.append(f"row {row['line']} is checked with no date")
-        return problems
+                problems.append(f"row {row['line']} is ticked with no date")
+                continue
 
-    @staticmethod
-    def _one_verifier(rows: list[dict]):
-        names = {r["by"] for r in rows if r["by"]}
-        if len(names) > 1:
-            return [
-                "more than one person is recorded as the verifier of this version: "
-                + ", ".join(sorted(names))
-                + ". verifystatutory records one, so split the version or agree who signs."
-            ]
-        return next(iter(names))
+            if state is ReferenceFigureCheck.Outcome.QUERIED:
+                note = row["note"] or ""
+                problems.append(
+                    f"row {row['line']} QUERY on {row['key']}: "
+                    + (note or "(no note — the QUERY does not say what is wrong)")
+                )
+                if not note:
+                    continue  # the CHECK would refuse it anyway, and rightly.
+
+            sound.append({**row, "outcome": state, "loaded": loaded})
+
+        return problems, sound
+
+    def _record(self, label: str, rows: list[dict]) -> int:
+        """Write the checks, skipping any that would repeat what is already there.
+
+        Append-only, so a genuine change of mind inserts a second row and the
+        first one stands. Re-importing the same workbook on Thursday must not do
+        that, though, or the history fills with rows saying the same thing —
+        hence the comparison against the latest record.
+        """
+        existing = verification.latest_checks()
+        written = 0
+        with transaction.atomic():
+            for row in rows:
+                user = AppUser.objects.filter(email__iexact=row["by"]).first()
+                if user is None:
+                    continue  # named in _sift's problems; nothing to record against.
+                when = row["when"]
+                when = when.date() if isinstance(when, datetime.datetime) else when
+                if isinstance(when, str):
+                    try:
+                        when = datetime.date.fromisoformat(when.strip()[:10])
+                    except ValueError:
+                        continue
+                current = existing.get(row["key"])
+                same = (
+                    current is not None
+                    and current.outcome == row["outcome"]
+                    and current.checked_by_id == user.pk
+                    and current.checked_on == when
+                    and current.note == row["note"]
+                )
+                if same:
+                    continue
+                ReferenceFigureCheck.objects.create(
+                    row_key=row["key"],
+                    version_label=label,
+                    outcome=row["outcome"],
+                    value_at_check=row["loaded"][:400],
+                    checked_by=user,
+                    checked_on=when,
+                    note=row["note"],
+                )
+                written += 1
+        return written
 
     # ------------------------------------------------------------------ report
 

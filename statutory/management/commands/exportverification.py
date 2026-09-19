@@ -5,6 +5,11 @@ it has not been started because a list of version labels tells nobody what to
 open. This writes the job down: grouped by source document, so each gazette is
 opened once, with a summary sheet that answers "where am I" in five seconds.
 
+**The workbook is DISPOSABLE and the database holds the record** (D-256).
+Every tick already recorded is pre-filled, so re-exporting after loading new
+reference rows carries the old work forward and the new figures arrive blank.
+Throwing the file away and exporting a fresh one loses nothing.
+
 The workbook is a WORK AID and never a source of truth — see
 ``statutory/verification.py`` and D-251.
 """
@@ -51,6 +56,10 @@ QUERY_FILL = PatternFill("solid", fgColor="FBE2C7")
 MACHINE_FILL = PatternFill("solid", fgColor="DCE6F5")
 DOCUMENT_FILL = PatternFill("solid", fgColor="EDEDED")
 
+#: The workbook's own words for an outcome, and the only place the two
+#: vocabularies meet. importverification reads them back through IMPORTED_AS.
+CHECKED_TEXT = {"checked": "Y", "queried": "QUERY"}
+
 
 class Command(BaseCommand):
     help = "Export every loaded reference figure to a verification workbook."
@@ -72,27 +81,31 @@ class Command(BaseCommand):
         parser.add_argument(
             "--force",
             action="store_true",
-            help="Overwrite an existing workbook. Refuses without this, because "
-            "overwriting one is throwing away somebody's evening.",
+            help="Overwrite an existing file. Rarely needed now that ticks are "
+            "recorded in the database and pre-filled on every export: what --force "
+            "still destroys is ticks entered but never imported.",
         )
 
     def handle(self, *args, **options):
         path = Path(options["path"])
         if path.exists() and not options["force"]:
             raise CommandError(
-                f"{path} already exists. Re-exporting replaces it and every tick in it "
-                f"— the database does not store them. Pass --force if that is what you "
-                f"want, or export to a new filename."
+                f"{path} already exists. Every tick that has been IMPORTED is safe — it "
+                f"is in the database and this export would pre-fill it again. What "
+                f"would be lost is anything ticked in that file and not yet imported. "
+                f"Run importverification on it first, or pass --force, or export to a "
+                f"new filename."
             )
         path.parent.mkdir(parents=True, exist_ok=True)
 
         lines = verification.lines()
         versions = verification.version_state()
+        checks = verification.latest_checks()
         machine = {v["label"] for v in versions if v["machine_verified"]}
 
         book = Workbook()
-        self._summary_sheet(book.active, lines, versions, options["verifier"].strip())
-        self._figures_sheet(book.create_sheet("Figures"), lines, machine)
+        self._summary_sheet(book.active, lines, versions, checks, options["verifier"].strip())
+        self._figures_sheet(book.create_sheet("Figures"), lines, machine, checks)
         book.save(path)
 
         self.stdout.write(self.style.SUCCESS(f"Wrote {path}"))
@@ -100,10 +113,12 @@ class Command(BaseCommand):
             f"  {len(lines)} figures across {len({x.document for x in lines})} source documents"
         )
         self.stdout.write(f"  {len(versions)} reference versions, {len(machine)} machine-verified")
+        carried = sum(1 for line in lines if line.key in checks)
+        self.stdout.write(f"  {carried} figure(s) already checked, carried forward")
 
     # ------------------------------------------------------------------ sheets
 
-    def _summary_sheet(self, sheet, lines, versions, verifier):
+    def _summary_sheet(self, sheet, lines, versions, checks, verifier):
         sheet.title = "Summary"
         sheet.column_dimensions["A"].width = 62
         for letter in "BCDEF":
@@ -121,7 +136,9 @@ class Command(BaseCommand):
             value=(
                 "THIS WORKBOOK IS A WORK AID AND NEVER A SOURCE OF TRUTH. The fixtures in "
                 "reference/ are the loaded data and docs/DECISIONS.md is the register; "
-                "importverification records that a figure was checked and can never change one."
+                "importverification records that a figure was checked and can never change one. "
+                "The file itself is DISPOSABLE - every imported tick is in the database and is "
+                "pre-filled on the next export. The counts below are as at export."
             ),
         ).font = Font(italic=True)
         row += 2
@@ -138,38 +155,27 @@ class Command(BaseCommand):
         header_row = row
         row += 1
 
-        documents = {}
-        for line in lines:
-            documents.setdefault(line.document, []).append(line)
-
-        first_document_row = row
-        for document in sorted(documents):
-            count = len(documents[document])
-            sheet.cell(row=row, column=1, value=document).alignment = Alignment(wrap_text=True)
-            sheet.cell(row=row, column=2, value=count)
-            sheet.cell(
-                row=row,
-                column=3,
-                value=f'=COUNTIFS(Figures!$A:$A,$A{row},Figures!$K:$K,"Y")',
-            )
-            sheet.cell(
-                row=row,
-                column=4,
-                value=f'=COUNTIFS(Figures!$A:$A,$A{row},Figures!$K:$K,"QUERY")',
-            )
-            sheet.cell(row=row, column=5, value=f"=$B{row}-$C{row}-$D{row}")
+        # Counted from the DATABASE, not with a COUNTIFS over the Figures sheet:
+        # openpyxl writes a formula and only Excel evaluates it, so a freshly
+        # written file would read as zero everywhere until somebody opened it.
+        for item in verification.progress_by_document(lines, checks):
+            sheet.cell(row=row, column=1, value=item.name).alignment = Alignment(wrap_text=True)
+            sheet.cell(row=row, column=2, value=item.figures)
+            sheet.cell(row=row, column=3, value=item.checked)
+            sheet.cell(row=row, column=4, value=item.queried)
+            sheet.cell(row=row, column=5, value=item.outstanding)
             row += 1
         sheet.cell(row=row, column=1, value="TOTAL").font = Font(bold=True)
-        sheet.cell(row=row, column=2, value=len(lines)).font = Font(bold=True)
-        sheet.cell(row=row, column=3, value=f"=SUM(C{first_document_row}:C{row - 1})").font = Font(
-            bold=True
-        )
-        sheet.cell(row=row, column=4, value=f"=SUM(D{first_document_row}:D{row - 1})").font = Font(
-            bold=True
-        )
-        sheet.cell(row=row, column=5, value=f"=SUM(E{first_document_row}:E{row - 1})").font = Font(
-            bold=True
-        )
+        for column, total in enumerate(
+            (
+                len(lines),
+                sum(1 for line in lines if _is(checks, line, "checked")),
+                sum(1 for line in lines if _is(checks, line, "queried")),
+                sum(1 for line in lines if line.key not in checks),
+            ),
+            start=2,
+        ):
+            sheet.cell(row=row, column=column, value=total).font = Font(bold=True)
         sheet.freeze_panes = sheet.cell(row=header_row + 1, column=1)
         row += 2
 
@@ -185,19 +191,13 @@ class Command(BaseCommand):
             cell.fill = HEADER_FILL
         row += 1
 
+        by_version = verification.progress_by_version(lines, checks)
         for version in versions:
+            item = by_version.get(version["label"])
             sheet.cell(row=row, column=1, value=version["label"])
             sheet.cell(row=row, column=2, value=version["figures"])
-            sheet.cell(
-                row=row,
-                column=3,
-                value=f'=COUNTIFS(Figures!$D:$D,$A{row},Figures!$K:$K,"Y")',
-            )
-            sheet.cell(
-                row=row,
-                column=4,
-                value=f'=COUNTIFS(Figures!$D:$D,$A{row},Figures!$K:$K,"QUERY")',
-            )
+            sheet.cell(row=row, column=3, value=item.checked if item else 0)
+            sheet.cell(row=row, column=4, value=item.queried if item else 0)
             if version["machine_verified"]:
                 state = "MACHINE ONLY — still needs a human"
             elif version["verified"]:
@@ -233,7 +233,7 @@ class Command(BaseCommand):
             ),
         ).font = Font(italic=True)
 
-    def _figures_sheet(self, sheet, lines, machine):
+    def _figures_sheet(self, sheet, lines, machine, checks):
         for column, (title, width) in enumerate(HEADERS, start=1):
             cell = sheet.cell(row=1, column=column, value=title)
             cell.font = Font(bold=True, color="FFFFFF")
@@ -273,6 +273,15 @@ class Command(BaseCommand):
             if line.version in machine:
                 sheet.cell(row=index, column=4).fill = MACHINE_FILL
 
+            # Carry forward what is already recorded, so a re-export after new
+            # rows are loaded costs nobody an evening (D-256).
+            check = checks.get(line.key)
+            if check is not None:
+                sheet.cell(row=index, column=11, value=CHECKED_TEXT[check.outcome])
+                sheet.cell(row=index, column=12, value=check.checked_by.email)
+                sheet.cell(row=index, column=13, value=f"{check.checked_on:%Y-%m-%d}")
+                sheet.cell(row=index, column=14, value=check.note)
+
         last = len(lines) + 1
         if last < 2:
             return
@@ -295,3 +304,8 @@ class Command(BaseCommand):
         sheet.conditional_formatting.add(
             span, FormulaRule(formula=['$K2="QUERY"'], fill=QUERY_FILL, stopIfTrue=False)
         )
+
+
+def _is(checks, line, outcome: str) -> bool:
+    check = checks.get(line.key)
+    return check is not None and check.outcome == outcome

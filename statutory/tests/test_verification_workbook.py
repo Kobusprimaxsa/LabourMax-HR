@@ -27,7 +27,7 @@ from openpyxl import load_workbook
 
 from statutory import verification
 from statutory.loader import load_reference_data
-from statutory.models import ReferenceDataVersion, StatutoryParameter
+from statutory.models import ReferenceDataVersion, ReferenceFigureCheck, StatutoryParameter
 
 pytestmark = [pytest.mark.django_db, pytest.mark.statutory]
 
@@ -398,3 +398,161 @@ def test_a_dry_run_writes_nothing(workbook, checker):
         verbosity=0,
     )
     assert ReferenceDataVersion.objects.get(version_label=SICK).verified_at is None
+
+
+# ------------------------------ the ticks are evidence, so they live in the database
+
+
+def mark_keys(path, keys, *, checked="Y", by="checker@example.com", when="2026-09-20", note=""):
+    """Tick only the named row keys, leaving the rest blank."""
+    book = load_workbook(path)
+    sheet = book["Figures"]
+    wanted = set(keys)
+    for row in range(2, sheet.max_row + 1):
+        if sheet.cell(row=row, column=10).value in wanted:
+            sheet.cell(row=row, column=11, value=checked)
+            sheet.cell(row=row, column=12, value=by)
+            sheet.cell(row=row, column=13, value=when)
+            if note:
+                sheet.cell(row=row, column=14, value=note)
+    book.save(path)
+    return path
+
+
+def ticks(path) -> dict[str, str]:
+    """What the workbook says is checked, keyed by row key."""
+    sheet = load_workbook(path)["Figures"]
+    return {
+        sheet.cell(row=row, column=10).value: (sheet.cell(row=row, column=11).value or "")
+        for row in range(2, sheet.max_row + 1)
+    }
+
+
+def test_a_re_export_after_loading_new_rows_carries_every_earlier_tick_forward(
+    workbook, checker, tmp_path
+):
+    """THE HAZARD THIS CLOSES. Three P2 items are still to load, and each one
+    needs a re-export. Before this, the first re-export threw away however many
+    evenings had accumulated, because the ticks existed only in the file.
+
+    So: tick half, import, load a reference row that did not exist when the
+    workbook was written, re-export, and the earlier ticks must still be there
+    with the new figures unchecked beside them.
+    """
+    keys = sorted(ticks(workbook))
+    half = keys[: len(keys) // 2]
+    assert half, "the fixture produced too few figures to halve"
+
+    mark_keys(workbook, half)
+    call_command("importverification", str(workbook), current_through="2027-02-28", verbosity=0)
+
+    load_reference_data(
+        json.loads((REFERENCE / "ref-2026.03.01-remuneration.json").read_text(encoding="utf-8")),
+        loaded_by=get_user_model().objects.get(email="loader@example.com"),
+    )
+
+    reexported = tmp_path / "round-two.xlsx"
+    call_command("exportverification", str(reexported), verbosity=0)
+    after = ticks(reexported)
+
+    assert set(after) > set(keys), "the new reference row did not reach the workbook"
+    for key in half:
+        assert after[key] == "Y", f"{key} lost its tick on re-export"
+    for key in set(after) - set(keys):
+        assert after[key] == "", f"{key} is new and must arrive unchecked"
+
+
+@pytest.mark.parametrize("order", ["forward", "backward"])
+def test_two_partial_workbooks_accumulate_the_same_way_in_either_order(
+    loaded, checker, tmp_path, order
+):
+    """The one-person constraint becomes a convention rather than a data-loss
+    risk: whoever ticks what, in whichever order the files are imported, the
+    database ends up the same. Git still cannot merge the binary; nothing is
+    lost when it tries.
+
+    Both parameters assert the SAME expected state, which is what makes this a
+    test of order-independence rather than two tests of one order each.
+    """
+    first, second = tmp_path / "a.xlsx", tmp_path / "b.xlsx"
+    call_command("exportverification", str(first), verbosity=0)
+    call_command("exportverification", str(second), verbosity=0)
+
+    keys = sorted(ticks(first))
+    assert len(keys) >= 4, "too few figures to split between two people"
+    mark_keys(first, keys[::2])
+    mark_keys(second, keys[1::2])
+
+    for path in (first, second) if order == "forward" else (second, first):
+        call_command("importverification", str(path), current_through="2027-02-28", verbosity=0)
+
+    state = {
+        check.row_key: (check.outcome, check.checked_by.email)
+        for check in ReferenceFigureCheck.objects.all()
+    }
+
+    assert state == {
+        key: (ReferenceFigureCheck.Outcome.CHECKED, "checker@example.com") for key in keys
+    }, "every figure recorded exactly once, whoever ticked it and in whichever order"
+
+
+def test_a_check_record_can_never_be_edited_or_deleted(workbook, checker):
+    """Invariant 4 on this table, watched refusing. A tick is evidence: a change
+    of mind inserts a second row and the first one stands."""
+    from django.db import DatabaseError, transaction
+
+    mark_all(workbook)
+    call_command("importverification", str(workbook), current_through="2027-02-28", verbosity=0)
+    check = ReferenceFigureCheck.objects.first()
+    assert check is not None
+
+    with pytest.raises(DatabaseError) as raised, transaction.atomic():
+        check.note = "actually, no"
+        check.save(update_fields=["note"])
+    assert "append-only" in str(raised.value)
+
+    with pytest.raises(DatabaseError) as raised, transaction.atomic():
+        ReferenceFigureCheck.objects.filter(pk=check.pk).delete()
+    assert "append-only" in str(raised.value)
+
+
+def test_changing_your_mind_inserts_a_second_row_and_keeps_the_first(workbook, checker):
+    """A figure queried on Tuesday and checked on Thursday reads in order,
+    rather than being overwritten into a single reassuring Y."""
+    key = sorted(ticks(workbook))[0]
+    mark_keys(workbook, [key], checked="QUERY", note="Gazette may say 27, not 26.")
+    with pytest.raises(CommandError):
+        # The QUERY blocks its version, and is recorded all the same - a query
+        # nobody wrote down is a question asked twice.
+        call_command("importverification", str(workbook), current_through="2027-02-28", verbosity=0)
+
+    mark_keys(workbook, [key], checked="Y", when="2026-09-22", note="Checked again; 26 is right.")
+    call_command("importverification", str(workbook), current_through="2027-02-28", verbosity=0)
+
+    history = list(ReferenceFigureCheck.objects.filter(row_key=key).order_by("recorded_at", "id"))
+    assert [c.outcome for c in history] == [
+        ReferenceFigureCheck.Outcome.QUERIED,
+        ReferenceFigureCheck.Outcome.CHECKED,
+    ]
+    assert verification.latest_checks()[key].outcome == ReferenceFigureCheck.Outcome.CHECKED
+
+
+def test_the_summary_counts_are_right_before_anyone_opens_the_file(workbook, checker, tmp_path):
+    """Counted from the DATABASE. A COUNTIFS would read as zero on a freshly
+    written file, because openpyxl writes the formula and only Excel evaluates
+    it — and zero is exactly the wrong answer to "how far have I got"."""
+    keys = sorted(ticks(workbook))
+    mark_keys(workbook, keys[:1])
+    call_command("importverification", str(workbook), current_through="2027-02-28", verbosity=0)
+
+    fresh = tmp_path / "fresh.xlsx"
+    call_command("exportverification", str(fresh), verbosity=0)
+
+    summary = load_workbook(fresh, data_only=True)["Summary"]
+    totals = [row for row in summary.iter_rows(values_only=True) if row and row[0] == "TOTAL"]
+    assert totals, "the summary has no total row"
+    figures, checked, queried, outstanding = totals[0][1:5]
+    assert figures == len(keys)
+    assert checked == 1, "the one imported tick must show without Excel recalculating"
+    assert queried == 0
+    assert outstanding == len(keys) - 1

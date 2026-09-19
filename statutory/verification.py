@@ -45,7 +45,7 @@ from statutory.loader import (
     ReferenceDataLoadError,
     locate_row,
 )
-from statutory.models import ReferenceDataVersion
+from statutory.models import ReferenceDataVersion, ReferenceFigureCheck
 
 #: Columns every cited table carries that are not figures anybody verifies.
 #: ``source_reference`` and ``source_url`` become the grouping, ``notes`` is the
@@ -455,6 +455,104 @@ def current_value(key: str) -> str:
     if row is None:
         raise ValueError(f"{table_name} row {pk} no longer exists.")
     return format_value(row, spec.model._meta.get_field(field_name))
+
+
+def latest_checks() -> dict[str, ReferenceFigureCheck]:
+    """The current state of every figure, keyed by row key.
+
+    ``reference_figure_check`` is append-only, so a figure that was queried,
+    corrected and then checked has three rows and the last one is what it is now
+    (D-256). Ordered by ``recorded_at`` and then by id, because two rows written
+    by the same import share a timestamp to the microsecond often enough to
+    matter, and the later id is the later row.
+    """
+    found: dict[str, ReferenceFigureCheck] = {}
+    for check in ReferenceFigureCheck.objects.select_related("checked_by").order_by(
+        "recorded_at", "id"
+    ):
+        found[check.row_key] = check
+    return found
+
+
+@dataclasses.dataclass(frozen=True)
+class Progress:
+    """How far one source document or one reference version has got."""
+
+    name: str
+    figures: int
+    checked: int
+    queried: int
+
+    @property
+    def outstanding(self) -> int:
+        return self.figures - self.checked - self.queried
+
+
+def _progress(grouped: dict[str, list[Line]], checks: dict[str, ReferenceFigureCheck]):
+    out = []
+    for name in sorted(grouped):
+        lines_for = grouped[name]
+        checked = sum(
+            1
+            for line in lines_for
+            if (check := checks.get(line.key)) is not None
+            and check.outcome == ReferenceFigureCheck.Outcome.CHECKED
+        )
+        queried = sum(
+            1
+            for line in lines_for
+            if (check := checks.get(line.key)) is not None
+            and check.outcome == ReferenceFigureCheck.Outcome.QUERIED
+        )
+        out.append(Progress(name, len(lines_for), checked, queried))
+    return out
+
+
+def progress_by_document(lines_: list[Line], checks: dict[str, ReferenceFigureCheck]):
+    """Per source document, counted from the DATABASE and not from a spreadsheet.
+
+    The summary sheet has to be right on a freshly written file that nobody has
+    opened. A COUNTIFS over the Figures sheet is not: openpyxl writes the
+    formula and only Excel evaluates it, so the file reads as zero everywhere
+    until somebody opens it — which is exactly the moment the answer stops being
+    useful for deciding whether to bother.
+    """
+    grouped: dict[str, list[Line]] = {}
+    for line in lines_:
+        grouped.setdefault(line.document, []).append(line)
+    return _progress(grouped, checks)
+
+
+def progress_by_version(lines_: list[Line], checks: dict[str, ReferenceFigureCheck]):
+    grouped: dict[str, list[Line]] = {}
+    for line in lines_:
+        grouped.setdefault(line.version, []).append(line)
+    return {item.name: item for item in _progress(grouped, checks)}
+
+
+def fully_checked_versions(lines_: list[Line] | None = None) -> dict[str, list[str]]:
+    """Versions whose every figure has a CHECKED record, and who checked them.
+
+    Read from the database rather than from whichever workbook is in front of
+    us, so two people working two halves on two evenings complete a version
+    between them without either file ever holding the whole of it.
+    """
+    lines_ = lines() if lines_ is None else lines_
+    checks = latest_checks()
+    grouped: dict[str, list[Line]] = {}
+    for line in lines_:
+        grouped.setdefault(line.version, []).append(line)
+
+    complete = {}
+    for label, group in grouped.items():
+        states = [checks.get(line.key) for line in group]
+        if any(
+            state is None or state.outcome != ReferenceFigureCheck.Outcome.CHECKED
+            for state in states
+        ):
+            continue
+        complete[label] = sorted({state.checked_by.email for state in states})
+    return complete
 
 
 def version_state() -> list[dict]:
