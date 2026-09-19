@@ -24,6 +24,7 @@ arithmetic, and the golden tests will fail it on published worked examples.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -461,6 +462,87 @@ def check_citations() -> list[Issue]:
     return issues
 
 
+#: Identifiers that pin down ONE published document. A gazette notice number, a
+#: gazette number and a SARS guide code are each unique in their own series, so
+#: two strings carrying the same one are almost always the same instrument
+#: written down twice.
+_STRONG_MARKERS = (
+    re.compile(r"\bGN\s*R?\.?\s*(\d{3,5})\b", re.IGNORECASE),
+    re.compile(r"\bGG\s*(\d{4,6})\b", re.IGNORECASE),
+    re.compile(r"\bGovernment Gazette\s*(\d{4,6})\b", re.IGNORECASE),
+    re.compile(r"\b(PAYE-[A-Z]{2}-\d{2}-[A-Z]\d{2})\b"),
+    re.compile(r"\bNotice\s+(\d{3,5})\s+of\s+(\d{4})\b", re.IGNORECASE),
+)
+
+#: An Act and its year identifies the ACT, not a document made under it. Two
+#: determinations under BCEA s6(3) both name the Act and are two documents; so
+#: are the Act itself and a notice published under it. So this decides anything
+#: only when NEITHER string carries a strong identifier.
+_WEAK_MARKERS = (re.compile(r"\bAct\s+(\d{1,3})\s+of\s+(\d{4})\b", re.IGNORECASE),)
+
+
+def _citation_keys(patterns, reference: str) -> set[str]:
+    found = set()
+    for pattern in patterns:
+        for match in pattern.finditer(reference):
+            found.add(f"{pattern.pattern}:{'|'.join(m.upper() for m in match.groups())}")
+    return found
+
+
+def check_citation_spellings() -> list[Issue]:
+    """Two source-document strings naming the same instrument, reported by name.
+
+    WARNING, never a refusal: a genuine revision of a guide is two documents and
+    a real case, so this cannot decide. What it can do is say "these two look
+    like the same thing" before somebody spends an evening on one of them.
+
+    **Why it exists** (D-257, O-33 closed). The BCCCI Main Agreement was cited
+    with the council's full name on the wage rows and abbreviated on the notice
+    bands, where the long form plus a pinpoint overran ``source_reference``'s
+    200 characters; the SARS code guide was cited as "2026 issue" on nineteen
+    codes and as "revision 13" on two. The verification workbook groups by
+    source document, so each pair read as two documents: a person could verify
+    one spelling to completion and the version would still show incomplete,
+    with nothing on screen explaining why. That is a trap laid for the one part
+    of this build that depends on a human finishing something tedious, and the
+    conditions that produced it recur every March.
+    """
+    from statutory import verification
+
+    strong: dict[str, set[str]] = {}
+    weak: dict[str, set[str]] = {}
+    for line in verification.lines():
+        strong.setdefault(line.document, set()).update(
+            _citation_keys(_STRONG_MARKERS, line.document)
+        )
+        weak.setdefault(line.document, set()).update(_citation_keys(_WEAK_MARKERS, line.document))
+
+    issues = []
+    names = sorted(strong)
+    for index, first in enumerate(names):
+        for second in names[index + 1 :]:
+            shared = strong[first] & strong[second]
+            if not shared and not strong[first] and not strong[second]:
+                shared = weak[first] & weak[second]
+            if not shared:
+                continue
+            issues.append(
+                Issue(
+                    False,
+                    "source_reference",
+                    "two source documents share an identifier and may be the same "
+                    "instrument cited twice. The workbook groups them apart, so a "
+                    "version reads incomplete with one of them fully checked. If they "
+                    "are the same, normalise the citation in the fixture and supersede "
+                    "(D-257); if they are genuinely different revisions, make the "
+                    "difference visible in both strings."
+                    f"\n      (1) {first}"
+                    f"\n      (2) {second}",
+                )
+            )
+    return issues
+
+
 def check_something_is_loaded() -> list[Issue]:
     """An empty database passes every other check in this module. That is the bug.
 
@@ -575,4 +657,5 @@ def run_all(year: TaxYear | None = None) -> list[Issue]:
     issues.extend(check_night_allowance_coherence())
     issues.extend(check_notice_bands())
     issues.extend(check_citations())
+    issues.extend(check_citation_spellings())
     return issues
