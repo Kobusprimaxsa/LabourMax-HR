@@ -382,3 +382,58 @@ CREATE TRIGGER {table}_no_update_when_locked
 
 def drop_no_update_when_locked(table: str) -> str:
     return f"DROP TRIGGER IF EXISTS {table}_no_update_when_locked ON {table};"
+
+
+# ---------------------------------------------------- finalised payslip guard
+
+FINALISED_ROW_FUNCTION = f"""
+CREATE OR REPLACE FUNCTION labourmax_finalised_row() RETURNS trigger AS $$
+BEGIN
+    IF coalesce(current_setting('{MAINTENANCE_VAR}', true), 'off') = 'on' THEN
+        RETURN CASE TG_OP WHEN 'DELETE' THEN OLD ELSE NEW END;
+    END IF;
+    IF NOT OLD.is_finalised THEN
+        RETURN CASE TG_OP WHEN 'DELETE' THEN OLD ELSE NEW END;
+    END IF;
+    RAISE EXCEPTION 'This payslip is finalised and cannot be % (invariant 4). A '
+        'correction is a REVERSING payslip plus a replacement in a new run, never an '
+        'edit: the employee was handed this document and the SARS submission quotes '
+        'it. Deliberate maintenance sets {MAINTENANCE_VAR}.', lower(TG_OP);
+END;
+$$ LANGUAGE plpgsql;
+"""  # noqa: S608
+
+DROP_FINALISED_ROW_FUNCTION = "DROP FUNCTION IF EXISTS labourmax_finalised_row();"
+
+
+def no_change_when_finalised(table: str) -> str:
+    """Refuse UPDATE and DELETE on a row whose own ``is_finalised`` reads true.
+
+    Invariant 4, and a FOURTH shape of frozen row after ``append_only()``,
+    ``lock_system_rows()`` and ``no_update_when_locked()``. It is none of those
+    three: a payslip is not append-only (an unfinalised one is edited freely
+    while the run is still being worked), it is not a shared catalogue row, and
+    ``no_update_when_locked()`` keys on a ``status`` column reading ``'locked'``
+    while what freezes a payslip is a boolean of its own. Bending one of the
+    other three to fit would have meant giving ``payslip`` a status value that
+    means something else everywhere it appears.
+
+    Unlike ``no_update_when_locked()``, DELETE is refused as well. A locked
+    attendance day may be deleted because reversing a whole run removes it along
+    with everything else; a finalised payslip may not, because the reversal IS a
+    new payslip and the original has to survive to be reversed against.
+
+    Requires the table to carry an ``is_finalised`` boolean, and
+    ``FINALISED_ROW_FUNCTION`` to have been run once in an earlier operation of
+    the same migration.
+    """
+    return f"""
+DROP TRIGGER IF EXISTS {table}_no_change_when_finalised ON {table};
+CREATE TRIGGER {table}_no_change_when_finalised
+    BEFORE UPDATE OR DELETE ON {table}
+    FOR EACH ROW EXECUTE FUNCTION labourmax_finalised_row();
+"""
+
+
+def drop_no_change_when_finalised(table: str) -> str:
+    return f"DROP TRIGGER IF EXISTS {table}_no_change_when_finalised ON {table};"
