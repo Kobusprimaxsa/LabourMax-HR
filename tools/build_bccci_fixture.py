@@ -163,9 +163,143 @@ FIXTURE = {
 }
 
 
+# ---------------------------------------------------------------------------
+# THE TWO ADDITIVE MATERNITY BENEFITS, clause 13.2 and clause 13.4(a).
+#
+# Most of clause 13 is NOT loaded. Clause 13.3 compels an employee to cease
+# work eight weeks before confinement and caps her return at twelve weeks after
+# the birth, where an employee who works to the birth and then takes her four
+# consecutive months under the read-in BCEA s25(1) is entitled to roughly
+# seventeen and a half weeks after it. Twelve is less, and BCEA s49(1)(d)
+# forbids a bargaining council agreement from reducing the s25 entitlement, so
+# 13.3 and 17(b) are VOID to that extent and are recorded in the register
+# rather than loaded as rules.
+#
+# These two are different in kind: they ADD to what the Act gives and take
+# nothing from anyone, so s49 does not reach them and they are separable from
+# the void parts of the same clause (D-244).
+#
+# CLAUSE 13.4(a) IS STORED AS A DIVISOR, NOT AS A THIRD. "One third of one
+# month's wage" as 0.333333 is a rounded figure standing where an exact one
+# belongs, and it is money: a third of R9 000 is R3 000 exactly, while
+# 0.333333 x 9000 is R2 999,997. The clause says a third, so the DIVISOR is
+# what is loaded and the calculator divides.
+#
+# CLAUSE 13.5 extends clause 13 to still births and to legal adoptions of a
+# child under one year old. HOW FAR THAT REACHES THESE TWO IS A READING, and
+# it is recorded as one rather than asserted (O-06):
+#
+#   * A STILL BIRTH reaches BOTH. The pregnancy ran, the clinic visits in
+#     13.2 were attended before anyone knew the outcome, and 13.4(a) attaches
+#     to the return from leave rather than to a living child. Withholding
+#     either on the outcome would read a condition into 13.5 that the clause
+#     does not contain, and 13.5 extends "clause 13", not part of it.
+#   * AN ADOPTION reaches 13.4(a) and CANNOT reach 13.2. 13.2 pays for
+#     attendance at a prenatal clinic in each of the three months before the
+#     expected date of confinement; an adoptive parent has no confinement for
+#     those months to precede. That is the benefit being incapable of
+#     application, not the agreement excluding it - so nothing is loaded that
+#     says an adoptive parent is refused it, and whatever prices 13.2 will
+#     find no clinic attendance to pay for.
+#
+# Neither reading changes a figure. Both change who a figure reaches, which is
+# why they are flagged for the labour law review rather than settled here.
+# ---------------------------------------------------------------------------
+
+MATERNITY_OUTPUT = (
+    pathlib.Path(__file__).resolve().parents[1]
+    / "reference"
+    / "ref-2026.04.01-bccci-maternity.json"
+)
+
+CLAUSE_13_5 = (
+    "Clause 13.5 extends clause 13 to a still birth and to a legal adoption of a child "
+    "under one year old. READ AS: a still birth reaches this benefit; an adoption "
+    "reaches clause 13.4(a) and cannot reach clause 13.2, which pays for prenatal "
+    "clinic attendance an adoptive parent has no confinement to precede. A reading, "
+    "flagged for the labour law review, not a figure (O-06)."
+)
+
+ADDITIVE = (
+    "ADDITIVE, which is why it is loaded when most of clause 13 is not. BCEA s49(1)(d) "
+    "forbids a bargaining council agreement from REDUCING the s25 entitlement; clause "
+    "13.3's twelve-week cap does that and is void to that extent. This benefit takes "
+    "nothing from anyone and is separable from it (D-244)."
+)
+
+MATERNITY_FIXTURE = {
+    "version_label": "REF-2026.04.01-BCCCI-MATERNITY",
+    "applies_from": "2026-04-01",
+    "description": (
+        "The two ADDITIVE maternity benefits in the BCCCI Main Agreement, clause 13.2 "
+        "and clause 13.4(a), scoped to contract cleaning Area B. The rest of clause 13 "
+        "is void under BCEA s49(1)(d) and is not loaded. NOT verified."
+    ),
+    "tables": {
+        "statutory_parameter": [
+            {
+                "parameter_code": "PRENATAL_CLINIC_PAID_DAYS_PER_MONTH",
+                "sector": "CONTRACT_CLEANING",
+                "sector_area": "AREA_B",
+                "value_numeric": "1.000000",
+                "unit": "days",
+                "effective_from": "2026-04-01",
+                "source_reference": f"{GAZETTE}, clause 13.2",
+                "source_url": GAZETTE_URL,
+                "notes": (
+                    "One day's FULLY PAID leave, on satisfactory proof of attendance at a "
+                    "prenatal clinic. Paid leave, not time off: the day costs the employee "
+                    f"nothing. {ADDITIVE} {CLAUSE_13_5}"
+                ),
+            },
+            {
+                "parameter_code": "PRENATAL_CLINIC_MONTHS_BEFORE_BIRTH",
+                "sector": "CONTRACT_CLEANING",
+                "sector_area": "AREA_B",
+                "value_numeric": "3.000000",
+                "unit": "months",
+                "effective_from": "2026-04-01",
+                "source_reference": f"{GAZETTE}, clause 13.2",
+                "source_url": GAZETTE_URL,
+                "notes": (
+                    "The day is given in EACH of the three months prior to the expected "
+                    "date of confinement, so the entitlement is three days in total and "
+                    "one is not carried from one month into the next. Two parameters "
+                    "rather than a pre-multiplied three, because the clause states two "
+                    "figures and a month in which no clinic was attended pays nothing. "
+                    f"{ADDITIVE} {CLAUSE_13_5}"
+                ),
+            },
+            {
+                "parameter_code": "MATERNITY_RETURN_PAYMENT_MONTH_DIVISOR",
+                "sector": "CONTRACT_CLEANING",
+                "sector_area": "AREA_B",
+                "value_numeric": "3.000000",
+                "unit": "ratio",
+                "effective_from": "2026-04-01",
+                "source_reference": f"{GAZETTE}, clause 13.4(a)",
+                "source_url": GAZETTE_URL,
+                "notes": (
+                    "On RETURN from maternity leave, payment of one third of one month's "
+                    "wage at the rate the employee was on at the time of going on leave - "
+                    "not the rate on return, so an increase during the leave does not "
+                    "raise it. THE DIVISOR IS LOADED, NOT A THIRD: 0.333333 is a rounded "
+                    "figure standing where an exact one belongs, and a third of R9 000 is "
+                    "R3 000 exactly where 0.333333 x 9000 is R2 999,997. Payable on "
+                    "return, so an employee who does not return does not earn it. "
+                    f"{ADDITIVE} {CLAUSE_13_5}"
+                ),
+            },
+        ]
+    },
+}
+
+
 def main():
-    OUTPUT.write_text(json.dumps(FIXTURE, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"Wrote {OUTPUT.relative_to(OUTPUT.parents[1])}")
+    for path, document in ((OUTPUT, FIXTURE), (MATERNITY_OUTPUT, MATERNITY_FIXTURE)):
+        rendered = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+        path.write_text(rendered, encoding="utf-8")
+        print(f"Wrote {path.relative_to(path.parents[1])}")
 
 
 if __name__ == "__main__":
