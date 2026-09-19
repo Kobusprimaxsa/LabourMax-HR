@@ -1177,6 +1177,29 @@ class LeaveRuleSet(SectorRuleSet):
         return f"Leave rules {self.sector_id or 'BCEA'} from {self.effective_from}"
 
 
+class NightAllowanceType(models.TextChoices):
+    """What BCEA s17(2) leaves to the instrument, and what each one does with it.
+
+    s17(2)(a) requires an employer who has an employee performing night work to
+    pay "an allowance, which may be a shift allowance, or by reducing the
+    employee's working hours" — an obligation with no figure attached. SD1 is the
+    only instrument in these two sectors that states one.
+    """
+
+    PERCENTAGE = "percentage", "A percentage of the hourly wage"
+    FIXED_AMOUNT = "fixed_amount", "A rand amount per shift"
+    TIME_OFF = "time_off", "Reduced working hours instead of an allowance"
+    BY_AGREEMENT = "by_agreement", "The instrument states none — the parties agree it"
+
+
+#: The two that carry a figure. The other two carry NULL, and the CHECK pair
+#: below makes that a fact about the row rather than a convention.
+NIGHT_ALLOWANCE_WITH_A_FIGURE = (
+    NightAllowanceType.PERCENTAGE,
+    NightAllowanceType.FIXED_AMOUNT,
+)
+
+
 class WorkingTimeRuleSet(SectorRuleSet):
     """Ordinary hours, overtime and premium pay. BCEA ss 9–18, SD7, SD1."""
 
@@ -1201,11 +1224,30 @@ class WorkingTimeRuleSet(SectorRuleSet):
 
     night_work_start_time = models.TimeField(help_text="BCEA s17 night-work window.")
     night_work_end_time = models.TimeField()
+    # The PAIR again (O-22, the half whose deadline was the start of P7). A
+    # value of 0.0000 used to mean "this instrument states no amount" — which is
+    # the BCEA's and SD7's actual position, since s17(2)(a) requires an
+    # allowance without setting one — and it would ALSO have meant "pay nothing"
+    # the moment P7 multiplied by it. The type column already distinguished the
+    # two, but it carried no choices and no CHECK, so it could hold anything at
+    # all, `percentage` beside a zero included.
     night_allowance_type = models.CharField(
-        max_length=20, help_text="percentage | fixed_amount | time_off"
+        max_length=20,
+        choices=NightAllowanceType.choices,
+        help_text=(
+            "Whether the instrument states a percentage, a rand amount, time off, or "
+            "nothing at all. No default: a row that does not say fails."
+        ),
     )
     night_allowance_value = models.DecimalField(
-        max_digits=10, decimal_places=4, help_text="Percent of hourly rate, or rand per shift."
+        max_digits=10,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text=(
+            "Percent of the hourly wage, or rand per shift. NULL for time_off and "
+            "by_agreement — the absence of a figure, never a zero standing in for it."
+        ),
     )
 
     standby_allowance_per_shift = models.DecimalField(
@@ -1273,6 +1315,23 @@ class WorkingTimeRuleSet(SectorRuleSet):
                 condition=models.Q(accommodation_deduction_capped=True)
                 | models.Q(accommodation_deduction_max_pct__isnull=True),
                 name="working_time_uncapped_states_no_percentage",
+            ),
+            # The same pair, for the night allowance (O-22). An enum gets a CHECK
+            # as well as choices — this column had neither, and `choices` alone
+            # is a form-layer opinion that raw SQL walks straight past.
+            models.CheckConstraint(
+                condition=models.Q(night_allowance_type__in=NightAllowanceType.values),
+                name="working_time_night_allowance_type_is_known",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(night_allowance_type__in=NIGHT_ALLOWANCE_WITH_A_FIGURE)
+                | models.Q(night_allowance_value__isnull=False),
+                name="working_time_night_allowance_states_its_figure",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(night_allowance_type__in=NIGHT_ALLOWANCE_WITH_A_FIGURE)
+                | models.Q(night_allowance_value__isnull=True),
+                name="working_time_night_allowance_without_a_figure_is_null",
             ),
         ]
 

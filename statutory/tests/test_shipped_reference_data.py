@@ -297,14 +297,15 @@ def test_the_short_day_minimum_differs_by_sector(sd1_loaded):
 @pytest.mark.statutory
 def test_the_night_allowance_is_a_real_figure_only_in_contract_cleaning(sd1_loaded):
     """SD1 clause 16 gazettes 10 percent of the hourly wage. The BCEA sets no amount
-    at all, and the zero on that row means exactly that."""
+    at all, and that row now says so with NULL rather than with a zero (O-22)."""
     cleaning = Sector.objects.get(code=Sector.Code.CONTRACT_CLEANING)
     on = datetime.date(2026, 6, 1)
 
     assert resolve.working_time_rules(cleaning, on).night_allowance_value == Decimal("10.0000")
 
     bcea = resolve.working_time_rules(None, on)
-    assert bcea.night_allowance_value == Decimal("0.0000")
+    assert bcea.night_allowance_value is None
+    assert bcea.night_allowance_type == "by_agreement"
     assert "NO STATUTORY FIGURE" in bcea.notes
 
 
@@ -346,10 +347,11 @@ def test_the_post_birth_restriction_is_stored_separately_from_the_earliest_start
 
 @pytest.mark.statutory
 def test_a_column_with_no_statutory_figure_says_so_in_its_notes(rules_loaded):
-    """Zero in night_allowance_value means the Act sets no amount, not that the
-    allowance is nil. A reader who misses that underpays every night shift."""
+    """A NULL night_allowance_value means the Act sets no amount; it does not mean
+    the allowance is nil. A reader who misses that underpays every night shift,
+    which is why the value is NULL and the notes say it in words as well (O-22)."""
     rules = resolve.working_time_rules(None, datetime.date(2026, 6, 1))
-    assert rules.night_allowance_value == Decimal("0.0000")
+    assert rules.night_allowance_value is None
     assert "NO STATUTORY FIGURE" in rules.notes
 
 

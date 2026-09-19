@@ -1,5 +1,5 @@
 {
-  "version_label": "REF-2026.03.01-RULES-r2",
+  "version_label": "REF-2026.03.01-RULES-r3",
   "applies_from": "2026-03-01",
   "description": "Sector rule sets: the BCEA default and the domestic sector's Sectoral Determination 7 overrides, for leave, working time and termination. Contract cleaning is deliberately absent - SD1 has not been read. Researched 13 September 2026. NOT verified.",
   "tables": {
@@ -76,7 +76,7 @@
         "night_work_start_time": "18:00:00",
         "night_work_end_time": "06:00:00",
         "night_allowance_type": "by_agreement",
-        "night_allowance_value": "0.0000",
+        "night_allowance_value": null,
         "standby_allowance_per_shift": "0.00",
         "standby_window_start": "00:00:00",
         "standby_window_end": "00:00:00",
@@ -106,7 +106,7 @@
         "night_work_start_time": "18:00:00",
         "night_work_end_time": "06:00:00",
         "night_allowance_type": "by_agreement",
-        "night_allowance_value": "0.0000",
+        "night_allowance_value": null,
         "standby_allowance_per_shift": "20.00",
         "standby_window_start": "20:00:00",
         "standby_window_end": "06:00:00",

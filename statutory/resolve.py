@@ -254,6 +254,58 @@ class AccommodationCap:
         return self.state is AccommodationCapState.CAPPED and percentage > self.percentage
 
 
+class NightAllowanceState(enum.StrEnum):
+    """What the instrument in force says about BCEA s17(2)(a)'s allowance.
+
+    Four answers, not a number, for the same reason the accommodation cap has
+    three (D-198): "the instrument states none" and "the instrument states zero"
+    are different facts, and a payroll engine that cannot tell them apart pays
+    nothing in both cases (O-22).
+    """
+
+    NOT_LOADED = "not_loaded"  # no rule set in force for that sector on that date
+    BY_AGREEMENT = "by_agreement"  # s17(2)(a) applies, the parties set the figure
+    TIME_OFF = "time_off"  # discharged by reducing hours, not by paying
+    PERCENTAGE = "percentage"  # a stated percentage of the hourly wage
+    FIXED_AMOUNT = "fixed_amount"  # a stated rand amount per shift
+
+
+@dataclasses.dataclass(frozen=True)
+class NightAllowance:
+    state: NightAllowanceState
+    value: Decimal | None = None
+    window_start: datetime.time | None = None
+    window_end: datetime.time | None = None
+    source_reference: str = ""
+    detail: str = ""  # why it is NOT_LOADED, in the resolver's own words
+
+    @property
+    def is_payable_by_this_instrument(self) -> bool:
+        """Only a stated figure is priced from reference data. BY_AGREEMENT is
+        payable too — but at a figure the employer agreed, which is not here."""
+        return self.state in (NightAllowanceState.PERCENTAGE, NightAllowanceState.FIXED_AMOUNT)
+
+
+def night_allowance(sector: Sector | None, on_date: datetime.date) -> NightAllowance:
+    """What the instrument in force says about the night work allowance.
+
+    Returns NOT_LOADED rather than raising, the same shape as
+    ``accommodation_cap()``: "no reference data" is a fourth answer the caller
+    must handle, not an exception to be caught in passing.
+    """
+    try:
+        rules = working_time_rules(sector, on_date)
+    except StatutoryValueMissingError as missing:
+        return NightAllowance(state=NightAllowanceState.NOT_LOADED, detail=str(missing))
+    return NightAllowance(
+        state=NightAllowanceState(rules.night_allowance_type),
+        value=rules.night_allowance_value,
+        window_start=rules.night_work_start_time,
+        window_end=rules.night_work_end_time,
+        source_reference=rules.source_reference,
+    )
+
+
 def accommodation_cap(sector: Sector | None, on_date: datetime.date) -> AccommodationCap:
     """What the instrument in force says about capping an accommodation deduction.
 

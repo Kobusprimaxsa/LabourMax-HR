@@ -270,21 +270,22 @@ def check_banks() -> list[Issue]:
 
 
 def check_night_allowance_coherence() -> list[Issue]:
-    """A zero night allowance must be paired with a type that means "no figure".
+    """The type and the value must agree about whether there IS a figure.
 
-    **Why this check exists.** ``night_allowance_value`` is NUMERIC, so BCEA s17(2) —
-    which requires night work to be compensated and deliberately sets no amount — is
-    recorded as a zero with ``night_allowance_type`` of ``by_agreement`` beside it.
-    Zero therefore carries two possible meanings, and only the type column tells them
-    apart: "the statute names no figure, the employer sets one" against "the gazetted
-    figure is nil".
+    **Why this check exists, and what changed under it.** BCEA s17(2)(a) requires
+    night work to be compensated and deliberately sets no amount. That used to be
+    recorded as a ZERO with ``night_allowance_type`` of ``by_agreement`` beside it,
+    so zero carried two meanings and only the type column told them apart. Kobus
+    raised it in the first verification pass and the pair was held to be enough
+    (D-113); O-22 later set the deadline for fixing it properly at the start of P7,
+    because the moment a calculator multiplies by that zero it pays nothing.
 
-    Kobus raised exactly this in the first verification pass, marking the zero wrong
-    before agreeing the pair already says it (D-113). Keeping the NUMERIC column was
-    the decision; this is what stops the ambiguity becoming a real underpayment. A
-    row claiming ``percentage`` or ``fixed_amount`` with a value of zero says, to any
-    calculator reading it literally, that night work is compensated at nothing — and
-    that is a row nobody would notice was wrong.
+    The value is now NULL when no figure is stated, and two CHECK constraints hold
+    the pair together in the database. This check is therefore no longer the only
+    thing standing between the ambiguity and an underpayment — but it stays, because
+    a CHECK proves the SHAPE and this proves the CONTENT: a ``percentage`` row is
+    also wrong at a value of zero, which the constraint permits and no employee
+    would ever notice.
 
     BLOCKING, because it is a contradiction rather than a judgement call.
     """
@@ -292,26 +293,27 @@ def check_night_allowance_coherence() -> list[Issue]:
     for rule_set in WorkingTimeRuleSet.objects.select_related("sector").all():
         sector = rule_set.sector.code if rule_set.sector else "BCEA default"
         names_a_figure = rule_set.night_allowance_type in {"percentage", "fixed_amount"}
-        if names_a_figure and rule_set.night_allowance_value == 0:
+        value = rule_set.night_allowance_value
+        if names_a_figure and (value is None or value == 0):
             issues.append(
                 Issue(
                     True,
                     f"working_time_rule_set {sector}",
                     f"has night_allowance_type {rule_set.night_allowance_type!r}, which "
-                    f"promises a figure, and night_allowance_value of zero. A "
+                    f"promises a figure, and night_allowance_value of {value}. A "
                     f"calculator reading that pays nothing for night work. Either the "
                     f"amount is missing, or the type should say the statute sets none.",
                 )
             )
-        if not names_a_figure and rule_set.night_allowance_value != 0:
+        if not names_a_figure and value is not None:
             issues.append(
                 Issue(
                     True,
                     f"working_time_rule_set {sector}",
                     f"has night_allowance_type {rule_set.night_allowance_type!r}, which "
-                    f"names no figure, and a night_allowance_value of "
-                    f"{rule_set.night_allowance_value}. One of the two is wrong, and "
-                    f"the value is the one a calculator will use.",
+                    f"names no figure, and a night_allowance_value of {value}. One of "
+                    f"the two is wrong, and the value is the one a calculator will use. "
+                    f"A type that states no figure carries NULL, never a zero (O-22).",
                 )
             )
     return issues

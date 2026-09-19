@@ -54,6 +54,10 @@ def placeholder_for(field):
     columns, and a hand-written fixture is a list that silently stops covering the
     model the first time a column is added.
     """
+    if field.choices:
+        # A column with choices now also carries a CHECK (the Conventions
+        # table's own rule), so "x" is no longer a value the database accepts.
+        return field.choices[0][0]
     internal = field.get_internal_type()
     if internal in {"DecimalField"}:
         return 1
@@ -253,19 +257,31 @@ def test_a_zero_night_allowance_with_a_percentage_type_is_refused(db, domestic):
 
 
 @pytest.mark.statutory
-def test_by_agreement_with_a_zero_value_is_accepted(db, domestic):
-    """The pair D-113 settled: the type carries the meaning and the zero is a
-    placeholder. Together they are coherent, which is the whole argument for leaving
-    the column as it is."""
+def test_by_agreement_carries_no_figure_at_all_and_a_zero_is_refused(db, domestic):
+    """D-113 settled that the type column carried the meaning and the zero was a
+    placeholder. O-22 reopened it and set the deadline at the start of P7, because
+    the moment a calculator multiplies by that placeholder it pays nothing. The
+    absence of a figure is now NULL, and the database refuses the zero.
+    """
     from statutory import checks
 
     rule_set(
         WorkingTimeRuleSet,
         sector=domestic,
         night_allowance_type="by_agreement",
-        night_allowance_value=Decimal(0),
+        night_allowance_value=None,
     )
     assert checks.check_night_allowance_coherence() == []
+
+    with pytest.raises(IntegrityError) as raised, transaction.atomic():
+        rule_set(
+            WorkingTimeRuleSet,
+            sector=domestic,
+            frm=MARCH_2027,
+            night_allowance_type="by_agreement",
+            night_allowance_value=Decimal(0),
+        )
+    assert "working_time_night_allowance_without_a_figure_is_null" in str(raised.value)
 
 
 @pytest.mark.statutory
@@ -276,14 +292,11 @@ def test_by_agreement_carrying_a_figure_is_refused(db, domestic):
     figure with a real type. A value sitting behind ``by_agreement`` means one column
     was edited and the other was not - and the value is the one that gets used.
     """
-    from statutory import checks
-
-    rule_set(
-        WorkingTimeRuleSet,
-        sector=domestic,
-        night_allowance_type="by_agreement",
-        night_allowance_value=Decimal("10.0000"),
-    )
-    issues = checks.check_night_allowance_coherence()
-    assert [issue for issue in issues if issue.blocking]
-    assert "names no figure" in " ".join(issue.message for issue in issues)
+    with pytest.raises(IntegrityError) as raised, transaction.atomic():
+        rule_set(
+            WorkingTimeRuleSet,
+            sector=domestic,
+            night_allowance_type="by_agreement",
+            night_allowance_value=Decimal("10.0000"),
+        )
+    assert "working_time_night_allowance_without_a_figure_is_null" in str(raised.value)

@@ -9,11 +9,13 @@ because the fallback to the BCEA row is at least visible.
 
 Where a rule set column has no statutory figure behind it, it is loaded as zero with
 a note saying so, never as a plausible-looking number. There are four:
-``night_allowance_value`` (the BCEA requires an allowance but sets no amount - the
-employer does) and the three standby columns (the concept is SD7's; the Act has no
-standby regime). The accommodation cap is NOT one of them any more: it is a pair,
-``accommodation_deduction_capped`` plus a nullable percentage, so "this instrument
-states none" is said outright rather than encoded as a zero (D-198 amended).
+the three standby columns (the concept is SD7's; the Act has no standby regime).
+Two are NOT among them any more, and both became explicit pairs for the same reason.
+The accommodation cap is ``accommodation_deduction_capped`` plus a nullable percentage
+(D-198 amended). The night allowance is ``night_allowance_type`` - now a checked
+enum - plus a nullable value, NULL for ``by_agreement`` and ``time_off`` (O-22): BCEA
+s17(2)(a) requires an allowance and states no amount, and a 0.0000 standing in for
+that would have read as "pay nothing" the moment P7 priced night work.
 
 Three figures here are derivations rather than transcriptions, and each carries a
 note on its row saying so: 15 and 18 working days from the Act's "21 consecutive
@@ -148,7 +150,7 @@ def working_time_rules(
     accommodation_pct=None,
     accommodation_source=None,
     night_allowance_type="by_agreement",
-    night_allowance_value="0.0000",
+    night_allowance_value=None,
     min_paid_hours="4.00",
     extra_notes="",
 ):
@@ -230,7 +232,7 @@ def termination_rules(
 
 
 DOCUMENT = {
-    "version_label": "REF-2026.03.01-RULES-r2",
+    "version_label": "REF-2026.03.01-RULES-r3",
     "applies_from": "2026-03-01",
     "description": (
         "Sector rule sets: the BCEA default and the domestic sector's Sectoral "
@@ -324,7 +326,7 @@ SD1 = (
 SD1_URL = "https://www.acts.co.za/basic/sd1_nr622_3__remuneration.php"
 
 DOCUMENT_SD1 = {
-    "version_label": "REF-2026.03.01-SD1-r2",
+    "version_label": "REF-2026.03.01-SD1-r3",
     "applies_from": "2026-03-01",
     "description": (
         "Contract cleaning sector rule sets from Sectoral Determination 1, clauses 3 "
