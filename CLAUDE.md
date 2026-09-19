@@ -812,7 +812,8 @@ placeholder a week away from being replaced; chunk 3 adds it as a real FK from d
 alongside the table it points at.
 
 **Locking is a trigger, not an application check** (invariant 4), and it is a THIRD
-shape of frozen row after `append_only()` and `lock_system_rows()` — see
+shape of frozen row after `append_only()` and `lock_system_rows()` (a FOURTH,
+`no_change_when_finalised()`, arrived with the payslip in P7 chunk 6 — D-229) — see
 `core/db/rls.py`'s `no_update_when_locked()` (D-151). Unlike a ledger, DELETE stays
 legal: reversing a whole finalised payroll run removes the lock along with everything
 else. `attendance/capture.py` checks first and names the payroll run; the trigger is
@@ -1194,6 +1195,39 @@ termination payment cannot be computed at all.
 **A negative leave balance is surfaced and never netted off** (D-185, now with its own test):
 recovering it is a s34 deduction needing written consent, so the figure reaches the stored
 trace and the total is undiminished.
+
+**P7 chunk 6 — the payslip and year-to-date TABLES** (19 September 2026, D-228 to D-231).
+1 515 tests green. `payroll_run`, `payslip`, `payslip_line` and `ytd_accumulator` exist, all
+four tenant-scoped with `enable_rls()` and picked up by the generated isolation suite (twenty
+new cases). **The RUN is still blocked and is not built**: P2 verification gates COMPUTING a
+payslip, because unverified reference data is invisible to `in_force_on()` — it does not gate
+the tables, their constraints or their triggers, which is the same line P5 and P6 built along.
+Nothing generates a payslip, calculates one, or finalises a run.
+
+**Invariant 4 is a trigger, and a FOURTH shape of frozen row** (D-229).
+`core/db/rls.py::no_change_when_finalised()` refuses UPDATE *and* DELETE once `is_finalised`
+is true. It is none of the other three: a payslip is not append-only (an unfinalised one is
+edited every re-calculation, and a test watches that first), it is not a shared catalogue row,
+and `no_update_when_locked()` keys on a `status` column. DELETE is refused unlike the
+attendance lock, because the reversal of a payslip IS a new payslip and the original has to
+survive to be reversed against.
+
+**Invariant 6 is now a CHECK** (D-230): `amount` must equal `amount_exact` rounded to two
+places, proven rather than trusted. PostgreSQL's `round()` on numeric rounds a tie away from
+zero, which is what `ROUND_HALF_UP` means in Python, so the two agree on negatives too — both
+pinned. **Invariant 7 is frozen TEXT beside the foreign keys**: `component_code` and
+`source_code` on the line, `employee_snapshot` on the payslip. The FK says which catalogue row
+this is; the text says what the line said, and only the second survives a correction.
+
+**`ytd_accumulator` is keyed on the SARS source code**, not the component — three components
+are 3601 and the IRP5 states one figure for it — and has no incremental update path at all
+(D-153 restated). Only finalised payslips count; a reversing payslip does count, because its
+lines are negative and netting them is how a correction reaches the IRP5.
+
+**O-28 raised**: all four tables were designed from the invariants and the existing schema,
+NOT transcribed from sheet 02, which was not available to the session that built them. Every
+earlier table in this build was reconciled against the workbook. These should be, before the
+assembly writes a row.
 
 **P6 — Leave: ALL FIVE CHUNKS BUILT** (18 September 2026). Chunk 5 — maternity, parental
 under Van Wyk and adoption — is in: the two totals as cited reference data, the declaration

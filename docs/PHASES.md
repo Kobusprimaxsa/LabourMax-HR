@@ -448,8 +448,10 @@ wrong the first time.
 
 The one that has to be right.
 
-**Chunks 1 to 5 built** (19 September 2026, D-207 to D-227): the calculator contract, the
-trace, UIF, SDL, PAYE, gross pay, leave pay and the termination payout. **The assembly is BLOCKED and deliberately not started.** Reference data version
+**Chunks 1 to 6 built** (19 September 2026, D-207 to D-231): the calculator contract, the
+trace, UIF, SDL, PAYE, gross pay, leave pay, the termination payout, and the payslip and
+year-to-date TABLES. **The run that would populate them is still blocked** — that is what P2
+verification gates, and it has not moved: 0 of 21 reference data versions are verified. **The assembly is BLOCKED and deliberately not started.** Reference data version
 REF-2026.03.01 is loaded and reconciles but is NOT verified, so `in_force_on()` cannot see it
 and no payroll run can start — periods, runs and payslips all read effective-dated rows.
 Calculators are not blocked by that, because a pure function takes its statutory figures as
@@ -469,6 +471,8 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       a boolean input and there is nowhere to hand it a payroll history
 - [ ] `pay_period` generation and lifecycle — ASSEMBLY, blocked on P2 verification
 - [ ] `payroll_run` state machine: draft → calculating → calculated → approved → finalised
+      — the TABLE is built (chunk 6); the TRANSITIONS are assembly and are not. A test
+      asserts the CHECK does not police them, so nobody reads it as though it did
 - [x] Gross pay calculators, one per pay basis — CHUNK 3 (D-216 to D-219). ONE calculator,
       because BCEA ss 10, 16 and 18 each state a TOTAL for the day: the premium is that total
       less what the basic already paid, and what the basic covers is a fact about the basis.
@@ -495,8 +499,15 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       formula, SD1 clause 23(1)(d) turned out not to conflict with s38 at all, and BCEA
       s84(1) turned out not to be implemented anywhere (O-26)
 - [ ] `annual_bonus_cycle` accruing monthly
-- [ ] `payslip`, `payslip_line` with SARS source codes and employee snapshot
-- [ ] `ytd_accumulator`, rebuildable from finalised payslips
+- [x] `payslip`, `payslip_line` with SARS source codes and employee snapshot — CHUNK 6
+      (D-228 to D-231). The TABLES, with every guard on them: invariant 4 by trigger,
+      invariant 6 as a CHECK that the rounded amount IS the exact one rounded, invariant 7
+      as frozen text beside the foreign keys. Nothing generates or finalises one — that is
+      the run, and the run is blocked
+- [x] `ytd_accumulator`, rebuildable from finalised payslips — CHUNK 6 (D-231). Keyed on
+      the SARS source code, rebuilt from scratch every time with no incremental path
+      (D-153's lesson), and checked by a ground truth that never reads the cache's own
+      bookkeeping
 - [ ] `payroll_validation_issue` and the approval gate
 - [ ] Golden-file tests against every published SARS and DEL worked example
 - [ ] Property-based invariants: balance equals ledger, net never negative, UIF never over ceiling
