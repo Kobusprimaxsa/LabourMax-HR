@@ -17,7 +17,7 @@ from core.managers import platform_context, tenant_context
 from core.models import Tenant
 from employees.engagements import MINIMUM_AGE_PARAMETER, engage
 from employees.identity import luhn_check_digit
-from employees.models import Employee
+from employees.models import Employee, EmployeeRemuneration
 from employers.models import Employer, PayGroup, PayrollComponent
 from payroll.models import PayPeriod, PayrollRun, Payslip, PayslipLine
 from statutory.models import Sector, StatutoryParameter, TaxYear
@@ -66,7 +66,20 @@ def household(db) -> dict:
             pay_frequency=PayGroup.PayFrequency.MONTHLY,
             first_period_start=datetime.date(2026, 3, 1),
         )
-    engage(employee, start_date=datetime.date(2026, 3, 1), job_title="Domestic worker")
+    engagement = engage(employee, start_date=datetime.date(2026, 3, 1), job_title="Domestic worker")
+    with tenant_context(tenant.pk):
+        EmployeeRemuneration.objects.create(
+            tenant=tenant,
+            employee=employee,
+            engagement=engagement,
+            pay_group=pay_group,
+            pay_basis=EmployeeRemuneration.PayBasis.MONTHLY,
+            rate_amount=Decimal("5000.0000"),
+            derived_hourly_rate=Decimal("25.641026"),
+            derived_daily_rate=Decimal("230.769231"),
+            derived_monthly_rate=Decimal("5000.000000"),
+            effective_from=datetime.date(2026, 3, 1),
+        )
     return {"tenant": tenant, "employer": employer, "employee": employee, "pay_group": pay_group}
 
 
