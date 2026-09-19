@@ -17,13 +17,18 @@ from core.managers import tenant_context_of
 from payroll.models import PayrollCalculationTrace
 
 
-def record(employee, trace: CalculationTrace, *, payslip_id_ref: int | None = None):
-    """Persist one calculator's trace against one employee."""
+def record(employee, trace: CalculationTrace, *, payslip=None):
+    """Persist one calculator's trace against one employee.
+
+    ``payslip`` is None for a calculation run outside a payslip — every test
+    here, and any what-if a screen runs. It became a real foreign key when the
+    payslip table was built (D-208 said it would).
+    """
     with transaction.atomic(), tenant_context_of(employee):
         return PayrollCalculationTrace.objects.create(
             tenant=employee.tenant,
             employee=employee,
-            payslip_id_ref=payslip_id_ref,
+            payslip=payslip,
             calculator=trace.calculator,
             calculated_for=trace.calculated_for,
             inputs=dict(trace.inputs),
