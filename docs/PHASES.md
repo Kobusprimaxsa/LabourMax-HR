@@ -109,7 +109,13 @@ The most important phase in the build. Can overlap P1.
 - [ ] **Kobus verifies every figure against its source**, then `verifystatutory`
 - [x] Rule sets, BCEA default and domestic (SD7): `reference/ref-2026.03.01-rules.json`
 - [x] Contract cleaning rule sets from SD1: `reference/ref-2026.03.01-sd1.json` (D-67)
-- [ ] Contract cleaning Area C (KwaZulu-Natal): the BCCCI collective agreement (D-63)
+- [x] Contract cleaning **Area B** (KwaZulu-Natal): the BCCCI Main Collective Agreement,
+      GN R.7296 in GG 54412, 27 March 2026 — loaded 19 Sep 2026 as its own version
+      `ref-2026.04.01-bccci.json` (D-237). Three wage rates including the system's first
+      FUTURE-DATED rows, and clause 3's 4,33 monthly factor scoped to the area (D-236).
+      Area B resolution now REFUSES rather than falling back to the NMW (D-238).
+      **Still open: the predecessor agreement covering 1–31 March 2026 (O-30).**
+      (The heading said Area C; D-118 corrected the lettering and Area B is KwaZulu-Natal)
 - [x] `sars_source_code` — 19 codes with cited base flags (D-69, D-70, D-71)
 - [x] The bank list and branch codes — 25 banks, lengths deliberately unloaded (D-72, D-73)
 - [x] Source codes 3901 and 3907 from SARS PAYE-AE-06-G06, closing the severance gap (D-114)

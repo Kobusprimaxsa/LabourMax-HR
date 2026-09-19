@@ -603,9 +603,14 @@ And unlike `PayGroup.clean()`, the age check **refuses** when the figure is not 
 (D-101): there is no staleness guard behind it, and the failure is an offence under
 s43(3) rather than a wrong number on a payslip.
 
-**Rate derivation has exactly one statutory constant** — BCEA s35's four and one-third,
-in `statutory_parameter` and handed into `employees/rates.py` rather than known by it
-(D-104). **Weekly is the hub**: every basis converts to weekly first and hourly and daily
+**Rate derivation's statutory constant is RESOLVED, not global** — there are two, and which
+applies is a fact about the instrument governing the employee (D-236). BCEA s35(3)'s four and
+one-third is the unscoped row; the BCCCI Main Agreement's clause 3 makes it **4,33** for
+KwaZulu-Natal contract cleaning, loaded scoped to that sector and area. `statutory_parameter`
+carries nullable `sector`/`sector_area` and `resolve.parameter()` narrows most-specific-first,
+so every unscoped caller lands where it always did. **D-104 still holds in the part that
+matters**: `employees/rates.py` knows no figure at all — it is handed one, now looked up on the
+employer's sector and the workplace's area (D-239). **Weekly is the hub**: every basis converts to weekly first and hourly and daily
 both come off it, because deriving daily as hourly × `hours_per_day` disagrees with
 weekly ÷ `days_per_week` whenever the two do not reconcile — and the employee would be
 paid one figure for a day of leave and another for a day of work (D-106). The three
@@ -1046,10 +1051,14 @@ record, and those two roles are what collide.
 **What remains in P2:**
 
 - Kobus verifies every figure against its source document, then `verifystatutory`
-- Contract cleaning **Area B (KwaZulu-Natal)** has no rate: the gazette states none and points
-  at the BCCCI collective agreement, which nobody has. A KwaZulu-Natal contract cleaning
-  employer cannot be onboarded until it is loaded. (Area B, not Area C — D-61 had the
-  lettering the wrong way round, and D-118 corrected it)
+- ~~Contract cleaning Area B has no rate~~ **CLOSED 19 Sep 2026 (D-237).** The BCCCI Main
+  Collective Agreement (GN R.7296, GG 54412, 27 March 2026) is loaded as
+  `reference/ref-2026.04.01-bccci.json`: R32,40 from 1 April 2026, R34,02 from 1 March 2027,
+  R35,72 from 1 March 2028. **A KwaZulu-Natal contract cleaning employer can now be
+  onboarded.** What is still missing is the PREDECESSOR agreement covering 1–31 March 2026
+  (O-30) — the resolver refuses that period by name rather than answering the National
+  Minimum Wage (D-238). (Area B, not Area C — D-61 had the lettering the wrong way round,
+  and D-118 corrected it)
 - Account number lengths per bank (D-72). NULL today; they come from the banks or from the
   EFT specification the payment partner supplies, and a guessed bound stops someone being paid
 - The golden tests, which are what finally allows `golden_tests_passed`
