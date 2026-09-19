@@ -278,3 +278,76 @@ def test_two_workplaces_of_one_employer_cannot_share_a_name(tenant, cleaning):
 
     with pytest.raises(IntegrityError), transaction.atomic(), tenant_context(tenant.pk):
         Workplace.objects.create(tenant=tenant, employer=employer, name="Site One")
+
+
+# ------------------------------- BCCCI clause 4.5(g): three minimums, elected
+
+
+@pytest.mark.django_db
+def test_the_three_bonus_elections_default_to_the_gazetted_position(tenant, cleaning):
+    """BCCCI clause 4.5(g) makes 4.5(c)(ii), 4.5(d) and 4.5(f) MINIMUMS the
+    employer may improve on (D-242). An election defaults to what the gazette
+    says, so an employer who never touches it is paid exactly the agreement."""
+    company = make_employer(tenant, cleaning)
+    with tenant_context(tenant.pk):
+        seed_settings_for(company)
+
+        assert setting_value(company, "BONUS_PART_MONTH_EARNS_NOTHING") is True
+        assert setting_value(company, "BONUS_RATE_BASIS") == "prevailing_each_month"
+        assert setting_value(company, "BONUS_CASUALS_QUALIFY") is False
+
+
+@pytest.mark.django_db
+def test_each_bonus_election_can_be_moved_in_the_improving_direction(tenant, cleaning):
+    """The whole point of 4.5(g). All three are stored elections, not literals,
+    so an employer who pays better than the agreement can say so."""
+    company = make_employer(tenant, cleaning)
+    with tenant_context(tenant.pk):
+        seed_settings_for(company)
+        for key, column, better in (
+            ("BONUS_PART_MONTH_EARNS_NOTHING", "value_boolean", False),
+            ("BONUS_RATE_BASIS", "value_text", "rate_at_payment"),
+            ("BONUS_CASUALS_QUALIFY", "value_boolean", True),
+        ):
+            row = EmployerSetting.objects.get(employer=company, setting_key=key)
+            setattr(row, column, better)
+            row.set_by_employer = True
+            row.save()
+
+        assert setting_value(company, "BONUS_PART_MONTH_EARNS_NOTHING") is False
+        assert setting_value(company, "BONUS_RATE_BASIS") == "rate_at_payment"
+        assert setting_value(company, "BONUS_CASUALS_QUALIFY") is True
+
+
+@pytest.mark.django_db
+def test_the_bonus_rate_basis_refuses_a_value_outside_its_two_readings(tenant, cleaning):
+    """A third reading of 4.5(d) does not exist, and a typo must not resolve to
+    the default silently - that would pay the gazetted figure while the screen
+    said otherwise."""
+    from employers.onboarding import SettingValueError
+
+    company = make_employer(tenant, cleaning)
+    with tenant_context(tenant.pk):
+        seed_settings_for(company)
+        row = EmployerSetting.objects.get(employer=company, setting_key="BONUS_RATE_BASIS")
+        row.value_text = "december_rate"
+        row.save()
+
+        with pytest.raises(SettingValueError) as raised:
+            setting_value(company, "BONUS_RATE_BASIS")
+
+    assert "december_rate" in str(raised.value)
+
+
+@pytest.mark.django_db
+def test_no_bonus_election_carries_a_statutory_figure(tenant, cleaning):
+    """4,33 is clause 4.5(a) and lives in termination_rule_set with its citation.
+    An election says WHICH rule applies, never what the multiplier is - the
+    moment one of these holds a number, the no-hard-coded-rate rule has been
+    routed around through the settings table."""
+    from employers.onboarding import BY_KEY
+
+    for key in ("BONUS_PART_MONTH_EARNS_NOTHING", "BONUS_RATE_BASIS", "BONUS_CASUALS_QUALIFY"):
+        definition = BY_KEY[key]
+        assert definition.value_type != EmployerSetting.ValueType.NUMERIC, key
+        assert not isinstance(definition.default, Decimal), key

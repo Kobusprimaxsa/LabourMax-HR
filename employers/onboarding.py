@@ -136,6 +136,64 @@ SETTING_DEFINITIONS: list[SettingDefinition] = [
         ),
         default=False,
     ),
+    # ------------------------------------------------------------------
+    # BCCCI clause 4.5(g): three of clause 4.5's own rules are MINIMUMS the
+    # employer may improve on, not fixed rules (D-242). Each one is therefore
+    # an election, defaulting to the gazetted position, the same shape
+    # SICK_FIRST_CYCLE_REDUCTION uses for BCEA s22(4)'s "may". Hard-coding any
+    # of the three would make a discretion the agreement expressly grants
+    # unreachable, and the employer who already pays the better figure would
+    # have to be talked out of it by their payroll system.
+    #
+    # Read only when pricing the December bonus for contract cleaning Area B.
+    # They are seeded for every employer because the registry has no area
+    # scope and a setting nobody reads costs nothing; what it must never do is
+    # change a figure for a sector whose instrument does not grant the
+    # discretion, which is why each default IS the gazetted position.
+    SettingDefinition(
+        key="BONUS_PART_MONTH_EARNS_NOTHING",
+        value_type=EmployerSetting.ValueType.BOOLEAN,
+        description=(
+            "BCCCI clause 4.5(c)(ii), subject to 4.5(g). TRUE (the gazetted position "
+            "and the default): an employee engaged after the 1st of a month attracts "
+            "the pro-rata penalty for that month - it is not a full calendar month of "
+            "service and does not count towards the twelve. FALSE: the employer has "
+            "elected to treat 4.5(c)(ii) as a minimum and counts the part month in "
+            "full. Never the other way round - 4.5(g) permits improving on the clause, "
+            "never worsening it."
+        ),
+        default=True,
+    ),
+    SettingDefinition(
+        key="BONUS_RATE_BASIS",
+        value_type=EmployerSetting.ValueType.TEXT,
+        description=(
+            "BCCCI clause 4.5(d), subject to 4.5(g). Which wage the December bonus is "
+            "calculated on. 'prevailing_each_month' (the gazetted position and the "
+            "default): the rate prevailing for each month actually worked in that "
+            "calendar year, so a mid-year increase splits the calculation. "
+            "'rate_at_payment': the employer has elected to treat 4.5(d) as a minimum "
+            "and pays the whole bonus at the December rate. Because a wage may not be "
+            "reduced, the December rate is always at least every earlier rate, so this "
+            "election can only ever pay more - which is what makes it available under "
+            "4.5(g) at all."
+        ),
+        default="prevailing_each_month",
+        choices=("prevailing_each_month", "rate_at_payment"),
+    ),
+    SettingDefinition(
+        key="BONUS_CASUALS_QUALIFY",
+        value_type=EmployerSetting.ValueType.BOOLEAN,
+        description=(
+            "BCCCI clause 4.5(f), subject to 4.5(g). FALSE (the gazetted position and "
+            "the default): a casual employee - clause 3, not more than three days a "
+            "week - does not qualify for the December bonus. TRUE: the employer has "
+            "elected to treat 4.5(f) as a minimum and pays casuals on the same 4,33 "
+            "formula. An election, not a rate: the 4,33 stays in termination_rule_set "
+            "with its citation either way."
+        ),
+        default=False,
+    ),
     SettingDefinition(
         key="GROUP_HEADER_MINIMUM",
         value_type=EmployerSetting.ValueType.NUMERIC,
