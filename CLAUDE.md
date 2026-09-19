@@ -1048,6 +1048,42 @@ audit record of what a real payslip was computed against. Recorded as O-21, befo
 before any deployment — the fixture files currently serve as both build input and audit
 record, and those two roles are what collide.
 
+**P2 — the BCCCI Main Agreement, chunk B: Area B's rule set** (19 September 2026,
+D-240 to D-246). 1,617 tests green. A rule set is now scoped to a sector **and an
+area**, because the agreement binds contract cleaning in KwaZulu-Natal only while SD1
+still governs Areas A and C of the same sector — one sector, two instruments, which is
+a scope and not a second sector (D-240). Three things came out of it that outlive the
+load.
+
+**Clause 21.1(b) cannot be resolved, and the system says so instead of guessing**
+(D-241). It gives two answers between four weeks and six months: two weeks after the
+first four weeks, and one week while on probation, which clause 3 caps at four months —
+so both reach the same employee, and clause 21.2(a) prices only the one working day and
+the two weeks, giving no payment in lieu for the one-week probation notice. A notice
+band may therefore be CONTESTED: `notice_value` nullable, paired with `is_contested` and
+a mandatory `contested_reason`, two CHECKs holding them together, and
+`resolve.notice_band()` raising with both limbs quoted. **Notice is symmetric** (D-158),
+so "take the longer as safer" is not available — over-stating it holds a resigning
+employee longer than the law permits. This is a BLOCKER on O-06, not a confirmation.
+
+**BCEA s49 does part of the design work.** s49(1)(d) and (e) forbid a bargaining council
+agreement from reducing the s25 maternity entitlement or the ss22–24 sick leave
+entitlement, so clause 13.3's twelve-week return cap and clause 10.3(a)(i)'s one-day
+certificate rule are void to that extent and are not loaded — the certificate threshold
+stays at 2 for Area B, and `test_a_kzn_employee_absent_two_consecutive_days_needs_no_certificate`
+is named so it says why. Two benefits in the same clause ADD rather than reduce, so s49
+does not reach them and they ARE loaded: clause 13.2's prenatal clinic day and clause
+13.4(a)'s payment on return, the latter **stored as a divisor and never as 0,333333**,
+because a third of R9 000 is R3 000 exactly (D-244).
+
+**Clause 4.5(g) makes three of its own rules minimums, so they are employer elections**
+(D-242), defaulting to the gazetted position, the same shape as
+`SICK_FIRST_CYCLE_REDUCTION`. And clause 9.1(b)'s 28 days for more than ten years' service
+is the first service-dependent annual leave entitlement here: four new `leave_rule_set`
+columns behind a NOT NULL boolean with **no default**, D-198's own shape, which promptly
+failed the leave app's test fixture on the next run because that fixture had never been
+asked the question (D-243).
+
 **What remains in P2:**
 
 - Kobus verifies every figure against its source document, then `verifystatutory`

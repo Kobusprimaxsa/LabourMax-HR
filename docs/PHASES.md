@@ -116,6 +116,21 @@ The most important phase in the build. Can overlap P1.
       Area B resolution now REFUSES rather than falling back to the NMW (D-238).
       **Still open: the predecessor agreement covering 1–31 March 2026 (O-30).**
       (The heading said Area C; D-118 corrected the lettering and Area B is KwaZulu-Natal)
+- [x] Area B's **rule sets** from the same agreement: `ref-2026.04.01-bccci-rules.json` and
+      `ref-2026.04.01-bccci-notice.json`, loaded 19 Sep 2026. A rule set is now scoped to a
+      sector AND an area (D-240) — SD1 still governs Areas A and C of the same sector, so
+      loading the agreement sector-wide would have applied KwaZulu-Natal's terms to a Cape
+      Town cleaner. Clause 11 reproduces BCEA s16 and s18, so Area B prices identically and
+      `calculators/gross.py` needed no new code. Clause 9.1(b)'s 28-day long-service band
+      brought four new `leave_rule_set` columns and `resolve.annual_leave_days()` (D-243).
+      **Clause 21.1(b)'s four-weeks-to-six-months notice window REFUSES** — two limbs, two
+      answers, nothing resolves them (D-241), and it is a BLOCKER on O-06.
+- [x] The two ADDITIVE maternity benefits, cl 13.2 and cl 13.4(a):
+      `ref-2026.04.01-bccci-maternity.json` (D-244). The rest of clause 13, and cl
+      10.3(a)(i)'s one-day sick certificate rule, are VOID under BCEA s49(1)(d) and (e) and
+      are deliberately not loaded.
+- [ ] Three KwaZulu-Natal-only payroll lines and four KwaZulu-Natal-only leave types are
+      RECORDED and not built (O-31)
 - [x] `sars_source_code` — 19 codes with cited base flags (D-69, D-70, D-71)
 - [x] The bank list and branch codes — 25 banks, lengths deliberately unloaded (D-72, D-73)
 - [x] Source codes 3901 and 3907 from SARS PAYE-AE-06-G06, closing the severance gap (D-114)
