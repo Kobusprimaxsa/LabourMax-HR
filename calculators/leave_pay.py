@@ -74,43 +74,38 @@ from calculators.base import (
     CalculationTrace,
     Money,
     PayslipLine,
-    StatutoryFigure,
     as_text,
     rows_of,
 )
+from calculators.remuneration import (
+    AveragingWindow,
+    RemunerationRefusedError,
+    section_35_rates,
+)
+
+#: Re-exported: an ``AveragingWindow`` is s35(4)'s, not leave pay's, and the two
+#: other payments it governs (s38 notice, s41 severance) read it from the same
+#: place. Kept importable from here because leave pay is where it first landed.
+__all__ = [
+    "AveragingWindow",
+    "LeavePayInput",
+    "LeavePayRefusedError",
+    "LeavePayResult",
+    "leave_pay",
+]
 
 CALCULATOR = "leave_pay.leave_pay"
 
 COMPONENT = "LEAVE_PAY"
 
 
-class LeavePayRefusedError(ValueError):
-    """The leave cannot be priced, and guessing would be worse."""
+class LeavePayRefusedError(RemunerationRefusedError):
+    """The leave cannot be priced, and guessing would be worse.
 
-
-@dataclasses.dataclass(frozen=True)
-class AveragingWindow:
-    """s35(4)'s window, and how much of it this employee actually has.
-
-    ``weeks`` is the statutory figure — 13 — carrying the key of the row it came
-    from. ``weeks_available`` is s35(4)(b): an employee in employment for a
-    shorter period is averaged over that shorter period instead, so it is the
-    lesser of the two and the caller works it out from the engagement.
+    Subclasses the s35 refusal rather than sitting beside it: every way the rate
+    itself can fail is also a way this calculation fails, and a caller should
+    not have to catch two exceptions to find that out.
     """
-
-    weeks: StatutoryFigure
-    weeks_available: Decimal
-    #: Total s35(5) remuneration over ``weeks_available``, already filtered to
-    #: the components whose ``affects_leave_pay_average`` is true.
-    remuneration: Decimal
-
-    @property
-    def table(self) -> str:
-        return self.weeks.table
-
-    @property
-    def row_id(self) -> int:
-        return self.weeks.row_id
 
 
 @dataclasses.dataclass(frozen=True)
@@ -164,85 +159,33 @@ def _refuse_an_unpriceable_quantity(data: LeavePayInput) -> Decimal:
     return data.leave_days or data.leave_hours
 
 
-def _average_weekly(data: LeavePayInput) -> Decimal:
-    window = data.window
-    if window is None:
-        raise LeavePayRefusedError(
-            "This employee's remuneration is variable, so s35(4) requires the payment to "
-            "be calculated by reference to the preceding weeks' remuneration, and no "
-            "averaging window was supplied. There is no ordinary rate to fall back to: "
-            "falling back is what s35(4) exists to prevent."
-        )
-    if window.weeks_available <= ZERO:
-        raise LeavePayRefusedError(
-            f"The averaging window is {window.weeks_available} weeks. s35(4)(b) shortens "
-            f"it to the period of employment where that is shorter, but an employee with "
-            f"no employment behind them has no remuneration to average."
-        )
-    if window.weeks_available > window.weeks.value:
-        raise LeavePayRefusedError(
-            f"The averaging window is {window.weeks_available} weeks and s35(4)(a) gives "
-            f"{window.weeks.value}. Averaging over longer than the Act allows reaches back "
-            f"past the period it names."
-        )
-    if window.remuneration < ZERO:
-        raise LeavePayRefusedError(
-            f"Remuneration over the averaging window is {window.remuneration}. A negative "
-            f"total is a capture error upstream, not a rate."
-        )
-    return window.remuneration / window.weeks_available
-
-
-def _rate_from_weekly(weekly: Decimal, per_week: Decimal, unit: str) -> Decimal:
-    if per_week <= ZERO:
-        raise LeavePayRefusedError(
-            f"The weekly average is {weekly} and the employee works {per_week} {unit} a "
-            f"week, so there is nothing to divide by. Weekly is the hub every other rate "
-            f"comes off (D-106), and the pattern is on the employee's own work schedule."
-        )
-    return weekly / per_week
-
-
 def leave_pay(data: LeavePayInput) -> LeavePayResult:
     """What one period of leave is worth."""
     warnings: list[str] = []
     quantity = _refuse_an_unpriceable_quantity(data)
     in_days = bool(data.leave_days)
 
-    average_weekly: Decimal | None = None
-    if data.remuneration_is_variable:
-        average_weekly = _average_weekly(data)
-        rate = (
-            _rate_from_weekly(average_weekly, data.days_per_week, "days")
-            if in_days
-            else _rate_from_weekly(average_weekly, data.hours_per_week, "hours")
+    rates = section_35_rates(
+        contractual_weekly=ZERO,
+        contractual_daily=data.daily_rate,
+        contractual_hourly=data.hourly_rate,
+        remuneration_is_variable=data.remuneration_is_variable,
+        window=data.window,
+        days_per_week=data.days_per_week,
+        hours_per_week=data.hours_per_week,
+    )
+    average_weekly = rates.average_weekly
+    rate = rates.per_day() if in_days else rates.per_hour()
+    warnings.extend(
+        warning for warning in rates.warnings if f"per {'day' if in_days else 'hour'}" in warning
+    )
+
+    if not data.remuneration_is_variable and rate <= ZERO:
+        raise LeavePayRefusedError(
+            f"The employee's {'daily' if in_days else 'hourly'} rate is {rate}. Leave "
+            f"pay is the remuneration the employee would have received for working "
+            f"that period (s21(1)), and there is no rate to pay it at."
         )
-        contractual = data.daily_rate if in_days else data.hourly_rate
-        # Compared at the working precision, not raw: the contractual rate is
-        # already stored quantized to six places (employee_remuneration's own
-        # columns), and an unrounded average that agrees with it to the last
-        # place is not "below" it. Comparing raw warns on every hourly employee
-        # whose rate does not divide evenly.
-        if contractual and Money.of(rate).exact < Money.of(contractual).exact:
-            # s21(1) says "at least equivalent to", and (a) and (b) together say
-            # how the figure is reached — (b) governs how (a)'s rate is found. So
-            # this is NOT floored at the contractual rate: that would invent an
-            # entitlement. It is said out loud instead.
-            warnings.append(
-                f"The s35(4) average of {rate} per {'day' if in_days else 'hour'} is below "
-                f"the contractual rate of {contractual}. That is what averaging a "
-                f"fluctuating wage over the preceding "
-                f"{data.window.weeks_available} week(s) produced; s21(1)(b) makes s35 the "
-                f"calculation, so it is not topped up here. Check the window."
-            )
-    else:
-        rate = data.daily_rate if in_days else data.hourly_rate
-        if rate <= ZERO:
-            raise LeavePayRefusedError(
-                f"The employee's {'daily' if in_days else 'hourly'} rate is {rate}. Leave "
-                f"pay is the remuneration the employee would have received for working "
-                f"that period (s21(1)), and there is no rate to pay it at."
-            )
 
     amount = Money.of(quantity * rate)
     line = PayslipLine(

@@ -13,6 +13,7 @@ from calculators.leave_pay import (
     LeavePayRefusedError,
     leave_pay,
 )
+from calculators.remuneration import RemunerationRefusedError
 from calculators.tests.test_leave_pay_golden import (
     DAILY,
     DAYS_PER_WEEK,
@@ -20,6 +21,14 @@ from calculators.tests.test_leave_pay_golden import (
     a_window,
     an_input,
 )
+
+
+def test_the_leave_refusal_is_catchable_as_the_section_35_one():
+    """``LeavePayRefusedError`` subclasses ``RemunerationRefusedError``: every
+    way the rate itself can fail is also a way this calculation fails, and a
+    caller should not have to catch two exceptions to find that out."""
+    assert issubclass(LeavePayRefusedError, RemunerationRefusedError)
+
 
 # ------------------------------------------------------------- the unit rule
 
@@ -59,12 +68,12 @@ def test_variable_remuneration_with_no_window_is_refused_not_quietly_flat_rated(
     """Falling back to the contractual rate is exactly what s35(4) exists to
     prevent — the fallback would look right on the payslip and be the wrong
     figure for every commission earner."""
-    with pytest.raises(LeavePayRefusedError, match="no averaging window was supplied"):
+    with pytest.raises(RemunerationRefusedError, match="no averaging window was supplied"):
         leave_pay(an_input(leave_days=Decimal("5"), remuneration_is_variable=True))
 
 
 def test_an_empty_window_is_refused():
-    with pytest.raises(LeavePayRefusedError, match="no remuneration to average"):
+    with pytest.raises(RemunerationRefusedError, match="no remuneration to average"):
         leave_pay(
             an_input(
                 leave_days=Decimal("5"),
@@ -78,7 +87,7 @@ def test_a_window_longer_than_the_act_allows_is_refused():
     """s35(4)(a) names thirteen weeks. Reaching back further is reaching past
     the period the Act names, and it would flatter or depress the average
     depending on what happened to be there."""
-    with pytest.raises(LeavePayRefusedError, match="Averaging over longer than the Act allows"):
+    with pytest.raises(RemunerationRefusedError, match="Averaging over longer than the Act allows"):
         leave_pay(
             an_input(
                 leave_days=Decimal("5"),
@@ -102,7 +111,7 @@ def test_a_window_of_exactly_the_statutory_length_is_allowed():
 
 
 def test_negative_remuneration_in_the_window_is_refused():
-    with pytest.raises(LeavePayRefusedError, match="not a rate"):
+    with pytest.raises(RemunerationRefusedError, match="not a rate"):
         leave_pay(
             an_input(
                 leave_days=Decimal("5"),
@@ -120,7 +129,7 @@ def test_negative_remuneration_in_the_window_is_refused():
     ],
 )
 def test_a_weekly_average_with_no_working_pattern_to_divide_by_is_refused(field, unit, days, hours):
-    with pytest.raises(LeavePayRefusedError, match="nothing to divide by") as raised:
+    with pytest.raises(RemunerationRefusedError, match="nothing to divide by") as raised:
         leave_pay(
             an_input(
                 leave_days=days,
@@ -131,7 +140,7 @@ def test_a_weekly_average_with_no_working_pattern_to_divide_by_is_refused(field,
             )
         )
 
-    assert f"0 {unit} a week" in str(raised.value)
+    assert f"carries no {unit} per week" in str(raised.value)
 
 
 def test_the_window_carries_its_own_row_key_for_the_trace():
