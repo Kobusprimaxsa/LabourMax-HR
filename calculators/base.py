@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import typing
 from collections.abc import Mapping, Sequence
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -37,6 +38,22 @@ EXACT = Decimal("0.000001")
 CENTS = Decimal("0.01")
 
 ZERO = Decimal("0")
+
+
+class Sourced(typing.Protocol):
+    """Anything carrying the key of the reference row it came from.
+
+    ``StatutoryFigure`` is the usual case: one figure, one row. But a PAYE
+    bracket is four numbers off ONE row — a lower bound, an upper bound, a
+    cumulative base and a marginal rate — and splitting it into four
+    ``StatutoryFigure``s repeating the same key four times makes the caller's
+    code unreadable without recording anything more. So provenance is a
+    protocol: ``rows_of()`` takes anything that can say which row it came from,
+    and a multi-column structure carries the pair once.
+    """
+
+    table: str
+    row_id: int
 
 
 @dataclasses.dataclass(frozen=True)
@@ -105,7 +122,7 @@ class CalculationTrace:
     warnings: Sequence[str] = ()
 
 
-def rows_of(*figures: StatutoryFigure) -> tuple[tuple[str, int], ...]:
+def rows_of(*figures: Sourced) -> tuple[tuple[str, int], ...]:
     """The provenance pairs of every figure handed in, de-duplicated, ordered."""
     seen = {(figure.table, figure.row_id) for figure in figures}
     return tuple(sorted(seen))

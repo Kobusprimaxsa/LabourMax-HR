@@ -77,6 +77,14 @@ DJANGO_SCAFFOLDING = {"apps.py", "admin.py", "models.py", "__init__.py"}
 # half day and a whole day, sheet 02's own literal shape for the minimum increment on
 # a salaried basis. Nobody gazettes what fraction a half is; it is definitional, the
 # same class of fact as "1" and "100" above, just carried at the column's own 3 dp.
+#
+# "12" (calculators/paye.py) is twelve months in a year. The medical scheme fees tax
+# credit is gazetted as a MONTHLY figure (s6A(2)) and the annual credit is twelve of
+# them, whatever the pay frequency. Same class as "60" above: a fact about the
+# calendar, identical under every gazette. It is the one entry here whose value could
+# plausibly also be a rate, so it is named for the calendar and nothing else — a
+# twelve-month THRESHOLD (the SDL look-forward, a leave cycle) is a statutory figure
+# and belongs in a row, not here.
 PERMITTED_DECIMAL_CONSTANTS = {
     "0",
     "0.000001",
@@ -88,6 +96,7 @@ PERMITTED_DECIMAL_CONSTANTS = {
     "1",
     "1.00",
     "1.000",
+    "12",
     "60",
     "100",
     "100.00",
