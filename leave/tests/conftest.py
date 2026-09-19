@@ -110,6 +110,10 @@ def leave_rules(db):
         annual_leave_cycle_months=12,
         annual_leave_forfeit_months=6,
         annual_leave_payable_on_termination=True,
+        # The BCEA states no long-service annual leave band. Said explicitly
+        # because the column has no default and a row that does not say fails
+        # (D-243) - which is how this fixture found out it had to say.
+        has_long_service_annual_leave=False,
         sick_leave_cycle_months=36,
         sick_leave_weeks_equivalent=Decimal("6"),
         sick_leave_first_six_months_ratio=26,

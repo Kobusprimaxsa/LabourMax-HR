@@ -1173,6 +1173,42 @@ class LeaveRuleSet(SectorRuleSet):
     )
     annual_leave_payable_on_termination = models.BooleanField()
 
+    # BCCCI clause 9.1(b) is the first instrument here that gives a LONGER annual
+    # leave entitlement for long service: 28 consecutive days for more than ten
+    # years, against 21 for everyone else (D-243). Four columns, paired with a
+    # NOT NULL boolean carrying NO DEFAULT, the same shape D-198 settled for the
+    # accommodation cap and for the same reason - a rule set row whose author
+    # never considered a long-service band must FAIL, not quietly read as though
+    # the instrument had been checked and found silent.
+    has_long_service_annual_leave = models.BooleanField(
+        help_text=(
+            "Does this instrument give a longer annual leave entitlement for long "
+            "service? FALSE means the instrument states none (the BCEA, SD1 and SD7), "
+            "not that long service earns nothing. No default: a row that does not say "
+            "fails."
+        )
+    )
+    long_service_annual_leave_years = models.SmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Years of service the longer entitlement is stated against.",
+    )
+    # D-158: which side of the boundary is DATA, read off the clause's own
+    # wording, never a convention applied to every boundary alike. "MORE THAN ten
+    # years" puts ten years exactly in the LOWER band, so this is FALSE for the
+    # BCCCI. An instrument saying "ten years or more" would load TRUE.
+    long_service_years_inclusive = models.BooleanField(
+        null=True,
+        blank=True,
+        help_text="Does the stated year count itself fall in the LONGER band?",
+    )
+    long_service_annual_leave_days_5day = models.DecimalField(
+        max_digits=6, decimal_places=3, null=True, blank=True
+    )
+    long_service_annual_leave_days_6day = models.DecimalField(
+        max_digits=6, decimal_places=3, null=True, blank=True
+    )
+
     sick_leave_cycle_months = models.SmallIntegerField()
     sick_leave_weeks_equivalent = models.DecimalField(
         max_digits=5,
@@ -1226,6 +1262,28 @@ class LeaveRuleSet(SectorRuleSet):
             effective_range_ordered("leave_rule_set"),
             source_reference_not_blank("leave_rule_set"),
             rule_set_no_overlap("leave_rule_set"),
+            # Both directions over the nullable columns, because a CHECK that
+            # evaluates to NULL counts as SATISFIED (D-170).
+            models.CheckConstraint(
+                condition=models.Q(has_long_service_annual_leave=False)
+                | (
+                    models.Q(long_service_annual_leave_years__isnull=False)
+                    & models.Q(long_service_years_inclusive__isnull=False)
+                    & models.Q(long_service_annual_leave_days_5day__isnull=False)
+                    & models.Q(long_service_annual_leave_days_6day__isnull=False)
+                ),
+                name="leave_rule_set_long_service_band_states_its_figures",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(has_long_service_annual_leave=True)
+                | (
+                    models.Q(long_service_annual_leave_years__isnull=True)
+                    & models.Q(long_service_years_inclusive__isnull=True)
+                    & models.Q(long_service_annual_leave_days_5day__isnull=True)
+                    & models.Q(long_service_annual_leave_days_6day__isnull=True)
+                ),
+                name="leave_rule_set_no_long_service_band_states_no_figures",
+            ),
         ]
 
     def __str__(self):
