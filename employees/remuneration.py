@@ -232,7 +232,7 @@ def capture(
             else group.default_hours_per_day * group.default_days_per_week,
         )
 
-        factor = _monthly_factor(effective_from)
+        factor = _monthly_factor(employee, effective_from)
         try:
             derived = rates.derive(pay_basis, rate_amount, pattern, factor)
         except rates.RateDerivationError as error:
@@ -291,9 +291,30 @@ def _pay_group_for(employee: Employee, engagement: EmployeeEngagement):
     return group
 
 
-def _monthly_factor(on_date: datetime.date) -> Decimal:
+def _monthly_factor(employee: Employee, on_date: datetime.date) -> Decimal:
+    """The factor that converts between a week and a month, FOR THIS EMPLOYEE.
+
+    BCEA s35(3) makes monthly remuneration four and one-third times weekly, and
+    the BCCCI Main Agreement's clause 3 makes it 4.33 for KwaZulu-Natal contract
+    cleaning. Both bind; which applies is a fact about the instrument governing
+    the employee, so it is resolved on the employer's sector and the workplace's
+    area rather than being one global constant (D-236). The BCEA figure is the
+    unscoped row and remains the fallback for everything the agreement does not
+    cover — which is every other employee this product has.
+
+    The scope is read the same way the minimum wage floor reads it, a few lines
+    above: the workplace's own area, falling back to the employer's.
+    """
+    position = _current_position(employee, on_date)
+    workplace = position.workplace if position else None
     try:
-        return resolve.parameter_value(MONTHLY_FACTOR_PARAMETER, on_date)
+        return resolve.parameter_value(
+            MONTHLY_FACTOR_PARAMETER,
+            on_date,
+            sector=employee.employer.sector,
+            sector_area=(workplace.sector_area if workplace else None)
+            or employee.employer.sector_area,
+        )
     except resolve.StatutoryValueMissingError as error:
         raise RemunerationRefusedError(
             f"The monthly-to-weekly factor (BCEA s35) is not loaded for "
