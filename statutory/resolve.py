@@ -286,16 +286,33 @@ def minimum_wage(
 # ---------------------------------------------------------------------- rule sets
 
 
-def _rule_set(model, sector: Sector | None, on_date: datetime.date):
-    """A sector's rule set on a date, falling back to the BCEA row.
+def _rule_set(model, sector: Sector | None, on_date: datetime.date, sector_area=None):
+    """A sector's rule set on a date, narrowing most-specific-first.
+
+    1. this sector AND this area — one area with its own instrument
+    2. this sector, any area — the sectoral determination
+    3. the BCEA default row, sector NULL
 
     ``sector`` NULL is the BCEA default — what applies where a sectoral
     determination is silent. Falling back to it is the whole reason the NULL-sector
     row exists, and it is the same fallback for all three rule sets, so it is
     written once.
+
+    The area step arrived with the BCCCI Main Agreement (D-240), which binds
+    contract cleaning in KwaZulu-Natal only while SD1 still governs Areas A and
+    C. A caller that passes no area lands on step 2 exactly as it always did.
     """
+    if sector is not None and sector_area is not None:
+        row = in_force_on(
+            model.objects.filter(sector=sector, sector_area=sector_area), on_date
+        ).first()
+        if row is not None:
+            return row
+
     if sector is not None:
-        row = in_force_on(model.objects.filter(sector=sector), on_date).first()
+        row = in_force_on(
+            model.objects.filter(sector=sector, sector_area__isnull=True), on_date
+        ).first()
         if row is not None:
             return row
 
@@ -309,14 +326,67 @@ def _rule_set(model, sector: Sector | None, on_date: datetime.date):
     return row
 
 
-def leave_rules(sector: Sector | None, on_date: datetime.date) -> LeaveRuleSet:
-    """Leave entitlement rules for a sector on a date."""
-    return _rule_set(LeaveRuleSet, sector, on_date)
+def leave_rules(sector: Sector | None, on_date: datetime.date, sector_area=None) -> LeaveRuleSet:
+    """Leave entitlement rules for a sector, and optionally an area, on a date."""
+    return _rule_set(LeaveRuleSet, sector, on_date, sector_area)
 
 
-def working_time_rules(sector: Sector | None, on_date: datetime.date) -> WorkingTimeRuleSet:
-    """Ordinary hours, overtime and premium rules for a sector on a date."""
-    return _rule_set(WorkingTimeRuleSet, sector, on_date)
+def annual_leave_days(
+    sector: Sector | None,
+    on_date: datetime.date,
+    *,
+    employment_start_date: datetime.date,
+    six_day_week: bool,
+    sector_area=None,
+) -> Decimal:
+    """Annual leave days per cycle, honouring a long-service band if the
+    instrument states one (D-243).
+
+    BCCCI clause 9.1(b) is the first: 28 consecutive days for MORE THAN ten
+    years' service, against clause 9.1(a)'s 21 for everyone else. Every other
+    instrument loaded here states no such band, and says so explicitly through
+    ``has_long_service_annual_leave`` rather than by leaving columns NULL.
+
+    Service length is counted from ``employment_start_date`` — the CURRENT
+    engagement's own start date, which the caller reads from
+    ``employee_engagement`` and never from an edited first row (D-103). A
+    re-hire does not carry a previous engagement's service into this band.
+
+    Which side of the boundary the exact year count falls on is DATA, read from
+    ``long_service_years_inclusive`` (D-158) — never a convention applied here.
+    "More than ten years" loads FALSE, so ten years to the day is still 21 days.
+    """
+    rules = leave_rules(sector, on_date, sector_area)
+    ordinary = (
+        rules.annual_leave_days_per_cycle_6day
+        if six_day_week
+        else rules.annual_leave_days_per_cycle_5day
+    )
+    if not rules.has_long_service_annual_leave:
+        return ordinary
+
+    boundary = _boundary_date(
+        employment_start_date, Decimal(rules.long_service_annual_leave_years), "years"
+    )
+    if rules.long_service_years_inclusive:
+        reached = on_date >= boundary
+    else:
+        reached = on_date > boundary
+    if not reached:
+        return ordinary
+
+    return (
+        rules.long_service_annual_leave_days_6day
+        if six_day_week
+        else rules.long_service_annual_leave_days_5day
+    )
+
+
+def working_time_rules(
+    sector: Sector | None, on_date: datetime.date, sector_area=None
+) -> WorkingTimeRuleSet:
+    """Ordinary hours, overtime and premium rules for a sector/area on a date."""
+    return _rule_set(WorkingTimeRuleSet, sector, on_date, sector_area)
 
 
 class AccommodationCapState(enum.StrEnum):
@@ -467,9 +537,11 @@ def adoption_age_limit(on_date: datetime.date) -> AdoptionAgeLimit:
     return row
 
 
-def termination_rules(sector: Sector | None, on_date: datetime.date) -> TerminationRuleSet:
-    """Severance and pro-rata bonus rules for a sector on a date."""
-    return _rule_set(TerminationRuleSet, sector, on_date)
+def termination_rules(
+    sector: Sector | None, on_date: datetime.date, sector_area=None
+) -> TerminationRuleSet:
+    """Severance and pro-rata bonus rules for a sector/area on a date."""
+    return _rule_set(TerminationRuleSet, sector, on_date, sector_area)
 
 
 def _boundary_date(start: datetime.date, value: Decimal, unit: str) -> datetime.date:
@@ -506,7 +578,11 @@ def _band_contains(
 
 
 def notice_band(
-    sector: Sector | None, on_date: datetime.date, *, employment_start_date: datetime.date
+    sector: Sector | None,
+    on_date: datetime.date,
+    *,
+    employment_start_date: datetime.date,
+    sector_area=None,
 ) -> TerminationNoticeBand:
     """The one ``termination_notice_band`` covering this employee's service
     length, for a sector, as at a date (D-68).
@@ -525,7 +601,7 @@ def notice_band(
     here, so an inconsistent load could in principle match zero or more than
     one band. Zero is still caught, below.
     """
-    rule_set = termination_rules(sector, on_date)
+    rule_set = termination_rules(sector, on_date, sector_area)
     bands = list(rule_set.notice_bands.all())
     if not bands:
         scope = sector.code if sector else "the BCEA default"
@@ -535,8 +611,25 @@ def notice_band(
         )
 
     for band in bands:
-        if _band_contains(band, employment_start_date, on_date):
-            return band
+        if not _band_contains(band, employment_start_date, on_date):
+            continue
+        if band.is_contested:
+            # D-241. Two limbs, two answers, and NOTICE IS SYMMETRIC — SD1
+            # clause 23(1)(c) forbids an employee owing more notice than the
+            # employer does — so taking the longer as "safer" holds a resigning
+            # employee in employment longer than the law permits, and taking the
+            # shorter short-changes a dismissed one. There is no safe direction
+            # to guess in, which is exactly why this refuses (D-158's lesson).
+            raise StatutoryValueMissingError(
+                f"Notice cannot be resolved for an employee who started "
+                f"{employment_start_date:%d %B %Y}, as at {on_date:%d %B %Y}. The "
+                f"instrument gives two irreconcilable answers for this band and nothing "
+                f"in it resolves them. {band.contested_reason} Cited to "
+                f"{band.source_reference}. Neither limb may be preferred: notice is "
+                f"symmetric, so over-stating it holds a resigning employee longer than "
+                f"the law allows and under-stating it short-changes a dismissed one."
+            )
+        return band
 
     raise StatutoryValueMissingError(
         f"No notice band covers an employee who started {employment_start_date:%d %B %Y}, "

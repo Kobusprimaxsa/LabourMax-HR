@@ -125,6 +125,14 @@ class TableSpec:
     composite_references: dict[str, tuple[type[models.Model], tuple[str, ...]]] = field(
         default_factory=dict
     )
+    #: Composite-lookup fields a fixture may omit, where omitting one MEANS NULL.
+    #: Named one by one, never inferred from the parent field being nullable:
+    #: ``sector`` is nullable too — that is the BCEA default row — so inferring it
+    #: would silently attach a band whose sector was left out by mistake to the
+    #: BCEA default instead of refusing. ``sector_area`` arrived with the BCCCI
+    #: Main Agreement (D-240) and every fixture written before it names no area,
+    #: which is exactly what a sector-wide row is.
+    optional_lookup_fields: frozenset[str] = frozenset()
     scope: tuple[str, ...] = ()
 
     @property
@@ -211,29 +219,35 @@ TABLES: dict[str, TableSpec] = {
     ),
     "leave_rule_set": TableSpec(
         LeaveRuleSet,
-        natural_key=("sector", "effective_from"),
-        references={"sector": (Sector, "code")},
-        scope=("sector",),
+        natural_key=("sector", "sector_area", "effective_from"),
+        references={"sector": (Sector, "code"), "sector_area": (SectorArea, "code")},
+        scope=("sector", "sector_area"),
     ),
     "working_time_rule_set": TableSpec(
         WorkingTimeRuleSet,
-        natural_key=("sector", "effective_from"),
-        references={"sector": (Sector, "code")},
-        scope=("sector",),
+        natural_key=("sector", "sector_area", "effective_from"),
+        references={"sector": (Sector, "code"), "sector_area": (SectorArea, "code")},
+        scope=("sector", "sector_area"),
     ),
     "termination_rule_set": TableSpec(
         TerminationRuleSet,
-        natural_key=("sector", "effective_from"),
-        references={"sector": (Sector, "code")},
-        scope=("sector",),
+        natural_key=("sector", "sector_area", "effective_from"),
+        references={"sector": (Sector, "code"), "sector_area": (SectorArea, "code")},
+        scope=("sector", "sector_area"),
     ),
+    # The rule set a band hangs off is now identified by sector AND area
+    # (D-240): Area B has its own notice regime and Areas A and C keep SD1's.
     "termination_notice_band": TableSpec(
         TerminationNoticeBand,
         natural_key=("termination_rule_set", "sequence"),
-        references={"sector": (Sector, "code")},
+        references={"sector": (Sector, "code"), "sector_area": (SectorArea, "code")},
         composite_references={
-            "termination_rule_set": (TerminationRuleSet, ("sector", "effective_from"))
+            "termination_rule_set": (
+                TerminationRuleSet,
+                ("sector", "sector_area", "effective_from"),
+            )
         },
+        optional_lookup_fields=frozenset({"sector_area"}),
     ),
     "public_holiday": TableSpec(PublicHoliday, natural_key=("country_code", "holiday_date")),
     "sars_source_code": TableSpec(
@@ -278,6 +292,9 @@ FIXTURE_ORDER = [
     "ref-2026.03.01-leave-pay.json",
     "ref-2026.03.01-termination.json",
     "ref-2026.04.01-bccci.json",
+    "ref-2026.04.01-bccci-rules.json",
+    "ref-2026.04.01-bccci-notice.json",
+    "ref-2026.04.01-bccci-maternity.json",
 ]
 
 FIXTURE_DIRECTORY = "reference"
@@ -370,10 +387,16 @@ def _resolve_references(spec: TableSpec, row: dict[str, Any], *, where: str) -> 
         kwargs = {}
         for key in lookup_fields:
             if key not in resolved:
+                if key in spec.optional_lookup_fields:
+                    kwargs[f"{key}__isnull"] = True
+                    continue
                 raise ReferenceDataLoadError(
                     f"{where}: '{key}' is required to resolve '{field_name}' and is missing."
                 )
-            kwargs[key] = resolved[key]
+            if resolved[key] is None:
+                kwargs[f"{key}__isnull"] = True
+            else:
+                kwargs[key] = resolved[key]
         try:
             resolved[field_name] = model.objects.get(**kwargs)
         except model.DoesNotExist as exc:
