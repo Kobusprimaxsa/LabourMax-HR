@@ -197,7 +197,11 @@ def test_the_version_is_loaded_but_not_in_force(loaded):
     """Nothing can run payroll against this until a person has checked every figure."""
     from statutory.models import ReferenceDataVersion
 
-    version = ReferenceDataVersion.objects.get(version_label="REF-2026.03.01")
+    # The label is read from the fixture, not repeated here: it changes whenever
+    # the file is re-encoded under a new version (D-199), and this test is about
+    # whether the SHIPPED version is in force, not about what it is called.
+    label = json.loads(FIXTURE.read_text(encoding="utf-8"))["version_label"]
+    version = ReferenceDataVersion.objects.get(version_label=label)
     assert version.verified_at is None
     assert version.is_usable is False
     assert ReferenceDataVersion.in_force_on(MARCH_2026) is None

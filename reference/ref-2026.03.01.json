@@ -1,5 +1,5 @@
 {
-  "version_label": "REF-2026.03.01",
+  "version_label": "REF-2026.03.01-r2",
   "applies_from": "2026-03-01",
   "description": "First statutory reference load: the 1 March 2026 wage floors, the SARS 2027 tax year tables, the contribution parameters, and public holidays for 2026 and 2027. Researched from primary sources on 13 September 2026. NOT verified - every figure must be checked against the source document before this version can come into force.",
   "tables": {
@@ -306,14 +306,14 @@
         "value_numeric": "1.000000",
         "unit": "percent",
         "effective_from": "2002-04-01",
-        "source_reference": "Unemployment Insurance Contributions Act 4 of 2002, s6(1)(b)"
+        "source_reference": "Unemployment Insurance Contributions Act 4 of 2002, s6(1)(a)(ii)"
       },
       {
         "parameter_code": "UIF_MONTHLY_CEILING",
         "value_numeric": "17712.000000",
         "unit": "ZAR",
         "effective_from": "2021-06-01",
-        "source_reference": "Determination under s6(3) of the Unemployment Insurance Contributions Act 4 of 2002, published 28 May 2021, effective 1 June 2021",
+        "source_reference": "Determination under s6(2) of the Unemployment Insurance Contributions Act 4 of 2002, Government Gazette 44641 of 28 May 2021, effective 1 June 2021",
         "notes": "VERIFY THE GAZETTE NUMBER - not confirmed from a primary source. Unchanged since 1 June 2021, which is the point: this ceiling moves on ministerial notice with no fixed calendar and is the parameter most often missed."
       },
       {

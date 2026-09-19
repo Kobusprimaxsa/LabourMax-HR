@@ -130,7 +130,9 @@ def brackets() -> list[dict]:
 
 
 DOCUMENT = {
-    "version_label": "REF-2026.03.01",
+    # -r2: the two UIF citations corrected (D-211). Same figures, so it travels
+    # through --supersede (D-199) rather than as a new load.
+    "version_label": "REF-2026.03.01-r2",
     "applies_from": "2026-03-01",
     "description": (
         "First statutory reference load: the 1 March 2026 wage floors, the SARS 2027 "
@@ -412,17 +414,26 @@ DOCUMENT = {
                 "value_numeric": "1.000000",
                 "unit": "percent",
                 "effective_from": "2002-04-01",
-                "source_reference": "Unemployment Insurance Contributions Act 4 of 2002, s6(1)(b)",
+                # s6(1)(a)(ii), not s6(1)(b): (b) is the percentage the Minister may
+                # announce in the budget instead, which is a different rule with a
+                # different effective date. Corrected in P7 chunk 1 (D-211) against
+                # the consolidated Act.
+                "source_reference": (
+                    "Unemployment Insurance Contributions Act 4 of 2002, s6(1)(a)(ii)"
+                ),
             },
             {
                 "parameter_code": "UIF_MONTHLY_CEILING",
                 "value_numeric": "17712.000000",
                 "unit": "ZAR",
                 "effective_from": "2021-06-01",
+                # s6(2), not s6(3): the consolidated Act has no s6(3). And the
+                # gazette is now named, because "published 28 May 2021" is not a
+                # citation anybody can turn to (D-211).
                 "source_reference": (
-                    "Determination under s6(3) of the Unemployment Insurance "
-                    "Contributions Act 4 of 2002, published 28 May 2021, effective "
-                    "1 June 2021"
+                    "Determination under s6(2) of the Unemployment Insurance "
+                    "Contributions Act 4 of 2002, Government Gazette 44641 of "
+                    "28 May 2021, effective 1 June 2021"
                 ),
                 "notes": (
                     "VERIFY THE GAZETTE NUMBER - not confirmed from a primary source. "
