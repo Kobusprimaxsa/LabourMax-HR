@@ -131,6 +131,12 @@ The most important phase in the build. Can overlap P1.
       are deliberately not loaded.
 - [ ] Three KwaZulu-Natal-only payroll lines and four KwaZulu-Natal-only leave types are
       RECORDED and not built (O-31)
+- [x] **The BCCCI figures VERIFIED against GN R.7296, page by page** (19 Sep 2026).
+      All four BCCCI versions recorded verified through 28 February 2029. The pass found
+      the rule sets in force a month early (D-247), corrected three recorded readings
+      (D-248), and exposed that verifying anything at all opened the payroll gate
+      (D-250). Verifier of record: `claude-verification@labourmax.invalid`, not a person
+      — re-verify under a human name before this data backs a real payslip.
 - [x] `sars_source_code` — 19 codes with cited base flags (D-69, D-70, D-71)
 - [x] The bank list and branch codes — 25 banks, lengths deliberately unloaded (D-72, D-73)
 - [x] Source codes 3901 and 3907 from SARS PAYE-AE-06-G06, closing the severance gap (D-114)

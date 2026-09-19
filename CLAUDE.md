@@ -1084,6 +1084,45 @@ columns behind a NOT NULL boolean with **no default**, D-198's own shape, which 
 failed the leave app's test fixture on the next run because that fixture had never been
 asked the question (D-243).
 
+**P2 — the BCCCI Main Agreement, chunk C: verified against the gazette**
+(19 September 2026, D-247 to D-250). 1,623 tests green. Every figure loaded from
+GN R.7296 was read back off the gazette page by page, and the four BCCCI versions
+are recorded verified through 28 February 2029 — the day before a fourth increase
+would be due, the three gazetted rates landing 1 April 2026, 1 March 2027 and
+1 March 2028. **The verifier of record is `claude-verification@labourmax.invalid`,
+not a person.** The extension notice sets no expiry at all: GN R.7296 binds "with
+effect from the first day of the month after the date of publication of this
+Notice and shall remain in force until replaced by a subsequent agreement".
+
+**The verification pass earned its keep three times.**
+
+**The rule sets were in force a month early** (D-247). Every rule set and notice
+band went in at 1 March 2026 because the three builder helpers shared the
+sectoral-determination constant, while the wage rates — built by a different
+tool — correctly carried 1 April. Clause 2(1) and the extension notice both put
+it at 1 April, so for all of March a KwaZulu-Natal employee would have been given
+this agreement's leave, hours, bonus and notice terms while the predecessor
+agreement still governed them (O-30). The wage refusal masks part of that and not
+the whole: nothing makes a leave accrual wait on a wage lookup.
+
+**A reading this build had recorded was wrong** (D-248). D-244 said the agreement
+"contradicts itself, cl 10.2(a) tracking BCEA s23(1)". It does not — 10.2(a)
+states the same ONE-day threshold as 10.3(a)(i) and drops a "not" on top of it.
+The s49(1)(e) conclusion stands and now rests on one ground instead of two. Two
+smaller corrections travel with it: the 60-minute meal interval is BCEA s14(1),
+since clause 8.4(b)'s hour is expressly limited to Health Care and Hospitality;
+and clause 4.6 "will come into effect in the increase year of 2028" in its own
+words, though no figure differs from 4.5 and 4.5(b)'s pro rata binds now.
+
+**Verifying something opened the gate** (D-250). `in_force_on()` returns the
+NEWEST usable version, so verifying four KwaZulu-Natal versions made one of them
+the newest and stopped `payroll/validation.py` asking about REF-2026.03.01, where
+PAYE, UIF and the NMW live. A June 2026 run went from refusing to passing because
+a provincial wage schedule was checked. The gate now refuses while ANY applicable
+non-superseded version is unverified and reads the SHORTEST `data_current_through`
+across them. **P7 is still blocked, correctly** — REF-2026.03.01 is unverified and
+the gate names it.
+
 **What remains in P2:**
 
 - Kobus verifies every figure against its source document, then `verifystatutory`
