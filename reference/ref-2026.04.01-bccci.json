@@ -1,0 +1,54 @@
+{
+  "version_label": "REF-2026.04.01-BCCCI",
+  "applies_from": "2026-04-01",
+  "description": "BCCCI (KwaZulu-Natal) Main Collective Agreement wage rates and monthly wage factor. Transcribed from GN R.7296 in GG 54412, 27 March 2026, page by page against the gazette. NOT verified.",
+  "tables": {
+    "minimum_wage_rate": [
+      {
+        "sector": "CONTRACT_CLEANING",
+        "sector_area": "AREA_B",
+        "hours_band": "all",
+        "hourly_rate": "32.4000",
+        "effective_from": "2026-04-01",
+        "source_reference": "Bargaining Council for the Contract Cleaning Services Industry (KwaZulu-Natal) Main Collective Agreement, GN R.7296 in Government Gazette 54412, 27 March 2026, clause 4.1(a)(i)",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/202603/54412rg11965gon7296.pdf",
+        "notes": "Clause 4.1(a): per hour or part thereof, calculated on a pro rata basis for all employees, for the province of Kwa-Zulu Natal. Area B is all of KwaZulu-Natal. Sectoral Determination 1 states no figure for it and points at this agreement; sector_area.uses_bargaining_council_rates records that, and statutory/resolve.py refuses rather than falling back to the National Minimum Wage where no row is loaded. DERIVED DATE, not printed. Clause 4.1(a)(i) gives this rate 'with effect from the 1st day of the month following the date of promulgation by the Minister', and the extension notice binds non-parties 'with effect from the first day of the month after the date of publication of this Notice'. Published 27 March 2026, therefore 1 April 2026. Check the two clauses rather than trusting this note. NOTHING IS LOADED FOR 1-31 MARCH 2026. That month is not a vacuum: clause 2(1)(a) says 'the parties agree that the current Main Agreement shall continue to be enforced' and clause 2(3) carries prevailing terms forward until replacement, so a PREDECESSOR BCCCI agreement governs it. That predecessor is not loaded and is not held by this project.",
+        "effective_to": "2027-03-01"
+      },
+      {
+        "sector": "CONTRACT_CLEANING",
+        "sector_area": "AREA_B",
+        "hours_band": "all",
+        "hourly_rate": "34.0200",
+        "effective_from": "2027-03-01",
+        "source_reference": "Bargaining Council for the Contract Cleaning Services Industry (KwaZulu-Natal) Main Collective Agreement, GN R.7296 in Government Gazette 54412, 27 March 2026, clause 4.1(a)(ii)",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/202603/54412rg11965gon7296.pdf",
+        "notes": "Clause 4.1(a): per hour or part thereof, calculated on a pro rata basis for all employees, for the province of Kwa-Zulu Natal. Area B is all of KwaZulu-Natal. Sectoral Determination 1 states no figure for it and points at this agreement; sector_area.uses_bargaining_council_rates records that, and statutory/resolve.py refuses rather than falling back to the National Minimum Wage where no row is loaded.",
+        "effective_to": "2028-03-01"
+      },
+      {
+        "sector": "CONTRACT_CLEANING",
+        "sector_area": "AREA_B",
+        "hours_band": "all",
+        "hourly_rate": "35.7200",
+        "effective_from": "2028-03-01",
+        "source_reference": "Bargaining Council for the Contract Cleaning Services Industry (KwaZulu-Natal) Main Collective Agreement, GN R.7296 in Government Gazette 54412, 27 March 2026, clause 4.1(a)(iii)",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/202603/54412rg11965gon7296.pdf",
+        "notes": "Clause 4.1(a): per hour or part thereof, calculated on a pro rata basis for all employees, for the province of Kwa-Zulu Natal. Area B is all of KwaZulu-Natal. Sectoral Determination 1 states no figure for it and points at this agreement; sector_area.uses_bargaining_council_rates records that, and statutory/resolve.py refuses rather than falling back to the National Minimum Wage where no row is loaded."
+      }
+    ],
+    "statutory_parameter": [
+      {
+        "parameter_code": "MONTHLY_TO_WEEKLY_FACTOR",
+        "sector": "CONTRACT_CLEANING",
+        "sector_area": "AREA_B",
+        "value_numeric": "4.330000",
+        "unit": "ratio",
+        "effective_from": "2026-04-01",
+        "source_reference": "Bargaining Council for the Contract Cleaning Services Industry (KwaZulu-Natal) Main Collective Agreement, GN R.7296 in Government Gazette 54412, 27 March 2026, clause 3, definition of 'monthly wage'",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/202603/54412rg11965gon7296.pdf",
+        "notes": "Clause 3: \"'monthly wage' shall mean the hours normally worked in a week multiplied by the rate applicable as stipulated in clause 4 and multiplied by 4.33.\" This is NOT the BCEA s35(4) figure. BCEA s35(3) makes monthly remuneration four and ONE-THIRD times weekly, loaded unscoped as 4.333333; this agreement makes it 4.33 for the employees it covers. Two binding figures for one concept, differing by the instrument that governs the employee, which is why the parameter is scoped rather than replaced (D-236). Do not confuse either with termination_rule_set.annual_bonus_weeks = 4.333, which is SD1's December bonus QUANTITY and a different figure that happens to look almost identical."
+      }
+    ]
+  }
+}
