@@ -42,6 +42,14 @@ MARCH_2028 = Decimal("35.7200")
 #: resolve to by silent fallback.
 NMW = Decimal("30.2300")
 
+#: The predecessor agreement's last rate, Notice 1726 of 2023 clause 4.1(a)(iii),
+#: in force from 1 March 2025 until the 2026 agreement replaced it.
+PREDECESSOR_2025 = Decimal("30.8600")
+
+PREDECESSOR_FIXTURE = (
+    pathlib.Path(__file__).resolve().parents[2] / "reference" / "ref-2023.04.01-bccci.json"
+)
+
 
 @pytest.fixture
 def cleaning(db):
@@ -65,6 +73,15 @@ def cleaning(db):
 @pytest.fixture
 def loaded(cleaning):
     """The shipped fixture, loaded as the loader would load it."""
+    load_reference_data(json.loads(FIXTURE.read_text(encoding="utf-8")))
+    return cleaning
+
+
+@pytest.fixture
+def predecessor(cleaning):
+    """Both agreements, in the order FIXTURE_ORDER loads them: the predecessor
+    first, because its last rate closes on the successor's own start date."""
+    load_reference_data(json.loads(PREDECESSOR_FIXTURE.read_text(encoding="utf-8")))
     load_reference_data(json.loads(FIXTURE.read_text(encoding="utf-8")))
     return cleaning
 
@@ -148,40 +165,69 @@ def test_a_future_rate_is_loaded_now_and_invisible_until_its_date(loaded):
     assert area_b_wage(loaded, datetime.date(2026, 9, 19)) == APRIL_2026
 
 
-# --------------------------------------------- A1c: the March 2026 refusal
+# ------------------- A1c: the gap the refusal was written for, now closed
 
 
-def test_a_march_2026_period_is_refused_and_names_the_missing_instrument(loaded):
-    """NOT the National Minimum Wage, NOT the April rate reached forward, NOT
-    Area A. The agreement's own clause 2(1)(a) says the predecessor Main
-    Agreement continues in force, so March 2026 has an instrument — one nobody
-    has loaded — and naming it is the difference between a gap somebody can
-    close and a mystery."""
-    sector, areas = loaded
+def test_march_2026_resolves_to_the_predecessor_agreement(predecessor):
+    """O-30, CLOSED (D-259). The 2026 agreement's clause 2(1)(a) says the
+    current Main Agreement continues to be enforced until it takes effect, so
+    March 2026 always had an instrument — the question was only whether anybody
+    had found it. Notice 1726 of 2023 in GG 48356 is that instrument and its
+    1 March 2025 rate is what governed the month."""
+    sector, areas = predecessor
+
+    rate = resolve.minimum_wage(
+        datetime.date(2026, 3, 31), sector=sector, sector_area=areas["AREA_B"]
+    )
+
+    assert rate.hourly_rate == PREDECESSOR_2025
+    assert "Notice 1726 of 2023" in rate.source_reference
+    assert rate.hourly_rate > NMW, "a bargaining council rate is above the national floor"
+
+
+def test_the_two_agreements_abut_with_no_gap_and_no_overlap(predecessor):
+    """31 March 2026 is the predecessor's last day and 1 April 2026 the
+    successor's first. The exclusion constraint would have refused an overlap;
+    nothing but a test catches a gap."""
+    sector, areas = predecessor
+
+    def rate_on(day):
+        return resolve.minimum_wage(day, sector=sector, sector_area=areas["AREA_B"]).hourly_rate
+
+    assert rate_on(datetime.date(2026, 3, 31)) == PREDECESSOR_2025
+    assert rate_on(datetime.date(2026, 4, 1)) == APRIL_2026
+
+
+def test_a_date_before_either_agreement_is_still_refused(predecessor):
+    """The guard is unchanged and still proven. What it refuses was never
+    "March 2026" but "an area priced by a collective agreement, on a date no
+    agreement is loaded for" — and it now says which two are loaded and what
+    they cover, rather than naming a predecessor that has since been found."""
+    sector, areas = predecessor
 
     with pytest.raises(resolve.StatutoryValueMissingError) as raised:
-        resolve.minimum_wage(datetime.date(2026, 3, 31), sector=sector, sector_area=areas["AREA_B"])
+        resolve.minimum_wage(datetime.date(2023, 3, 31), sector=sector, sector_area=areas["AREA_B"])
 
     message = str(raised.value)
     assert "AREA_B" in message
-    assert "clause 2(1)(a)" in message
-    assert "PREDECESSOR" in message
+    assert "Notice 1726 of 2023" in message and "GN R.7296" in message
     assert "National Minimum Wage is the floor under a sector" in message
+    assert "do not infer its rates from the increase pattern" in message
 
 
-def test_the_refusal_does_not_quietly_answer_the_national_minimum_wage(loaded):
+def test_the_refusal_does_not_quietly_answer_the_national_minimum_wage(predecessor):
     """The failure this guard exists for, stated as its own test: before it, a
-    KwaZulu-Natal cleaner resolved to R30,23 — plausible, and R2,17 an hour
-    short of the agreement in force."""
-    sector, areas = loaded
+    KwaZulu-Natal cleaner resolved to R30,23 — plausible, and short of the
+    agreement in force."""
+    sector, areas = predecessor
     MinimumWageRate.objects.create(
         hourly_rate=NMW,
-        effective_from=datetime.date(2026, 3, 1),
+        effective_from=datetime.date(2023, 3, 1),
         source_reference="National Minimum Wage Act 9 of 2018",
     )
 
     with pytest.raises(resolve.StatutoryValueMissingError):
-        resolve.minimum_wage(datetime.date(2026, 3, 31), sector=sector, sector_area=areas["AREA_B"])
+        resolve.minimum_wage(datetime.date(2023, 3, 31), sector=sector, sector_area=areas["AREA_B"])
 
 
 def test_an_area_that_does_not_use_bargaining_council_rates_still_falls_back(loaded):

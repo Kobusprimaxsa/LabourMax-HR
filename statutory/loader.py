@@ -291,6 +291,10 @@ FIXTURE_ORDER = [
     "ref-2026.03.01-parental.json",
     "ref-2026.03.01-leave-pay.json",
     "ref-2026.03.01-termination.json",
+    # The predecessor first: it closes on the 2026 agreement's own start date, so
+    # loading it after would be loading a row that ends where a loaded row begins.
+    # Order here is dependency order, and both need the sectors from the first file.
+    "ref-2023.04.01-bccci.json",
     "ref-2026.04.01-bccci.json",
     "ref-2026.04.01-bccci-rules.json",
     "ref-2026.04.01-bccci-notice.json",

@@ -173,11 +173,18 @@ def _refuse_bargaining_council_gap(on_date: datetime.date, *, sector, sector_are
     force says R32,40 — a plausible figure, silently short by R2,17 an hour, and
     invisible on the payslip.
 
-    **1–31 March 2026 is not a vacuum**, which is what makes this a load gap
-    rather than a legal one: the agreement's own clause 2(1)(a) says "the
+    **1–31 March 2026 was the gap this guard was written for, and it is closed**
+    (O-30, closed by D-259). The 2026 agreement's clause 2(1)(a) says "the
     parties agree that the current Main Agreement shall continue to be enforced"
-    and clause 2(3) carries prevailing terms forward until replacement. A
-    predecessor agreement therefore governs March 2026 and it is not loaded.
+    and clause 2(3) carries prevailing terms forward until replacement, so a
+    predecessor governed that month; it was found, transcribed and loaded, and
+    March 2026 now resolves R30,86.
+
+    The guard itself stays exactly as it was, because what it refuses is not
+    "March 2026" but "an area that takes its rates from a collective agreement,
+    on a date no agreement is loaded for". Two agreements now cover 1 April 2023
+    onward; a date before that still refuses, and so would a date after the 2026
+    agreement is replaced by one nobody has loaded.
     """
     if sector_area is None or not getattr(sector_area, "uses_bargaining_council_rates", False):
         return
@@ -193,10 +200,12 @@ def _refuse_bargaining_council_gap(on_date: datetime.date, *, sector, sector_are
         f"not from the sectoral determination, so there is nothing to fall back to: "
         f"the National Minimum Wage is the floor under a sector the Minister has not "
         f"set a rate for, not the rate for one set by an instrument nobody has loaded. "
-        f"The BCCCI Main Collective Agreement (GN R.7296, GG 54412) takes effect on "
-        f"1 April 2026; its own clause 2(1)(a) says the PREDECESSOR Main Agreement "
-        f"continues in force until then, and that predecessor is the missing "
-        f"instrument. Load it before running payroll for this period."
+        f"Two BCCCI agreements are loaded and between them they cover 1 April 2023 "
+        f"onward - Notice 1726 of 2023 in GG 48356 up to 31 March 2026, and GN R.7296 "
+        f"in GG 54412 from 1 April 2026. This date falls outside both, so the "
+        f"agreement that governed it has not been found and loaded. Find it before "
+        f"running payroll for this period; do not infer its rates from the increase "
+        f"pattern of the ones that are loaded."
     )
 
 
