@@ -232,3 +232,69 @@ def test_checkstatutory_reports_superseded_ticks_as_a_note_not_a_warning(
     assert "[warning]" not in output, "history is not a warning"
     assert "1 superseded version" in output
     assert "nothing reads them" in output
+
+
+# ---------------- a machine among the OTHER checkers, not just the signer
+
+
+@pytest.mark.statutory
+def test_a_machine_as_the_second_checker_is_reported(loaded, machine_user):
+    """O-37. D-270 let a version carry several checkers and widened both halves
+    of the GATE to match — ``is_machine_verified`` and ``unusable_q()`` treat a
+    version as machine-verified if ANY checker is a development identity. This
+    check was not widened with them, so a version whose machine identity was
+    the SECOND name on it was refused by the payroll gate and never mentioned
+    by ``checkstatutory``: somebody would watch a run refuse with no report
+    saying which version to re-verify.
+    """
+    person = AppUser.objects.create_user(email="kobus@example.com", password="x" * 16)
+    call_command(
+        "verifystatutory",
+        "REF-TEST-MACHINE",
+        "--verified-by",
+        person.email,
+        "--also-checked-by",
+        MACHINE,
+        "--current-through",
+        "2027-02-28",
+        "--golden-tests-passed",
+    )
+
+    issues = checks.check_machine_verified_versions()
+
+    assert len(issues) == 1, "the gate already refuses this version; the report must say so"
+    assert MACHINE in issues[0].message, "name the MACHINE, not whoever happened to sign"
+    assert person.email not in issues[0].message, (
+        "the human checker did nothing wrong and must not be named as the problem"
+    )
+
+
+@pytest.mark.statutory
+def test_the_report_and_the_gate_agree_about_every_version(loaded, machine_user):
+    """The property that makes O-37 impossible to reopen: whatever the gate
+    treats as machine-verified, the report names — one expression, not two
+    lists that have to be kept in step."""
+    person = AppUser.objects.create_user(email="kobus@example.com", password="x" * 16)
+    call_command(
+        "verifystatutory",
+        "REF-TEST-MACHINE",
+        "--verified-by",
+        person.email,
+        "--also-checked-by",
+        MACHINE,
+        "--current-through",
+        "2027-02-28",
+        "--golden-tests-passed",
+    )
+
+    reported = {
+        issue.where.removeprefix("reference_data_version ")
+        for issue in checks.check_machine_verified_versions()
+    } | set(checks.superseded_machine_verified())
+    by_the_gate = {
+        version.version_label
+        for version in ReferenceDataVersion.objects.all()
+        if version.is_machine_verified
+    }
+
+    assert reported == by_the_gate

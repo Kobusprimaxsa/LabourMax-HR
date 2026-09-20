@@ -789,15 +789,29 @@ def check_machine_verified_versions() -> list[Issue]:
         Issue(
             False,
             f"reference_data_version {version.version_label}",
-            f"verified by {version.verified_by_user.email}, which is a development "
-            f"identity and not a person. RFC 2606 reserves .invalid so the address "
-            f"could never have reached anybody. A payroll run refuses on this exactly "
-            f"as it refuses on a version nobody verified at all, and in_force_on() "
-            f"cannot see it. Re-run verifystatutory naming the person who actually "
-            f"checked every figure against the source document.",
+            f"checked by {_machine_names(version)}, which is a development identity and "
+            f"not a person. RFC 2606 reserves .invalid so the address could never have "
+            f"reached anybody. A payroll run refuses on this exactly as it refuses on a "
+            f"version nobody verified at all, and in_force_on() cannot see it. Re-run "
+            f"verifystatutory naming the person who actually checked every figure "
+            f"against the source document.",
         )
         for version in _machine_verified(superseded=False)
     ]
+
+
+def _machine_names(version) -> str:
+    """The development identities on a version, and only those.
+
+    A version can carry several checkers (D-270), so naming
+    ``verified_by_user`` would name whoever signed — often a real person who
+    did nothing wrong — rather than the identity that is the problem.
+    """
+    suffix = ReferenceDataVersion.DEVELOPMENT_VERIFIER_SUFFIX
+    emails = {user.email for user in version.verified_by_users.all()}
+    if version.verified_by_user is not None:
+        emails.add(version.verified_by_user.email)
+    return ", ".join(sorted(email for email in emails if email.lower().endswith(suffix)))
 
 
 def _machine_verified(*, superseded: bool):
@@ -819,13 +833,14 @@ def _machine_verified(*, superseded: bool):
             "supersedes__version_label", flat=True
         )
     )
+    # THE SAME EXPRESSION THE GATE USES (O-37, closed). Filtering on the signer
+    # alone left a version whose machine identity was the second name on it
+    # refused by the payroll gate and reported by nothing.
     rows = (
-        ReferenceDataVersion.objects.filter(
-            verified_at__isnull=False,
-            verified_by_user__isnull=False,
-            verified_by_user__email__iendswith=ReferenceDataVersion.DEVELOPMENT_VERIFIER_SUFFIX,
-        )
+        ReferenceDataVersion.objects.filter(verified_at__isnull=False)
+        .filter(ReferenceDataVersion.machine_verified_q())
         .select_related("verified_by_user")
+        .prefetch_related("verified_by_users")
         .order_by("applies_from", "version_label")
     )
     return [row for row in rows if (row.version_label in superseded_labels) is superseded]

@@ -314,26 +314,40 @@ class ReferenceDataVersion(AuditedModel, AuditMixin):
         reason added to one list and not the other is a version that the gate
         refuses and the resolver happily answers, or the reverse (D-262).
         """
+        return (
+            models.Q(verified_at__isnull=True)
+            | models.Q(golden_tests_passed=False)
+            | cls.machine_verified_q()
+        )
+
+    @classmethod
+    def machine_verified_q(cls) -> models.Q:
+        """ "At least one checker is a development identity", as SQL.
+
+        Split out of :meth:`unusable_q` so the payroll gate and
+        ``checkstatutory``'s report ask the same question of the same rows
+        (O-37, closed). They did not: the gate was widened for several checkers
+        with D-270 and the report was not, so a version whose machine identity
+        was the SECOND name on it was refused by the gate and named by nothing.
+        One expression, because two that must stay in step do not.
+
+        The signer is tested directly; the other checkers need a subquery.
+        A multi-valued join inside ``exclude()`` is where "excludes rows having
+        ANY match" and "excludes rows where the joined row matches" come apart,
+        and an EXISTS says which one is meant — it also cannot duplicate a row
+        in the ``filter()`` direction, which the report uses.
+        """
         from django.db.models import Exists, OuterRef
 
         from core.models import AppUser
 
-        # The signer is checked directly; the other checkers need a subquery,
-        # because a multi-valued join inside exclude() is where "excludes rows
-        # having ANY match" and "excludes rows where the joined row matches"
-        # come apart. An EXISTS says which one is meant (D-270).
         machine_checker = AppUser.objects.filter(
             verified_reference_versions=OuterRef("pk"),
             email__iendswith=cls.DEVELOPMENT_VERIFIER_SUFFIX,
         )
-        return (
-            models.Q(verified_at__isnull=True)
-            | models.Q(golden_tests_passed=False)
-            | models.Q(
-                verified_by_user__email__iendswith=cls.DEVELOPMENT_VERIFIER_SUFFIX,
-            )
-            | models.Q(Exists(machine_checker))
-        )
+        return models.Q(
+            verified_by_user__email__iendswith=cls.DEVELOPMENT_VERIFIER_SUFFIX
+        ) | models.Q(Exists(machine_checker))
 
     @classmethod
     def in_force_on(cls, on_date) -> ReferenceDataVersion | None:
