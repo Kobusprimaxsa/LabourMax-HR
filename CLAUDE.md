@@ -1164,12 +1164,28 @@ the gate names it.
 
 **What remains in P2:**
 
-- Kobus verifies every figure against its source document, then `verifystatutory`. **The
-  job now has a shape**: `exportverification` writes all 582 figures to a workbook grouped
-  by source document — 19 of them, the largest being the SARS code guide at 114 figures and
-  the BCEA at 86 — and `importverification` reads the ticks back (D-251). Nothing is
-  pre-ticked: no earlier pass recorded which figures it checked, so the count is 582 and not
-  a remainder
+- Kobus verifies every figure against its source document, then `verifystatutory`. **This
+  is the only thing left in P2 that needs a person, and everything around it is built.**
+  `exportverification` writes **148 check groups over 672 figures across 18 source
+  documents** to `reference/verification/Labourmax_verification.xlsx`, grouped so one
+  lookup in the gazette answers one row rather than eight (D-258); `importverification`
+  reads the ticks back into `reference_figure_check`, which is append-only evidence in the
+  database rather than a tick trapped in an unmergeable binary (D-256). Nothing is
+  pre-ticked, and re-exporting is safe: every recorded tick is carried forward, so a new
+  reference row no longer costs an evening of checking.
+- **A verification tick that is not a person's never gets past the payroll gate** (D-262).
+  `verifystatutory` accepts an identity ending in RFC 2606's reserved `.invalid` — the
+  build has to be able to read reference data before the human pass finishes — and warns
+  twice; `checkstatutory` lists every such version on every run; and
+  `payroll/validation.py` refuses on it through the same
+  `ReferenceDataVersion.unusable_q()` that refuses a version nobody verified at all. One
+  expression, used by the gate and by `in_force_on()` both, because two lists that must
+  stay in step do not.
+- **No row may be in force before the instrument it cites existed** (D-263).
+  `checkstatutory` parses the date out of `source_reference` — full date, else month, else
+  the year of the Act — and REFUSES where `effective_from` precedes it. Nothing in the
+  corpus fires it today, which is the point: last year's rate under this year's citation is
+  a plausible number in a plausible column, and the March load is where that survives
 - ~~Contract cleaning Area B has no rate~~ **CLOSED 19 Sep 2026 (D-237).** The BCCCI Main
   Collective Agreement (GN R.7296, GG 54412, 27 March 2026) is loaded as
   `reference/ref-2026.04.01-bccci.json`: R32,40 from 1 April 2026, R34,02 from 1 March 2027,
@@ -1186,8 +1202,13 @@ the gate names it.
   the successor's 21.1(b) does, word for word, so a March 2026 employee between four
   weeks and six months REFUSES rather than getting SD1's four weeks — less capable and
   more correct. The refusal (D-238) is unchanged and still fires for a date neither
-  agreement covers. (Area B, not Area C — D-61 had the lettering the wrong
-  way round, and D-118 corrected it)
+  agreement covers. **Both agreements have now been read against each other clause by
+  clause, and the hourly wage is the ONLY figure that differs** (D-265) — the night
+  allowance, the 4,33 bonus and factor, both annual leave bands, severance, retirement, the
+  fines tables, all three notice bands, the 6% provident fund, the 0,5% council levy and
+  the R54,00 Family Medical Crisis Plan premium are identical, asserted in
+  `statutory/tests/test_bccci_boundary.py` rather than assumed. (Area B, not Area C — D-61
+  had the lettering the wrong way round, and D-118 corrected it)
 - Account number lengths per bank (D-72, searched and still NULL — D-254). The
   BankservAfrica/PayInc EFT specification is not published, and the per-bank lengths on the
   open web contradict each other, so nothing citable was found and nothing was loaded. O-04

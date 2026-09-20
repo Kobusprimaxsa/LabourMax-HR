@@ -106,7 +106,13 @@ The most important phase in the build. Can overlap P1.
 - [x] First data load: `reference/ref-2026.03.01.json` — wage floors, SARS 2027 tax year,
       contribution parameters, public holidays 2026 and 2027, the watch calendar. 61 rows,
       each with a citation, loaded and unverified
-- [ ] **Kobus verifies every figure against its source**, then `verifystatutory`
+- [ ] **Kobus verifies every figure against its source**, then `verifystatutory`. **The
+      only item in P2 still needing a person.** 148 check groups over 672 figures across 18
+      source documents, exported to `reference/verification/Labourmax_verification.xlsx`
+      and read back into the database as append-only evidence (D-256, D-258). A tick by a
+      development identity does NOT count: it is accepted so the build can read reference
+      data, reported by `checkstatutory` every run, and refused by the payroll gate on the
+      same code path as a version nobody verified (D-262)
 - [x] Rule sets, BCEA default and domestic (SD7): `reference/ref-2026.03.01-rules.json`
 - [x] Contract cleaning rule sets from SD1: `reference/ref-2026.03.01-sd1.json` (D-67)
 - [x] Contract cleaning **Area B** (KwaZulu-Natal): the BCCCI Main Collective Agreement,
@@ -114,7 +120,12 @@ The most important phase in the build. Can overlap P1.
       `ref-2026.04.01-bccci.json` (D-237). Three wage rates including the system's first
       FUTURE-DATED rows, and clause 3's 4,33 monthly factor scoped to the area (D-236).
       Area B resolution now REFUSES rather than falling back to the NMW (D-238).
-      **Still open: the predecessor agreement covering 1–31 March 2026 (O-30).**
+      ~~Still open: the predecessor agreement covering 1–31 March 2026 (O-30).~~
+      **CLOSED 20 Sep 2026 (D-259 to D-261, D-265).** Notice 1726 of 2023 in GG 48356 is
+      loaded in full — wages, leave, working time, termination and notice — so nothing in
+      March 2026 borrows from SD1. The two agreements were then read against each other
+      clause by clause and the hourly wage is the only figure that differs; every other
+      number, including the three O-31 records as unbuilt, is identical.
       (The heading said Area C; D-118 corrected the lettering and Area B is KwaZulu-Natal)
 - [x] Area B's **rule sets** from the same agreement: `ref-2026.04.01-bccci-rules.json` and
       `ref-2026.04.01-bccci-notice.json`, loaded 19 Sep 2026. A rule set is now scoped to a
