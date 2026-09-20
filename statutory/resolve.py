@@ -347,6 +347,7 @@ def annual_leave_days(
     employment_start_date: datetime.date,
     six_day_week: bool,
     sector_area=None,
+    service_on_date: datetime.date | None = None,
 ) -> Decimal:
     """Annual leave days per cycle, honouring a long-service band if the
     instrument states one (D-243).
@@ -364,8 +365,22 @@ def annual_leave_days(
     Which side of the boundary the exact year count falls on is DATA, read from
     ``long_service_years_inclusive`` (D-158) — never a convention applied here.
     "More than ten years" loads FALSE, so ten years to the day is still 21 days.
+
+    **``on_date`` chooses the INSTRUMENT; ``service_on_date`` measures the
+    SERVICE, and they are deliberately allowed to differ** (D-267). A leave
+    cycle reads its rule set as at the day it opens, so a gazette published
+    part-way through cannot retroactively move a figure somebody has already
+    accrued against (D-107's lesson). But the service that earns the band is
+    the service the employee has in respect of that whole cycle, which is only
+    known when it closes — and testing it on the opening day denies the band for
+    a full extra year, because a twelve-month cycle anchored to the engagement
+    start puts the tenth anniversary ON a cycle's first day and "more than ten"
+    excludes that day. Defaults to ``on_date``, so every existing caller is
+    unaffected.
     """
     rules = leave_rules(sector, on_date, sector_area)
+    if service_on_date is None:
+        service_on_date = on_date
     ordinary = (
         rules.annual_leave_days_per_cycle_6day
         if six_day_week
@@ -378,9 +393,9 @@ def annual_leave_days(
         employment_start_date, Decimal(rules.long_service_annual_leave_years), "years"
     )
     if rules.long_service_years_inclusive:
-        reached = on_date >= boundary
+        reached = service_on_date >= boundary
     else:
-        reached = on_date > boundary
+        reached = service_on_date > boundary
     if not reached:
         return ordinary
 

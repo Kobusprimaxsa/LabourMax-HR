@@ -173,16 +173,34 @@ def _statutory_entitlement_quantity(
         return None
 
     employer_sector = employee.employer.sector
-    rules = resolve.leave_rules(employer_sector, on_date)
+    sector_area = _sector_area_of(employee, on_date)
+    rules = resolve.leave_rules(employer_sector, on_date, sector_area)
 
     schedule = scheduling.current_schedule(employee, on_date)
     six_day_week = schedule is not None and schedule.days_per_week > 5
 
     if leave_type.code == LeaveType.Code.ANNUAL:
-        return (
-            rules.annual_leave_days_per_cycle_6day
-            if six_day_week
-            else rules.annual_leave_days_per_cycle_5day
+        engagement = current_engagement(employee)
+        if engagement is None:
+            raise EntitlementNotResolvableError(
+                f"{employee} has no current engagement as at {on_date:%d %B %Y}, so "
+                f"service length cannot be counted and an annual leave entitlement "
+                f"cannot be resolved."
+            )
+        _refuse_a_cycle_length_the_instrument_does_not_state(leave_type, rules, employee=employee)
+        # The LAST DAY of the cycle this entitlement is for. The rule set is
+        # still read as at the cycle's first day; only the service length is
+        # measured at its last (D-267).
+        last_day = (
+            on_date + relativedelta(months=leave_type.cycle_months) - datetime.timedelta(days=1)
+        )
+        return resolve.annual_leave_days(
+            employer_sector,
+            on_date,
+            employment_start_date=engagement.start_date,
+            six_day_week=six_day_week,
+            sector_area=sector_area,
+            service_on_date=last_day,
         )
     if leave_type.code == LeaveType.Code.SICK:
         # No literal fallback here (test_no_hardcoded_rates would flag one, and
@@ -201,6 +219,68 @@ def _statutory_entitlement_quantity(
     if leave_type.code == LeaveType.Code.FAMILY_RESPONSIBILITY:
         return Decimal(rules.family_responsibility_days)
     raise AssertionError(f"Unhandled resolvable code: {leave_type.code}")  # pragma: no cover
+
+
+def _sector_area_of(employee: Employee, on_date: datetime.date):
+    """The wage area governing this employee, most specific first.
+
+    One sector can be governed by two instruments (D-240), so a rule set lookup
+    that passes only the sector answers the wrong one for KwaZulu-Natal
+    contract cleaning. The workplace's own area wins because that is where the
+    work happens and it is derived and dated at capture (D-81); the employer's
+    is the fallback for an employee with no position row yet.
+
+    Same assembly as ``employees/remuneration.py`` already does for the minimum
+    wage, and deliberately the same order — an employee whose leave and whose
+    wage floor came from different instruments would be a worse defect than
+    either one being wrong.
+    """
+    from employees.models import EmployeePosition
+
+    position = (
+        EmployeePosition.objects.filter(employee=employee, effective_from__lte=on_date)
+        .exclude(effective_to__lte=on_date)
+        .select_related("workplace")
+        .order_by("-effective_from")
+        .first()
+    )
+    workplace = position.workplace if position else None
+    return (workplace.sector_area if workplace else None) or employee.employer.sector_area
+
+
+def _refuse_a_cycle_length_the_instrument_does_not_state(
+    leave_type: LeaveType, rules, *, employee
+) -> None:
+    """The two cycle lengths must agree before a long-service band is resolved.
+
+    ``leave_type.cycle_months`` is what actually generates cycles;
+    ``annual_leave_cycle_months`` is what the instrument states. While they
+    agree, the band's boundary is a single yes/no at one date and there is
+    nothing to decide. While they disagree, the cycles are not where the gazette
+    thinks they are, so the date this code measures service at is not the date
+    the instrument means — and a confident wrong figure would be written into
+    ``leave_cycle.entitlement_quantity``, which every later accrual,
+    application and termination payout reads.
+
+    Only guarded where a band exists, because that is the only figure whose
+    answer depends on WHERE the cycle boundaries fall. Refusing looks like a
+    regression and is the opposite: it is the difference between not knowing and
+    being confidently wrong about how much leave somebody has.
+    """
+    if not rules.has_long_service_annual_leave:
+        return
+    if leave_type.cycle_months == rules.annual_leave_cycle_months:
+        return
+
+    raise EntitlementNotResolvableError(
+        f"{employee}'s instrument states a long-service annual leave band at "
+        f"{rules.long_service_annual_leave_years} years, and the two cycle lengths "
+        f"disagree: cycles are generated every {leave_type.cycle_months} months and the "
+        f"instrument states {rules.annual_leave_cycle_months}. The band's boundary would "
+        f"be tested on a date the instrument does not mean. Reconcile the leave type's "
+        f"cycle length with the gazetted one before this employee's cycles are "
+        f"generated; do not pick a side here."
+    )
 
 
 def entitlement_quantity_for(
