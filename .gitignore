@@ -40,3 +40,6 @@ desktop.ini
 # verification pass. Tens of megabytes of public documents, and the URL in
 # source_reference is the citation - the file is a rebuildable convenience.
 reference/sources/
+
+# Excel leaves these behind while a workbook is open.
+~$*.xlsx

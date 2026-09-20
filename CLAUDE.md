@@ -344,6 +344,22 @@ database holds the record** (D-256): export as often as you like, each one pre-f
 what is already done and leaves newly loaded figures blank. A value edited in the
 spreadsheet REFUSES its version and names the row, because an importer that could
 write a figure is every loader guard routed around by a spreadsheet (D-251).
+**Run `fetchsources` before exporting** (D-273). It downloads every cited document
+into `reference/sources/` (gitignored — the URL is the citation) and the workbook's
+CLAUSE cell then opens the local PDF at the page the clause is on, at the document
+where the page cannot be found confidently, and is plain text where neither is
+possible. **A wrong page is worse than none**, so the matcher answers nothing unless
+sure, and nothing extracts or quotes what a clause SAYS — that would make the pass
+Claude Code's transcription checked against Claude Code's transcription. Coverage today
+is 5 of 156 at a page and 73 more at the document; the limits are in the citations
+rather than the matcher (O-38).
+
+**The import can no longer be silent** (D-272). It once read seventeen marked rows and
+recorded nothing, saying nothing: the checker and the date were only checked for being
+non-blank, and the row was dropped where they would not resolve. The count now prints
+unconditionally, a workbook exported before the data moved is refused as stale, and
+`exportverification --force` refuses over a file holding ticks nobody has imported.
+
 **A version may be verified by SEVERAL people** (D-270), and `verified_by_users`
 records them all. The workbook is grouped by source document and versions cut across
 documents, so sharing the pass out by document means some version gets checked by two
@@ -357,6 +373,7 @@ documents, so a version can be fully checked and still show incomplete;
 `checkstatutory` reports a near-duplicate rather than waiting for somebody to notice.
 
 ```powershell
+python manage.py fetchsources                                    # reference/sources/, gitignored
 python manage.py exportverification --verifier you@example.com   # reference/verification/
 python manage.py importverification <file.xlsx> --current-through 2027-02-28 --golden-tests-passed
 python manage.py importverification <file.xlsx> --current-through 2027-02-28 --dry-run
