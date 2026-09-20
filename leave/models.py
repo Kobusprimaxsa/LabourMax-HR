@@ -61,6 +61,8 @@ class LeaveType(AuditedModel, TenantSharedModel):
         UNPAID = "UNPAID", "Unpaid leave"
         STUDY = "STUDY", "Study leave"
         COMPASSIONATE = "COMPASSIONATE", "Compassionate leave"
+        PRENATAL = "PRENATAL", "Prenatal clinic leave"
+        SHOP_STEWARD = "SHOP_STEWARD", "Shop steward leave"
 
     class BalanceSource(models.TextChoices):
         OWN = "own", "Keeps its own balance"

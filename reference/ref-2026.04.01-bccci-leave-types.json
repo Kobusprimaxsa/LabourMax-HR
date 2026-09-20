@@ -1,0 +1,57 @@
+{
+  "version_label": "REF-2026.04.01-BCCCI-LEAVE-TYPES",
+  "applies_from": "2026-04-01",
+  "description": "Study leave (clause 12) and shop steward leave (clause 20.4) for contract cleaning Area B under the BCCCI Main Collective Agreement, GN R.7296 in GG 54412. Neither is a BCEA entitlement and neither is a per-cycle bank, so neither is accrued. NOT verified.",
+  "tables": {
+    "statutory_parameter": [
+      {
+        "parameter_code": "STUDY_LEAVE_PREPARE_DAYS_PER_EXAM",
+        "value_numeric": "1.000000",
+        "unit": "days",
+        "sector": "CONTRACT_CLEANING",
+        "sector_area": "AREA_B",
+        "effective_from": "2026-04-01",
+        "effective_to": null,
+        "source_reference": "Bargaining Council for the Contract Cleaning Services Industry (KZN) Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026, clause 12.1(a)",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/202603/54412rg11965gon7296.pdf",
+        "notes": "One day's leave to PREPARE for each examination, on full pay. Per EXAMINATION and not per cycle: the clause gives the entitlement each time an employee writes, so there is no annual bank for the accrual engine to add to. Conditioned on satisfactory proof that the employee was allowed to write AND HAS DULY WRITTEN an examination conducted by a registered educational body; a casual employee is excluded by name. The clause also lets an employer refuse a later grant to an employee who already took study leave and failed that examination - a condition, not a figure, so it is not loaded."
+      },
+      {
+        "parameter_code": "STUDY_LEAVE_WRITE_DAYS_PER_EXAM",
+        "value_numeric": "1.000000",
+        "unit": "days",
+        "sector": "CONTRACT_CLEANING",
+        "sector_area": "AREA_B",
+        "effective_from": "2026-04-01",
+        "effective_to": null,
+        "source_reference": "Bargaining Council for the Contract Cleaning Services Industry (KZN) Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026, clause 12.1(b)",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/202603/54412rg11965gon7296.pdf",
+        "notes": "One day's leave to WRITE each examination, on full pay. Loaded as its own figure rather than summed with the preparation day, because the clause states two separate entitlements and an employee who writes without preparing is owed the second and not the first. Summing them here would make one day's leave indistinguishable from two."
+      },
+      {
+        "parameter_code": "SHOP_STEWARD_LEAVE_DAYS_OFFICE_BEARER",
+        "value_numeric": "4.000000",
+        "unit": "days",
+        "sector": "CONTRACT_CLEANING",
+        "sector_area": "AREA_B",
+        "effective_from": "2026-04-01",
+        "effective_to": null,
+        "source_reference": "Bargaining Council for the Contract Cleaning Services Industry (KZN) Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026, clause 20.4(a)(i)",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/202603/54412rg11965gon7296.pdf",
+        "notes": "4 days' paid leave a year for AN OFFICE BEARER of a representative trade union, to attend to union affairs. THE OFFICE BEARER GETS FEWER DAYS than an ordinary shop steward, who gets 6 - which reads like the two limbs were swapped in drafting. Both agreements print it this way, word for word, three years apart, so it is transcribed as printed and flagged rather than corrected: O-32's rule is that nothing here edits a gazette into agreement with what it ought to say."
+      },
+      {
+        "parameter_code": "SHOP_STEWARD_LEAVE_DAYS_OTHER",
+        "value_numeric": "6.000000",
+        "unit": "days",
+        "sector": "CONTRACT_CLEANING",
+        "sector_area": "AREA_B",
+        "effective_from": "2026-04-01",
+        "effective_to": null,
+        "source_reference": "Bargaining Council for the Contract Cleaning Services Industry (KZN) Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026, clause 20.4(a)(ii)",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/202603/54412rg11965gon7296.pdf",
+        "notes": "6 days' paid leave a year for ANY OTHER shop steward. Which of the two figures applies is a fact about the PERSON - whether they are an office bearer of a representative trade union - and no column on employee carries it, so statutory.resolve.shop_steward_leave_days() takes the status as an argument rather than guessing (D-110's shape). The union must give 14 days' written notice except in an emergency, which is a condition rather than a figure."
+      }
+    ]
+  }
+}

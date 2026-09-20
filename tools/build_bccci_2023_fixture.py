@@ -599,12 +599,127 @@ TERMINATION_FIXTURE = {
     },
 }
 
+LEAVE_TYPE_FILENAME = "ref-2023.04.01-bccci-leave-types.json"
+LEAVE_TYPE_LABEL = "REF-2023.04.01-BCCCI-LEAVE-TYPES"
+LEAVE_TYPE_FROM = "2023-04-01"
+LEAVE_TYPE_TO = "2026-04-01"
+STUDY_CLAUSE = "11"
+STEWARD_CLAUSE = "19"
+LEAVE_TYPE_DESCRIPTION = (
+    "Study leave (clause 11) and shop steward leave (clause 19.4) for contract "
+    "cleaning Area B under the PREDECESSOR BCCCI Main Collective Agreement, Notice "
+    "1726 of 2023 in GG 48356 - one clause behind the successor throughout (D-260), "
+    "and word for word identical in substance. Closes on 1 April 2026. NOT verified."
+)
+
+
+# ---------------------------------------------------------------------------
+# STUDY LEAVE AND SHOP STEWARD LEAVE (D-268) - two entitlements this agreement
+# CREATES, which the BCEA does not have at all. The prenatal clinic day is the
+# third of them and its figures already went in with the maternity benefits
+# (D-244), so they are not repeated here.
+#
+# Their own version rather than an addition to the rule set fixture, which is
+# already loaded and checksummed: --supersede permits prose changes only
+# (D-199), and a new figure is an ordinary load.
+#
+# NEITHER IS A PER-CYCLE BANK, which is why both are statutory_parameter rows
+# and not leave_rule_set columns. Study leave is per EXAMINATION; shop steward
+# leave is per YEAR but at one of two figures depending on a fact about the
+# person that no column carries.
+# ---------------------------------------------------------------------------
+
+PREPARE_NOTE = (
+    "One day's leave to PREPARE for each examination, on full pay. Per EXAMINATION "
+    "and not per cycle: the clause gives the entitlement each time an employee "
+    "writes, so there is no annual bank for the accrual engine to add to. "
+    "Conditioned on satisfactory proof that the employee was allowed to write AND "
+    "HAS DULY WRITTEN an examination conducted by a registered educational body; a "
+    "casual employee is excluded by name. The clause also lets an employer refuse a "
+    "later grant to an employee who already took study leave and failed that "
+    "examination - a condition, not a figure, so it is not loaded."
+)
+
+WRITE_NOTE = (
+    "One day's leave to WRITE each examination, on full pay. Loaded as its own "
+    "figure rather than summed with the preparation day, because the clause states "
+    "two separate entitlements and an employee who writes without preparing is owed "
+    "the second and not the first. Summing them here would make one day's leave "
+    "indistinguishable from two."
+)
+
+OFFICE_BEARER_NOTE = (
+    "4 days' paid leave a year for AN OFFICE BEARER of a representative trade "
+    "union, to attend to union affairs. THE OFFICE BEARER GETS FEWER DAYS than an "
+    "ordinary shop steward, who gets 6 - which reads like the two limbs were "
+    "swapped in drafting. Both agreements print it this way, word for word, three "
+    "years apart, so it is transcribed as printed and flagged rather than "
+    "corrected: O-32's rule is that nothing here edits a gazette into agreement "
+    "with what it ought to say."
+)
+
+OTHER_STEWARD_NOTE = (
+    "6 days' paid leave a year for ANY OTHER shop steward. Which of the two figures "
+    "applies is a fact about the PERSON - whether they are an office bearer of a "
+    "representative trade union - and no column on employee carries it, so "
+    "statutory.resolve.shop_steward_leave_days() takes the status as an argument "
+    "rather than guessing (D-110's shape). The union must give 14 days' written "
+    "notice except in an emergency, which is a condition rather than a figure."
+)
+
+
+def _leave_type_parameters(study_clause: str, steward_clause: str) -> list[dict]:
+    """The four figures, identical in both agreements, cited to each one's own
+    clause numbers (D-260: the predecessor's numbering is one behind)."""
+    specifications = (
+        ("STUDY_LEAVE_PREPARE_DAYS_PER_EXAM", "1.000000", f"{study_clause}.1(a)", PREPARE_NOTE),
+        ("STUDY_LEAVE_WRITE_DAYS_PER_EXAM", "1.000000", f"{study_clause}.1(b)", WRITE_NOTE),
+        (
+            "SHOP_STEWARD_LEAVE_DAYS_OFFICE_BEARER",
+            "4.000000",
+            f"{steward_clause}.4(a)(i)",
+            OFFICE_BEARER_NOTE,
+        ),
+        (
+            "SHOP_STEWARD_LEAVE_DAYS_OTHER",
+            "6.000000",
+            f"{steward_clause}.4(a)(ii)",
+            OTHER_STEWARD_NOTE,
+        ),
+    )
+    return [
+        {
+            "parameter_code": code,
+            "value_numeric": value,
+            "unit": "days",
+            "sector": "CONTRACT_CLEANING",
+            "sector_area": "AREA_B",
+            "effective_from": LEAVE_TYPE_FROM,
+            "effective_to": LEAVE_TYPE_TO,
+            "source_reference": f"{GAZETTE}, clause {pinpoint}",
+            "source_url": GAZETTE_URL,
+            "notes": note,
+        }
+        for code, value, pinpoint, note in specifications
+    ]
+
+
+LEAVE_TYPE_OUTPUT = pathlib.Path(__file__).resolve().parents[1] / "reference" / LEAVE_TYPE_FILENAME
+
+LEAVE_TYPE_FIXTURE = {
+    "version_label": LEAVE_TYPE_LABEL,
+    "applies_from": LEAVE_TYPE_FROM,
+    "description": LEAVE_TYPE_DESCRIPTION,
+    "tables": {"statutory_parameter": _leave_type_parameters(STUDY_CLAUSE, STEWARD_CLAUSE)},
+}
+
 
 def main():
     for path, document in (
         (OUTPUT, FIXTURE),
         (RULES_OUTPUT, RULES_FIXTURE),
         (TERMINATION_OUTPUT, TERMINATION_FIXTURE),
+        (LEAVE_TYPE_OUTPUT, LEAVE_TYPE_FIXTURE),
     ):
         path.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         print(f"Wrote {path.relative_to(path.parents[1])}")

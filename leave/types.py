@@ -225,6 +225,73 @@ SYSTEM_LEAVE_TYPES: tuple[SystemLeaveType, ...] = (
         ),
     ),
     SystemLeaveType(
+        code=Code.PRENATAL,
+        name="Prenatal clinic leave",
+        balance_source=BalanceSource.NONE,
+        is_paid=True,
+        accrues=False,
+        requires_evidence=True,
+        payable_on_termination=False,
+        reduces_pay_when_exhausted=False,
+        display_order=43,
+        colour_hex="#C2185B",
+        flagged=(
+            "Created by ONE instrument, not the BCEA. The 3-day cap lives in "
+            "reference data and nothing enforces it yet."
+        ),
+        reason=(
+            "BCCCI Main Agreement clause 13.2 (clause 12.2 in the predecessor): "
+            "one day's fully paid leave in EACH of the 3 months before the "
+            "expected date of confinement, to attend a prenatal clinic, on "
+            "satisfactory proof of attendance. **Not a BCEA entitlement at all** - "
+            "the Act has no prenatal clinic day - so it exists for a KwaZulu-Natal "
+            "contract cleaning employee and for nobody else this system serves. "
+            "That is why the quantum is area-scoped reference data "
+            "(PRENATAL_CLINIC_PAID_DAYS_PER_MONTH and "
+            "PRENATAL_CLINIC_MONTHS_BEFORE_BIRTH, D-244) read through "
+            "statutory.resolve, and not a figure on this catalogue row. "
+            "requires_evidence=True is the clause's own proviso and not a default. "
+            "balance_source=none because the entitlement is per PREGNANCY and not "
+            "per cycle: there is no twelve-month bank for a monthly run to add to, "
+            "and inventing one would make ensure_cycles() write a zero entitlement "
+            "and mark every clinic day unpaid. **The cap is therefore not enforced "
+            "anywhere yet** - the resolver is the only place the three days live, "
+            "and the application layer does not read it (O-31)."
+        ),
+    ),
+    SystemLeaveType(
+        code=Code.SHOP_STEWARD,
+        name="Shop steward leave",
+        balance_source=BalanceSource.NONE,
+        is_paid=True,
+        accrues=False,
+        payable_on_termination=False,
+        reduces_pay_when_exhausted=False,
+        display_order=44,
+        colour_hex="#00695C",
+        flagged=(
+            "Two quanta, and which applies is a fact about the person that no "
+            "column carries. Nothing grants or caps this yet."
+        ),
+        reason=(
+            "BCCCI Main Agreement clause 20.4(a) (clause 19.4(a) in the "
+            "predecessor): paid leave to attend to union affairs, **4 days a year "
+            "for an office bearer of a representative trade union and 6 days a "
+            "year for any other shop steward**. Transcribed in that order because "
+            "that is the order the gazette prints, in both agreements - the office "
+            "bearer getting FEWER days reads like the two limbs were swapped, and "
+            "it is not this codebase's place to correct a gazette (O-32's rule). "
+            "**Which figure applies is a fact about the person**, not about the "
+            "employer or the date: whether this employee is an office bearer of a "
+            "representative trade union is a declared status with no column on "
+            "employee, the same shape as works_over_27_hours_week (D-110) and the "
+            "same gap as SICK's six-month threshold before D-181. So the resolver "
+            "takes the status as an argument and the caller must state it. "
+            "accrues=False and balance_source=none: nothing grants this "
+            "automatically, because nothing yet knows who is a shop steward."
+        ),
+    ),
+    SystemLeaveType(
         code=Code.STUDY,
         name="Study leave",
         is_statutory=False,
@@ -232,14 +299,28 @@ SYSTEM_LEAVE_TYPES: tuple[SystemLeaveType, ...] = (
         payable_on_termination=False,
         display_order=91,
         colour_hex="#00838F",
-        flagged="Not BCEA leave. Every shape flag is a discretionary default.",
+        flagged=(
+            "Discretionary for most employers and GAZETTED for KwaZulu-Natal "
+            "contract cleaning. is_statutory=False cannot say both."
+        ),
         reason=(
-            "No statutory basis at all — a contractual benefit some employers "
-            "grant. FLAGGED: is_paid, requires_evidence and accrues are all "
-            "plausible defaults, not compliance readings. An employer wanting "
-            "this to accrue configures it per employee via "
-            "employee_leave_entitlement, which this seed deliberately does not "
-            "pre-empt with an invented rule set figure."
+            "No BCEA basis — a contractual benefit most employers simply grant. "
+            "FLAGGED: is_paid, requires_evidence and accrues are all plausible "
+            "defaults, not compliance readings. An employer wanting this to accrue "
+            "configures it per employee via employee_leave_entitlement, which this "
+            "seed deliberately does not pre-empt with an invented rule set figure. "
+            "**BUT ONE INSTRUMENT MAKES IT COMPULSORY** (D-268): BCCCI Main "
+            "Agreement clause 12 (clause 11 in the predecessor) requires an "
+            "employer to grant study leave ON FULL PAY — one day to prepare for "
+            "and one day to write EACH examination conducted by a registered "
+            "educational body, on satisfactory proof, to any employee other than a "
+            "casual. Those figures are loaded as area-scoped reference data and "
+            "answered by statutory.resolve.study_leave_days(). This row's "
+            "is_statutory=False is therefore wrong for a KwaZulu-Natal cleaner and "
+            "right for everybody else, and it cannot be corrected: a system row is "
+            "locked against UPDATE (D-93) and seeding never updates. The column is "
+            "read by no application code, so nothing computes the wrong answer from "
+            "it — see O-36, which is about the column and not about this row."
         ),
     ),
     SystemLeaveType(

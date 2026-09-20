@@ -297,10 +297,12 @@ FIXTURE_ORDER = [
     "ref-2023.04.01-bccci.json",
     "ref-2023.04.01-bccci-rules.json",
     "ref-2023.04.01-bccci-termination.json",
+    "ref-2023.04.01-bccci-leave-types.json",
     "ref-2026.04.01-bccci.json",
     "ref-2026.04.01-bccci-rules.json",
     "ref-2026.04.01-bccci-notice.json",
     "ref-2026.04.01-bccci-maternity.json",
+    "ref-2026.04.01-bccci-leave-types.json",
 ]
 
 FIXTURE_DIRECTORY = "reference"

@@ -527,6 +527,160 @@ def accommodation_cap(sector: Sector | None, on_date: datetime.date) -> Accommod
 VAN_WYK = "Van Wyk v Minister of Employment and Labour (CCT 308/23) [2025] ZACC 20"
 
 
+# ---------------------------------------------------------------------------
+# The three entitlements ONE instrument creates (D-268). None is in the BCEA.
+#
+# These RETURN A STATE rather than raising, the same shape as
+# ``night_allowance()`` and for a stronger version of the same reason: "this
+# instrument says nothing about study leave" is not a data gap, it is the
+# ordinary position for every employer this system serves except a KwaZulu-Natal
+# contract cleaner. Raising would make the common case an exception.
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class StudyLeave:
+    """BCCCI clause 12 (predecessor clause 11). PER EXAMINATION, not per cycle."""
+
+    granted: bool
+    prepare_days_per_examination: Decimal | None = None
+    write_days_per_examination: Decimal | None = None
+    source_reference: str = ""
+
+    @property
+    def days_per_examination(self) -> Decimal | None:
+        """What one examination costs in total, for a caller that does both."""
+        if not self.granted:
+            return None
+        return self.prepare_days_per_examination + self.write_days_per_examination
+
+
+@dataclasses.dataclass(frozen=True)
+class ShopStewardLeave:
+    """BCCCI clause 20.4(a) (predecessor clause 19.4(a)). Per YEAR, at one of
+    two figures depending on a fact about the person."""
+
+    granted: bool
+    days_per_year: Decimal | None = None
+    is_office_bearer: bool = False
+    source_reference: str = ""
+
+
+@dataclasses.dataclass(frozen=True)
+class PrenatalClinicLeave:
+    """BCCCI clause 13.2 (predecessor clause 12.2). Per PREGNANCY."""
+
+    granted: bool
+    paid_days_per_month: Decimal | None = None
+    months_before_birth: int | None = None
+    source_reference: str = ""
+
+    @property
+    def total_days(self) -> Decimal | None:
+        """One day in each of the months before the expected date of
+        confinement — the figure a leave register shows, computed here so no
+        caller multiplies the two the wrong way round."""
+        if not self.granted:
+            return None
+        return self.paid_days_per_month * self.months_before_birth
+
+
+def study_leave(sector: Sector | None, on_date: datetime.date, sector_area=None) -> StudyLeave:
+    """What the instrument in force says about paid study leave.
+
+    **Two figures, not one summed.** The clause gives one day to PREPARE for
+    each examination and one day to WRITE it, and an employee who writes
+    without preparing is owed the second and not the first — so they are stored
+    and answered separately, with ``days_per_examination`` for a caller that
+    wants the pair.
+
+    Not granted is the ordinary answer: no other instrument this system loads
+    creates study leave at all, and ``leave_type.STUDY`` exists as a
+    discretionary employer benefit for everybody else (D-268).
+    """
+    prepare = parameter_or_none(
+        "STUDY_LEAVE_PREPARE_DAYS_PER_EXAM", on_date, sector=sector, sector_area=sector_area
+    )
+    write = parameter_or_none(
+        "STUDY_LEAVE_WRITE_DAYS_PER_EXAM", on_date, sector=sector, sector_area=sector_area
+    )
+    if prepare is None or write is None:
+        return StudyLeave(granted=False)
+    return StudyLeave(
+        granted=True,
+        prepare_days_per_examination=prepare.value_numeric,
+        write_days_per_examination=write.value_numeric,
+        source_reference=prepare.source_reference,
+    )
+
+
+def shop_steward_leave(
+    sector: Sector | None,
+    on_date: datetime.date,
+    *,
+    is_office_bearer: bool,
+    sector_area=None,
+) -> ShopStewardLeave:
+    """Paid leave a year to attend to union affairs, at one of two figures.
+
+    **``is_office_bearer`` is DECLARED and never derived** (D-110's shape).
+    Whether this employee is an office bearer of a representative trade union
+    is a fact about them and their union, not about the employer or the date,
+    and no column on ``employee`` carries it. So the caller states it and this
+    function refuses to guess — exactly as ``works_over_27_hours_week`` is a
+    declared boolean rather than something computed from hours.
+
+    **The office bearer's figure is the SMALLER one** (4 against 6), which
+    reads like the gazette swapped its two limbs. Both agreements print it that
+    way, so it is answered as printed (O-32).
+    """
+    code = (
+        "SHOP_STEWARD_LEAVE_DAYS_OFFICE_BEARER"
+        if is_office_bearer
+        else "SHOP_STEWARD_LEAVE_DAYS_OTHER"
+    )
+    row = parameter_or_none(code, on_date, sector=sector, sector_area=sector_area)
+    if row is None:
+        return ShopStewardLeave(granted=False, is_office_bearer=is_office_bearer)
+    return ShopStewardLeave(
+        granted=True,
+        days_per_year=row.value_numeric,
+        is_office_bearer=is_office_bearer,
+        source_reference=row.source_reference,
+    )
+
+
+def prenatal_clinic_leave(
+    sector: Sector | None, on_date: datetime.date, sector_area=None
+) -> PrenatalClinicLeave:
+    """Paid days to attend a prenatal clinic before the expected date of birth.
+
+    The two figures went in with the maternity benefits (D-244) and were read
+    by nothing until this function existed — the same shape of gap D-243 left
+    behind, found while seeding the leave type that spends them (D-268).
+
+    **The cap is not enforced anywhere.** ``leave_type.PRENATAL`` carries no
+    balance, because the entitlement is per PREGNANCY rather than per cycle and
+    a twelve-month bank would be an invented shape. This function is therefore
+    the only place the three days live, and the application layer does not yet
+    read it (O-31).
+    """
+    per_month = parameter_or_none(
+        "PRENATAL_CLINIC_PAID_DAYS_PER_MONTH", on_date, sector=sector, sector_area=sector_area
+    )
+    months = parameter_or_none(
+        "PRENATAL_CLINIC_MONTHS_BEFORE_BIRTH", on_date, sector=sector, sector_area=sector_area
+    )
+    if per_month is None or months is None:
+        return PrenatalClinicLeave(granted=False)
+    return PrenatalClinicLeave(
+        granted=True,
+        paid_days_per_month=per_month.value_numeric,
+        months_before_birth=int(months.value_numeric),
+        source_reference=per_month.source_reference,
+    )
+
+
 def parental_quantum(on_date: datetime.date) -> ParentalLeaveQuantum:
     """How much parental leave the law gives on ``on_date``, in months and days.
 
