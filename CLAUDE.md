@@ -1422,6 +1422,17 @@ re-validates rather than trusting an earlier pass.
 PERIOD's date, not today's — `current_pay_basis` is a cache refreshed as at today (D-107), and
 today is not the date the payslip is for.
 
+**The long-service annual leave band is read by the accrual engine** (D-267). BCCCI
+clause 9.1(b)'s 28 days above ten years' service reached `resolve.annual_leave_days()`
+in D-243 and no further — `leave/cycles.py` read the ordinary columns directly and
+passed no wage area, so a twelve-year KwaZulu-Natal cleaner got Sectoral Determination
+1's 18 days. **A cycle's SERVICE is measured on its last day and its INSTRUMENT chosen
+on its first**, and the two dates are separate on purpose: a twelve-month cycle anchored
+to the engagement start puts the tenth anniversary on a cycle's FIRST day, and "more
+than ten years" excludes that day, so measuring at the opening hands the band over a
+full year late. Reading the rule set at the opening is still right, because a gazette
+published mid-cycle must not move a figure already accrued against (D-107).
+
 **P6 — Leave: ALL FIVE CHUNKS BUILT** (18 September 2026). Chunk 5 — maternity, parental
 under Van Wyk and adoption — is in: the two totals as cited reference data, the declaration
 captured rather than computed, s25(4B)'s single sequence enforced, and the two opposite lapse
