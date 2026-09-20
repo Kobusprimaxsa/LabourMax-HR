@@ -2075,3 +2075,92 @@ class EmployeeImportBatch(AuditedModel, TenantScopedModel):
 
     def __str__(self):
         return f"Import batch {self.pk} ({self.status})"
+
+
+class EmployeeUnionRole(AuditedModel, TenantScopedModel):
+    """Whether this employee holds a union office, and for what period.
+
+    **Not in sheet 02** — the workbook's `leave_type.code` enumeration stops at
+    UNPAID and knows nothing of shop steward leave, because that entitlement is
+    created by one bargaining council agreement rather than by the BCEA
+    (D-268). This table is the same kind of deviation as
+    ``employee_import_batch`` (D-144): the workbook is silent rather than
+    contradicting, and the alternative was worse.
+
+    **Why a table and not a boolean on the application** (D-269). BCCCI clause
+    20.4(a) gives 4 paid days a year to an office bearer of a representative
+    trade union and 6 to any other shop steward, so the cap on a single
+    application depends on a status the employee holds over a PERIOD. Declared
+    per application, two applications in one year could state two different
+    statuses and there would be no answer to "how many days does this person
+    get this year". Invariant 2 settles it: something that changes over time is
+    a row.
+
+    **Why an enum and not a boolean.** The fact is tri-state — not a shop
+    steward, a shop steward, or an office bearer of a representative trade
+    union — and only the last two get any leave at all. NO ROW MEANS NO
+    ENTITLEMENT, which is the safe direction: an employee nobody has recorded
+    as a shop steward is capped at nothing rather than at six days.
+
+    **The figures are NOT here.** The 4 and the 6 stay in
+    ``statutory_parameter`` with their citation, and this row only says which
+    of them applies — D-110's rule exactly, the same shape as
+    ``work_schedule.works_over_27_hours_week``. An employer states which side
+    of the line the person is on; the gazette keeps the number.
+    """
+
+    class Role(models.TextChoices):
+        SHOP_STEWARD = "shop_steward", "Shop steward"
+        OFFICE_BEARER = "office_bearer", "Office bearer of a representative trade union"
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="union_roles")
+    role = models.CharField(max_length=20, choices=Role.choices)
+    trade_union_name = models.CharField(
+        max_length=120,
+        blank=True,
+        help_text=(
+            "The union this role is held in. Free text: the Council's list of "
+            "representative unions is not reference data this system loads, and a "
+            "guessed code would be worse than a name somebody typed."
+        ),
+    )
+    effective_from = models.DateField(db_index=True)
+    effective_to = models.DateField(
+        null=True, blank=True, help_text="Exclusive. NULL means current."
+    )
+
+    class Meta:
+        db_table = "employee_union_role"
+        ordering = ["employee_id", "-effective_from"]
+        indexes = [models.Index(fields=["employee", "-effective_from"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee", "effective_from"],
+                name="uniq_union_role_start_per_employee",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(role__in=["shop_steward", "office_bearer"]),
+                name="union_role_is_known",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(effective_to__isnull=True)
+                | models.Q(effective_to__gt=models.F("effective_from")),
+                name="union_role_period_ordered",
+            ),
+            # Two roles in force at once means two caps for one year, decided by
+            # row order. The unique on the start date only stops two rows
+            # BEGINNING on one day (D-136's lesson, D-131's before it).
+            ExclusionConstraint(
+                name="employee_union_role_no_overlapping_periods",
+                expressions=[
+                    (
+                        DateRange("effective_from", "effective_to", RangeBoundary()),
+                        RangeOperators.OVERLAPS,
+                    ),
+                    ("employee", RangeOperators.EQUAL),
+                ],
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.role} for {self.employee_id} from {self.effective_from}"

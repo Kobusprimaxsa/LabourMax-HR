@@ -936,6 +936,30 @@ class LeaveApplication(AuditedModel, TenantScopedModel):
     )
     cancelled_reason = models.CharField(max_length=255, blank=True)
 
+    # ---------------------------------------- the prenatal clinic day (D-269)
+    # DECLARED, never computed - the same rule as the parental declaration
+    # below, and for the same reason: nothing in this system knows when a
+    # pregnancy is due. BCCCI clause 13.2 gives one paid day in each of the 3
+    # months BEFORE the expected date of confinement, so without this date
+    # there is no window to be inside and no cap to enforce.
+    #
+    # Nullable because it is meaningless on every other leave type. **No CHECK
+    # ties it to PRENATAL, and that is a limit rather than an oversight**: a
+    # CHECK cannot read through the leave_type foreign key, and this table
+    # freezes no leave_type_code beside it the way payslip_line freezes
+    # component_code (invariant 7). The parental declaration below lives with
+    # exactly the same limit. So "a prenatal application must state this date"
+    # is enforced in leave/applications.py::submit_application(), which refuses
+    # by name, and a test watches it refuse.
+    expected_date_of_confinement = models.DateField(
+        null=True,
+        blank=True,
+        help_text=(
+            "PRENATAL only. The expected date of birth this clinic day counts "
+            "against, as certified under clause 13.1(b)(i)."
+        ),
+    )
+
     # ------------------------------------------------- parental leave (D-202)
     # CAPTURED, never computed. The quantum turns on whether the OTHER parent is
     # employed, which is a fact about somebody who is not this employer's

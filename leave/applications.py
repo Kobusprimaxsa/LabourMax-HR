@@ -43,6 +43,7 @@ from __future__ import annotations
 import datetime
 from decimal import ROUND_HALF_UP, Decimal
 
+from dateutil.relativedelta import relativedelta
 from django.db import transaction
 from django.utils import timezone
 
@@ -251,6 +252,185 @@ def _check_parental(employee, leave_type, declaration, *, start_date, end_date):
     return declaration
 
 
+# ---------------------------------------------------------------------------
+# THE TWO CAPS THAT ARE NOT BALANCES (D-269).
+#
+# PRENATAL and SHOP_STEWARD keep no balance at all (D-268): neither is a
+# per-cycle bank, so there is nothing for the overdraw arithmetic above to read
+# and nothing for a monthly run to add to. Their ceilings come from the
+# instrument instead, exactly as parental leave's does (D-201) - and like
+# parental leave, the excess is never refused. It falls to unpaid through the
+# same columns every other unpaid reason uses (D-188), never a third mechanism.
+#
+# Refusing would be the wrong shape twice over. D-174 settled that an
+# application is never refused for being overdrawn, and these are not even
+# overdrawals: clause 13.2 grants three paid clinic days and says nothing about
+# a fourth, so a fourth is ordinary unpaid time off that the employer may still
+# allow. What the cap decides is PAY, never whether the leave may be taken.
+# ---------------------------------------------------------------------------
+
+
+class PrenatalDateRequiredError(ApplicationRefusedError):
+    """A prenatal clinic day with no expected date of confinement to count against."""
+
+
+def _scope_of(employee, on_date):
+    """The employer's sector and this employee's wage area, most specific first."""
+    from leave.cycles import _sector_area_of
+
+    return employee.employer.sector, _sector_area_of(employee, on_date)
+
+
+def prenatal_windows(
+    expected_date_of_confinement: datetime.date, months_before_birth: int
+) -> list[tuple[datetime.date, datetime.date]]:
+    """The periods clause 13.2's "each of the 3 months prior to" names.
+
+    **The three CALENDAR months before the month of confinement**, half-open
+    like every other range here. A due date anywhere in December 2026 gives
+    September, October and November — exactly three, whatever the day.
+
+    **Counting one-month periods back from the due date was implemented first
+    and rejected** (D-269), by a test rather than by argument. Those windows
+    MOVE with the declared date: a due date revised by ten days shifts every
+    boundary, so a month already paid for can fall outside the new window and
+    a second paid day appears in the same calendar month. A revised due date is
+    an ordinary event — that is what "expected" means — and it must not buy a
+    fourth paid day. Calendar months do not move, so "one paid day per month"
+    can be checked without knowing which pregnancy a day belongs to, and the
+    three-day total falls out of it rather than needing a counter of its own.
+
+    Both readings give exactly three days, so nothing is lost by taking the one
+    that cannot be walked.
+    """
+    month_start = expected_date_of_confinement.replace(day=1)
+    windows = []
+    for index in range(months_before_birth, 0, -1):
+        starts = month_start - relativedelta(months=index)
+        windows.append((starts, starts + relativedelta(months=1)))
+    return windows
+
+
+def _paid_days_between(employee, leave_type, start, end) -> int:
+    """Paid days of one leave type already standing between two dates.
+
+    Counts SUBMITTED and APPROVED applications and ignores declined and
+    cancelled ones, because a cancelled clinic day was not taken and must not
+    consume the entitlement - the same reading ``leave/authorisation.py`` takes
+    when it reverses a cancelled application's ledger row.
+    """
+    return LeaveApplicationDay.objects.filter(
+        leave_application__employee=employee,
+        leave_application__leave_type=leave_type,
+        leave_application__status__in=[
+            LeaveApplication.Status.SUBMITTED,
+            LeaveApplication.Status.APPROVED,
+        ],
+        leave_date__gte=start,
+        leave_date__lt=end,
+        is_paid=True,
+        is_working_day=True,
+    ).count()
+
+
+def _apply_prenatal_cap(employee, leave_type, day_dicts, *, expected_date_of_confinement):
+    """One paid day in each of the three months before the due date, and no more.
+
+    The per-month rule does the real work and needs no notion of WHICH
+    pregnancy a day belongs to: a day is paid only if no paid prenatal day
+    already stands in the same calendar month. So a revised due date cannot buy
+    a second paid day in a month already used, which both a per-pregnancy
+    counter and the date-relative windows this first used would have allowed.
+    """
+    sector, sector_area = _scope_of(employee, day_dicts[0]["leave_date"])
+    entitlement = resolve.prenatal_clinic_leave(sector, day_dicts[0]["leave_date"], sector_area)
+
+    if not entitlement.granted:
+        # No instrument in force creates this leave for this employee. The days
+        # stand as unpaid time off rather than being refused.
+        for day_dict in day_dicts:
+            if day_dict["is_working_day"]:
+                day_dict["is_paid"] = False
+        return
+
+    windows = prenatal_windows(expected_date_of_confinement, entitlement.months_before_birth)
+    used_in_window = {
+        index: _paid_days_between(employee, leave_type, starts, ends)
+        for index, (starts, ends) in enumerate(windows)
+    }
+
+    for day_dict in day_dicts:
+        if not day_dict["is_working_day"]:
+            continue
+        index = next(
+            (
+                n
+                for n, (starts, ends) in enumerate(windows)
+                if starts <= day_dict["leave_date"] < ends
+            ),
+            None,
+        )
+        if index is None or used_in_window[index] >= entitlement.paid_days_per_month:
+            day_dict["is_paid"] = False
+            continue
+        used_in_window[index] += 1
+
+
+def _apply_shop_steward_cap(employee, leave_type, day_dicts):
+    """Four or six paid days in the CALENDAR year, depending on the role held.
+
+    **The year is the calendar year** (D-269). The clause says "per year" and
+    does not say which; this agreement uses "Calendar Year" in terms at clause
+    4.5(d) for the incentive bonus, which is the only place it defines a year
+    at all, so that is the reading loaded. Flagged for the labour law review
+    rather than asserted as settled (O-06) - an employment-anniversary year is
+    the other defensible reading and would move which days are paid.
+
+    **No role row means no entitlement**, which is the safe direction: an
+    employee nobody has recorded as a shop steward is capped at nothing rather
+    than at six days.
+    """
+    from employees.models import EmployeeUnionRole
+
+    on_date = day_dicts[0]["leave_date"]
+    role = (
+        EmployeeUnionRole.objects.filter(employee=employee, effective_from__lte=on_date)
+        .exclude(effective_to__lte=on_date)
+        .order_by("-effective_from")
+        .first()
+    )
+    sector, sector_area = _scope_of(employee, on_date)
+    entitlement = (
+        resolve.shop_steward_leave(
+            sector,
+            on_date,
+            is_office_bearer=role.role == EmployeeUnionRole.Role.OFFICE_BEARER,
+            sector_area=sector_area,
+        )
+        if role is not None
+        else None
+    )
+
+    if entitlement is None or not entitlement.granted:
+        for day_dict in day_dicts:
+            if day_dict["is_working_day"]:
+                day_dict["is_paid"] = False
+        return
+
+    year_start = datetime.date(on_date.year, 1, 1)
+    year_end = datetime.date(on_date.year + 1, 1, 1)
+    already = _paid_days_between(employee, leave_type, year_start, year_end)
+    remaining = entitlement.days_per_year - already
+
+    for day_dict in day_dicts:
+        if not day_dict["is_working_day"]:
+            continue
+        if remaining <= 0 or not (year_start <= day_dict["leave_date"] < year_end):
+            day_dict["is_paid"] = False
+            continue
+        remaining -= 1
+
+
 def submit_application(
     employee,
     *,
@@ -262,6 +442,7 @@ def submit_application(
     is_part_day: bool = False,
     submitted_by=None,
     parental=None,
+    expected_date_of_confinement: datetime.date | None = None,
 ) -> LeaveApplication:
     """Create and submit a leave application. Atomic. Never refuses for want
     of evidence, and never refuses for being overdrawn — see the module
@@ -294,6 +475,15 @@ def submit_application(
                     f"Family responsibility leave from {start_date:%d %B %Y} refused: "
                     + " ".join(eligibility.reasons)
                 )
+
+        if leave_type.code == LeaveType.Code.PRENATAL and expected_date_of_confinement is None:
+            raise PrenatalDateRequiredError(
+                "A prenatal clinic day must state the expected date of confinement it "
+                "counts against. BCCCI clause 13.2 gives one paid day in each of the "
+                "3 months BEFORE that date, so with no date there is no window to be "
+                "inside and nothing caps the entitlement. It is declared and never "
+                "computed: nothing in this system knows when a pregnancy is due."
+            )
 
         from leave import parental as parental_rules
 
@@ -365,6 +555,24 @@ def submit_application(
                     day_dict["is_paid"] = employer_pays
                 day_dict["deducted_from_balance"] = False
 
+        # The two instrument-capped types (D-269). Applied BEFORE the overdraw
+        # arithmetic, which reads a balance neither of them has, so `requested`
+        # below sees only days that are still paid and `exceeds_balance` stays
+        # false rather than reporting an overdraw against a zero balance.
+        if leave_type.is_system and leave_type.code == LeaveType.Code.PRENATAL:
+            _apply_prenatal_cap(
+                employee,
+                leave_type,
+                day_dicts,
+                expected_date_of_confinement=expected_date_of_confinement,
+            )
+            for day_dict in day_dicts:
+                day_dict["deducted_from_balance"] = False
+        elif leave_type.is_system and leave_type.code == LeaveType.Code.SHOP_STEWARD:
+            _apply_shop_steward_cap(employee, leave_type, day_dicts)
+            for day_dict in day_dicts:
+                day_dict["deducted_from_balance"] = False
+
         if unauthorised_treatment == "unpaid" or not sick_is_paid:
             for day_dict in day_dicts:
                 if day_dict["is_working_day"]:
@@ -426,6 +634,7 @@ def submit_application(
             status=LeaveApplication.Status.SUBMITTED,
             submitted_by_user=submitted_by,
             submitted_at=timezone.now(),
+            expected_date_of_confinement=expected_date_of_confinement,
             balance_at_submission=available,
             exceeds_balance=exceeds_balance,
             # D-188: the unpaid portion, in the application's own unit, for
