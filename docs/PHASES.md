@@ -108,7 +108,8 @@ The most important phase in the build. Can overlap P1.
       each with a citation, loaded and unverified
 - [ ] **Kobus verifies every figure against its source**, then `verifystatutory`. **The
       only item in P2 still needing a person.** 148 check groups over 672 figures across 18
-      source documents, exported to `reference/verification/Labourmax_verification.xlsx`
+      source documents as at D-265; **156 groups over 688 figures after D-268** —
+      re-export before starting. Exported to `reference/verification/Labourmax_verification.xlsx`
       and read back into the database as append-only evidence (D-256, D-258). A tick by a
       development identity does NOT count: it is accepted so the build can read reference
       data, reported by `checkstatutory` every run, and refused by the payroll gate on the

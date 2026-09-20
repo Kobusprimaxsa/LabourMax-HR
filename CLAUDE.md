@@ -1172,7 +1172,8 @@ the gate names it.
   reads the ticks back into `reference_figure_check`, which is append-only evidence in the
   database rather than a tick trapped in an unmergeable binary (D-256). Nothing is
   pre-ticked, and re-exporting is safe: every recorded tick is carried forward, so a new
-  reference row no longer costs an evening of checking.
+  reference row no longer costs an evening of checking. **Re-export before starting**:
+  D-268 added eight check groups, so the workbook on disk is one load behind.
 - **A verification tick that is not a person's never gets past the payroll gate** (D-262).
   `verifystatutory` accepts an identity ending in RFC 2606's reserved `.invalid` — the
   build has to be able to read reference data before the human pass finishes — and warns
@@ -1421,6 +1422,17 @@ re-validates rather than trusting an earlier pass.
 **Finalisation does five things in one transaction** (D-235) and reads the snapshot at the
 PERIOD's date, not today's — `current_pay_basis` is a cache refreshed as at today (D-107), and
 today is not the date the payslip is for.
+
+**Three leave types exist for KwaZulu-Natal contract cleaning and for nobody else**
+(D-268): study leave (one day to prepare and one to write EACH examination, on full
+pay), shop steward leave (4 days a year for an office bearer of a representative trade
+union, 6 for any other shop steward — the office bearer's figure is the smaller one, in
+both agreements, and is transcribed as printed) and the prenatal clinic day (one paid
+day in each of the 3 months before the expected date of confinement). **None is a
+per-cycle bank**, so each is a `statutory_parameter` rather than a `leave_rule_set`
+column and every catalogue row carries `accrues=False` — the accrual engine grants none
+of them. Which shop steward figure applies is a DECLARED fact about the person, with no
+column to hold it (D-110's shape). Nothing enforces the caps yet (O-31).
 
 **The long-service annual leave band is read by the accrual engine** (D-267). BCCCI
 clause 9.1(b)'s 28 days above ten years' service reached `resolve.annual_leave_days()`
