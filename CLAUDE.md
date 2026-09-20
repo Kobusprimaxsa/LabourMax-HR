@@ -351,8 +351,9 @@ where the page cannot be found confidently, and is plain text where neither is
 possible. **A wrong page is worse than none**, so the matcher answers nothing unless
 sure, and nothing extracts or quotes what a clause SAYS — that would make the pass
 Claude Code's transcription checked against Claude Code's transcription. Coverage today
-is 5 of 156 at a page and 73 more at the document; the limits are in the citations
-rather than the matcher (O-38).
+is 32 of 156 at a page and 80 more at the document (D-274); what is left is SD1 and
+SD7, whose citations name a consolidated text nobody publishes, and the two BCCCI
+gazettes whose clause numbers do not survive text extraction (O-38).
 
 **The import can no longer be silent** (D-272). It once read seventeen marked rows and
 recorded nothing, saying nothing: the checker and the date were only checked for being
