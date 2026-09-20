@@ -192,6 +192,27 @@ class ReferenceDataVersion(AuditedModel, AuditMixin):
     )
     verified_at = models.DateTimeField(null=True, blank=True)
 
+    #: EVERYONE who checked at least one figure in this version, the signer
+    #: included (D-270). The workbook is organised by SOURCE DOCUMENT because
+    #: that is how a person verifies - one gazette, one sitting - and versions
+    #: cut ACROSS documents, so sharing the pass out by document guarantees
+    #: that some version is checked by two people. Two people checking
+    #: different figures is a STRONGER result than one checking all of them.
+    #:
+    #: ``verified_by_user`` above stays, as the verifier of RECORD: a CHECK
+    #: pairs it with ``verified_at`` so a version cannot be verified with
+    #: nobody's name on it, and a CHECK cannot reach a many-to-many. It is
+    #: always one of these, which a test pins.
+    verified_by_users = models.ManyToManyField(
+        "core.AppUser",
+        related_name="verified_reference_versions",
+        blank=True,
+        help_text=(
+            "Everyone who checked a figure in this version. The per-figure record "
+            "of who checked what is reference_figure_check."
+        ),
+    )
+
     golden_tests_passed = models.BooleanField(
         default=False,
         help_text=(
@@ -266,12 +287,18 @@ class ReferenceDataVersion(AuditedModel, AuditMixin):
         has to be able to get past the gate or nothing downstream of P2 can be
         built at all. What must never happen is the tick surviving into a real
         run, which is what :meth:`unusable_q` stops.
+
+        **ANY machine among the checkers taints the whole version** (D-270).
+        Once several people can verify one version between them, looking only at
+        the signer would let half a version checked by nobody ride in on the
+        half a person did check.
         """
-        return (
-            self.is_verified
-            and self.verified_by_user is not None
-            and self.verified_by_user.email.lower().endswith(self.DEVELOPMENT_VERIFIER_SUFFIX)
-        )
+        if not self.is_verified:
+            return False
+        emails = [user.email for user in self.verified_by_users.all()]
+        if self.verified_by_user is not None:
+            emails.append(self.verified_by_user.email)
+        return any(email.lower().endswith(self.DEVELOPMENT_VERIFIER_SUFFIX) for email in emails)
 
     @property
     def is_usable(self) -> bool:
@@ -287,12 +314,25 @@ class ReferenceDataVersion(AuditedModel, AuditMixin):
         reason added to one list and not the other is a version that the gate
         refuses and the resolver happily answers, or the reverse (D-262).
         """
+        from django.db.models import Exists, OuterRef
+
+        from core.models import AppUser
+
+        # The signer is checked directly; the other checkers need a subquery,
+        # because a multi-valued join inside exclude() is where "excludes rows
+        # having ANY match" and "excludes rows where the joined row matches"
+        # come apart. An EXISTS says which one is meant (D-270).
+        machine_checker = AppUser.objects.filter(
+            verified_reference_versions=OuterRef("pk"),
+            email__iendswith=cls.DEVELOPMENT_VERIFIER_SUFFIX,
+        )
         return (
             models.Q(verified_at__isnull=True)
             | models.Q(golden_tests_passed=False)
             | models.Q(
                 verified_by_user__email__iendswith=cls.DEVELOPMENT_VERIFIER_SUFFIX,
             )
+            | models.Q(Exists(machine_checker))
         )
 
     @classmethod

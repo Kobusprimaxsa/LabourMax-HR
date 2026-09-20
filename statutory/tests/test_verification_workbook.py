@@ -644,3 +644,154 @@ def test_ticking_one_group_records_one_check_per_figure(workbook, checker):
 
     recorded = set(ReferenceFigureCheck.objects.values_list("row_key", flat=True))
     assert recorded == set(group.row_keys)
+
+
+# ---------------- two people may verify one version between them (D-270)
+
+
+@pytest.fixture
+def second_checker(db):
+    return get_user_model().objects.create_user(
+        email="second@example.com", password="x" * 14, first_name="B", last_name="Checker"
+    )
+
+
+#: Four figures in one version, so it can actually be split between two people.
+#: Every UNSCOPED fixture in reference/ holds exactly one parameter row, so this
+#: one needs its sector and area created first - which is the point of using a
+#: real fixture rather than an invented one (``row_versions()`` recovers the
+#: version by replaying what is in reference/).
+SPLITTABLE_FIXTURE = "ref-2026.04.01-bccci-leave-types.json"
+SPLITTABLE = "REF-2026.04.01-BCCCI-LEAVE-TYPES"
+
+
+@pytest.fixture
+def split_workbook(loaded, tmp_path):
+    from statutory.models import Sector, SectorArea
+
+    sector = Sector.objects.create(
+        code=Sector.Code.CONTRACT_CLEANING, name="Contract cleaning sector"
+    )
+    SectorArea.objects.create(
+        sector=sector, code="AREA_B", name="Area B", uses_bargaining_council_rates=True
+    )
+    load_reference_data(
+        json.loads((REFERENCE / SPLITTABLE_FIXTURE).read_text(encoding="utf-8")),
+        loaded_by=loaded,
+    )
+    path = tmp_path / "split.xlsx"
+    call_command("exportverification", str(path), verbosity=0)
+    return path
+
+
+def keys_for(version):
+    """Every check-group key belonging to one version, in workbook order."""
+    return [group.key for group in verification.check_groups() if group.version == version]
+
+
+def test_two_people_splitting_one_version_verify_it_between_them(
+    split_workbook, checker, second_checker
+):
+    """THE CASE THE WORKBOOK'S OWN SHAPE PRODUCES. It is organised by SOURCE
+    DOCUMENT because that is how a person verifies — one gazette, one sitting —
+    and versions cut ACROSS documents. So splitting the pass by document
+    between two people guarantees that some version is checked by both, and
+    refusing that made the obvious way of sharing the work impossible.
+
+    Two people checking different figures is a STRONGER result than one person
+    checking all of them, not a weaker one.
+    """
+    half = keys_for(SPLITTABLE)
+    assert len(half) >= 4, "this test needs a version with something to split"
+    mark_keys(split_workbook, half[:1], by="checker@example.com")
+    mark_keys(split_workbook, half[1:], by="second@example.com")
+
+    call_command(
+        "importverification", str(split_workbook), current_through="2027-02-28", verbosity=0
+    )
+
+    version = ReferenceDataVersion.objects.get(version_label=SPLITTABLE)
+    assert version.verified_at is not None, "a version checked by two people is still verified"
+    assert {user.email for user in version.verified_by_users.all()} == {
+        "checker@example.com",
+        "second@example.com",
+    }, "every checker is recorded, not just whoever signed"
+    assert version.verified_by_user.email in {"checker@example.com", "second@example.com"}
+
+
+def test_the_loader_may_not_verify_their_own_load_even_as_the_second_checker(
+    split_workbook, loaded, second_checker, capsys
+):
+    """THE RULE THE ONE-CHECKER REFUSAL WAS ACCIDENTALLY COVERING. The loader
+    check ran against ``checkers[0]`` only, so with the refusal lifted a loader
+    could verify their own load simply by being the second name on it. It runs
+    over EVERY checker now."""
+    half = keys_for(SPLITTABLE)
+    mark_keys(split_workbook, half[:1], by="second@example.com")
+    mark_keys(split_workbook, half[1:], by="loader@example.com")
+
+    with pytest.raises(CommandError):
+        call_command(
+            "importverification", str(split_workbook), current_through="2027-02-28", verbosity=1
+        )
+
+    output = capsys.readouterr().out
+    assert "loaded this version and may not verify it" in output, (
+        "it must refuse for the RIGHT reason - before this change the same call "
+        "was refused merely for having two checkers, which would have made this "
+        "test pass while the loader rule leaked"
+    )
+    assert "loader@example.com" in output
+    assert ReferenceDataVersion.objects.get(version_label=SPLITTABLE).verified_at is None
+
+
+def test_a_machine_among_the_checkers_taints_the_whole_version(split_workbook, checker):
+    """D-262 held only because there was one verifier to look at. With several,
+    a version is machine-verified if ANY of them is a development identity —
+    otherwise half a version checked by nobody rides in on the other half."""
+    machine = get_user_model().objects.create_user(
+        email="claude-verification@labourmax.invalid", password="x" * 14
+    )
+    half = keys_for(SPLITTABLE)
+    mark_keys(split_workbook, half[:1], by="checker@example.com")
+    mark_keys(split_workbook, half[1:], by=machine.email)
+
+    call_command(
+        "importverification", str(split_workbook), current_through="2027-02-28", verbosity=0
+    )
+
+    version = ReferenceDataVersion.objects.get(version_label=SPLITTABLE)
+    assert version.is_machine_verified is True
+    assert version.is_usable is False
+    assert ReferenceDataVersion.in_force_on(datetime.date(2026, 6, 1)) is None, (
+        "unusable_q() reaches the OTHER checkers through an EXISTS subquery, and "
+        "this is the exclude() path that would silently stop excluding if it did not"
+    )
+
+
+def test_a_dry_run_reports_what_it_would_record_not_what_the_database_holds(
+    workbook, checker, capsys
+):
+    """It read the DATABASE, so however much was ticked it said "0 of N
+    checked" — which reads as a failure and sent a person hunting a bug that
+    was not there. Preview IS apply, rolled back (D-145), so the report is
+    accurate by construction rather than by a second code path that has to be
+    kept in step."""
+    mark_all(workbook)
+
+    call_command(
+        "importverification",
+        str(workbook),
+        current_through="2027-02-28",
+        dry_run=True,
+        verbosity=1,
+    )
+
+    output = capsys.readouterr().out
+    assert "DRY RUN" in output
+    assert SICK in output
+    assert "0 of" not in output, "a fully ticked workbook must not report nothing checked"
+    assert "Would verify" in output or "Verified" in output
+
+    assert ReferenceDataVersion.objects.get(version_label=SICK).verified_at is None
+    assert ReferenceFigureCheck.objects.count() == 0, "a dry run still writes nothing"

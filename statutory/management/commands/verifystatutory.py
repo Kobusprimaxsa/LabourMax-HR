@@ -33,6 +33,20 @@ class Command(BaseCommand):
             "--verified-by", required=True, help="Email address of the person verifying."
         )
         parser.add_argument(
+            "--also-checked-by",
+            action="append",
+            default=[],
+            metavar="EMAIL",
+            help=(
+                "Another person who checked figures in this version. Repeatable. "
+                "The verification workbook is organised by source document and "
+                "versions cut across documents, so two people sharing the pass "
+                "will both have checked parts of one version (D-270). Every name "
+                "is recorded and the second-pair-of-eyes rule is applied to all "
+                "of them, not only to the one who signs."
+            ),
+        )
+        parser.add_argument(
             "--current-through",
             required=True,
             help=(
@@ -60,16 +74,26 @@ class Command(BaseCommand):
         if verifier is None:
             raise CommandError(f"No user with email {options['verified_by']}.")
 
-        if (
-            version.loaded_by_user_id
-            and version.loaded_by_user_id == verifier.pk
-            and not options["allow_self_verification"]
-        ):
-            raise CommandError(
-                "The person who loaded this version cannot verify it. Verification is a "
-                "second reading of the source document by a second pair of eyes - that is "
-                "the entire reason the column exists separately from loaded_by_user."
-            )
+        others = []
+        for email in options["also_checked_by"]:
+            user = AppUser.objects.filter(email__iexact=email).first()
+            if user is None:
+                raise CommandError(f"No user with email {email}.")
+            others.append(user)
+
+        # EVERY checker, not only the signer. Once a version can be checked by
+        # more than one person, applying the second-pair-of-eyes rule to one of
+        # them lets the loader verify their own load by being the other (D-270).
+        checkers = [verifier, *others]
+        if not options["allow_self_verification"]:
+            for user in checkers:
+                if version.loaded_by_user_id and version.loaded_by_user_id == user.pk:
+                    raise CommandError(
+                        f"{user.email} loaded this version and cannot verify it. "
+                        f"Verification is a second reading of the source document by a "
+                        f"second pair of eyes - that is the entire reason the column "
+                        f"exists separately from loaded_by_user."
+                    )
 
         try:
             current_through = datetime.date.fromisoformat(options["current_through"])
@@ -92,11 +116,19 @@ class Command(BaseCommand):
                 "settles - fix the data and re-run."
             )
 
-        machine = verifier.email.lower().endswith(ReferenceDataVersion.DEVELOPMENT_VERIFIER_SUFFIX)
+        machine = any(
+            user.email.lower().endswith(ReferenceDataVersion.DEVELOPMENT_VERIFIER_SUFFIX)
+            for user in checkers
+        )
         if machine:
+            named = ", ".join(
+                user.email
+                for user in checkers
+                if user.email.lower().endswith(ReferenceDataVersion.DEVELOPMENT_VERIFIER_SUFFIX)
+            )
             self.stdout.write(
                 self.style.WARNING(
-                    f"{verifier.email} is a DEVELOPMENT IDENTITY, not a person - RFC 2606 "
+                    f"{named} is a DEVELOPMENT IDENTITY, not a person - RFC 2606 "
                     f"reserves .invalid so the address can never be delegated. This is "
                     f"accepted, because the rest of the build has to be able to read "
                     f"reference data before the human pass is finished. It does NOT bring "
@@ -125,8 +157,12 @@ class Command(BaseCommand):
                 f"--allow-self-verification.]"
             ).strip()
         version.save()
+        version.verified_by_users.set(checkers)
 
-        self.stdout.write(f"{version.version_label} verified by {verifier.email}.")
+        signed = verifier.email
+        if others:
+            signed += " with " + ", ".join(user.email for user in others)
+        self.stdout.write(f"{version.version_label} verified by {signed}.")
         self.stdout.write(f"  Data confirmed correct through {current_through:%d %B %Y}.")
         self.stdout.write(
             f"  Golden tests passed: {'yes' if version.golden_tests_passed else 'NO'}"

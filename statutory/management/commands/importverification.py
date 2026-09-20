@@ -111,6 +111,39 @@ class Command(BaseCommand):
         for row in rows:
             by_version.setdefault(row["version"], []).append(row)
 
+        # PREVIEW IS APPLY, ROLLED BACK (D-145, D-270). A dry run used to skip
+        # the writes and then report the DATABASE, so a fully ticked workbook
+        # said "0 of N checked" however much was in it - which reads as a
+        # failure and sent somebody hunting a bug that was not there. It now
+        # does exactly what a real run does and rolls the transaction back, so
+        # the report is what the import WOULD record, accurate by construction
+        # rather than by a second code path somebody has to keep in step.
+        if options["dry_run"]:
+            with transaction.atomic():
+                outcome = self._process(by_version, current_through, options)
+                transaction.set_rollback(True)
+        else:
+            outcome = self._process(by_version, current_through, options)
+
+        verified, refused, incomplete, already, recorded = outcome
+
+        if recorded:
+            self.stdout.write(
+                f"{'Would record' if options['dry_run'] else 'Recorded'} {recorded} check(s).\n"
+            )
+
+        self._report(verified, refused, incomplete, already, by_version, dry_run=options["dry_run"])
+
+        if refused:
+            raise CommandError(
+                f"{len(refused)} version(s) refused - none of them was verified. Every "
+                f"SOUND tick in the workbook was still recorded, including those on a "
+                f"refused version: discarding a hundred good ticks over one bad cell is "
+                f"the data loss reference_figure_check exists to stop."
+            )
+
+    def _process(self, by_version, current_through, options):
+        """Both passes, writing for real. The caller decides whether to commit."""
         verified, refused, incomplete, already = [], [], [], []
         recorded = 0
 
@@ -120,8 +153,7 @@ class Command(BaseCommand):
         for label in sorted(by_version):
             problems, sound = self._sift(by_version[label])
             problems_by_version[label] = problems
-            if not options["dry_run"]:
-                recorded += self._record(label, sound)
+            recorded += self._record(label, sound)
 
         # PASS TWO: a version verifies when the DATABASE says every figure in it
         # is checked - not when one workbook happens to hold them all.
@@ -152,57 +184,64 @@ class Command(BaseCommand):
                     )
                 )
                 continue
-            if len(checkers) > 1:
+            # MORE THAN ONE CHECKER IS NOT A PROBLEM (D-270). The workbook is
+            # organised by source document because that is how a person
+            # verifies, and versions cut across documents, so sharing the pass
+            # out by document guarantees a version checked by two people. Two
+            # people checking different figures is a stronger result than one
+            # checking all of them; the refusal that used to stand here was
+            # only ever about which single name verified_by_user would hold.
+            users = []
+            unknown = [
+                email
+                for email in checkers
+                if not AppUser.objects.filter(email__iexact=email).exists()
+            ]
+            if unknown:
+                refused.append((label, [f"no user with email {name}" for name in unknown]))
+                continue
+            for email in checkers:
+                users.append(AppUser.objects.filter(email__iexact=email).first())
+
+            # The second-pair-of-eyes rule applies to EVERY checker. It used to
+            # run against checkers[0] alone, which the one-checker refusal
+            # happened to cover; lifting that refusal without this would let a
+            # loader verify their own load by being the second name on it.
+            offenders = [
+                user.email
+                for user in users
+                if version.loaded_by_user_id and version.loaded_by_user_id == user.pk
+            ]
+            if offenders:
                 refused.append(
                     (
                         label,
                         [
-                            "more than one person has checked figures in this version: "
-                            + ", ".join(checkers)
-                            + ". verifystatutory records one verifier, so agree who signs."
+                            f"{', '.join(offenders)} loaded this version and may not "
+                            f"verify it. Verification is a second reading by a second "
+                            f"pair of eyes."
                         ],
                     )
                 )
                 continue
 
-            verifier = checkers[0]
-            user = AppUser.objects.filter(email__iexact=verifier).first()
-            if user is None:
-                refused.append((label, [f"no user with email {verifier}"]))
-                continue
-            if version.loaded_by_user_id and version.loaded_by_user_id == user.pk:
-                refused.append(
-                    (
-                        label,
-                        [
-                            f"{verifier} loaded this version and may not verify it. "
-                            f"Verification is a second reading by a second pair of eyes."
-                        ],
-                    )
-                )
-                continue
-
-            if not options["dry_run"]:
+            verifier, others = checkers[0], checkers[1:]
+            try:
                 call_command(
                     "verifystatutory",
                     label,
                     verified_by=verifier,
+                    also_checked_by=others,
                     current_through=current_through.isoformat(),
                     golden_tests_passed=options["golden_tests_passed"],
                     verbosity=0,
                 )
-            verified.append((label, verifier, len(by_version[label])))
+            except CommandError as refusal:
+                refused.append((label, [str(refusal)]))
+                continue
+            verified.append((label, ", ".join(checkers), len(by_version[label])))
 
-        if recorded:
-            self.stdout.write(f"Recorded {recorded} check(s).\n")
-
-        self._report(verified, refused, incomplete, already, by_version, dry_run=options["dry_run"])
-
-        if refused:
-            raise CommandError(
-                f"{len(refused)} version(s) refused. Nothing about them was recorded; "
-                f"every other version in the workbook was processed."
-            )
+        return verified, refused, incomplete, already, recorded
 
     # ------------------------------------------------------------------ reading
 
@@ -354,7 +393,8 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("DRY RUN — nothing was written.\n"))
 
         if verified:
-            self.stdout.write(self.style.SUCCESS(f"Verified {len(verified)} version(s):"))
+            word = "Would verify" if dry_run else "Verified"
+            self.stdout.write(self.style.SUCCESS(f"{word} {len(verified)} version(s):"))
             for label, verifier, count in verified:
                 self.stdout.write(f"  {label} — {count} figures, by {verifier}")
         if already:
