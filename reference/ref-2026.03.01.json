@@ -1,5 +1,5 @@
 {
-  "version_label": "REF-2026.03.01-r2",
+  "version_label": "REF-2026.03.01-r3",
   "applies_from": "2026-03-01",
   "description": "First statutory reference load: the 1 March 2026 wage floors, the SARS 2027 tax year tables, the contribution parameters, and public holidays for 2026 and 2027. Researched from primary sources on 13 September 2026. NOT verified - every figure must be checked against the source document before this version can come into force.",
   "tables": {
@@ -299,14 +299,16 @@
         "value_numeric": "1.000000",
         "unit": "percent",
         "effective_from": "2002-04-01",
-        "source_reference": "Unemployment Insurance Contributions Act 4 of 2002, s6(1)(a)"
+        "source_reference": "Unemployment Insurance Contributions Act 4 of 2002, s6(1)(a)",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/a4-02.pdf"
       },
       {
         "parameter_code": "UIF_EMPLOYER_RATE_PCT",
         "value_numeric": "1.000000",
         "unit": "percent",
         "effective_from": "2002-04-01",
-        "source_reference": "Unemployment Insurance Contributions Act 4 of 2002, s6(1)(a)(ii)"
+        "source_reference": "Unemployment Insurance Contributions Act 4 of 2002, s6(1)(a)(ii)",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/a4-02.pdf"
       },
       {
         "parameter_code": "UIF_MONTHLY_CEILING",
@@ -314,6 +316,7 @@
         "unit": "ZAR",
         "effective_from": "2021-06-01",
         "source_reference": "Determination under s6(2) of the Unemployment Insurance Contributions Act 4 of 2002, Government Gazette 44641 of 28 May 2021, effective 1 June 2021",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/202105/44641gon475.pdf",
         "notes": "VERIFY THE GAZETTE NUMBER - not confirmed from a primary source. Unchanged since 1 June 2021, which is the point: this ceiling moves on ministerial notice with no fixed calendar and is the parameter most often missed."
       },
       {
@@ -322,6 +325,7 @@
         "unit": "percent",
         "effective_from": "2026-03-01",
         "source_reference": "Skills Development Levies Act 9 of 1999, s3(1)",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/a9-99.pdf",
         "notes": "effective_from is the start of this reference data rather than the levy's commencement, which was not confirmed from a primary source."
       },
       {
@@ -330,6 +334,7 @@
         "unit": "ZAR",
         "effective_from": "2026-03-01",
         "source_reference": "Skills Development Levies Act 9 of 1999, s4(b)",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/a9-99.pdf",
         "notes": "FORWARD-LOOKING. The test is whether the employer reasonably believes leviable amounts over the NEXT twelve months will exceed this figure. It cannot be computed from payroll history, and any attempt to derive it from last year's payroll is wrong. effective_from is the start of this reference data, not the provision's commencement."
       },
       {
@@ -338,7 +343,8 @@
         "unit": "ZAR",
         "effective_from": "2026-03-01",
         "source_reference": "Compensation Fund maximum amount of earnings, 2026/2027 assessment year (1 March 2026 - 28 February 2027)",
-        "notes": "VERIFY AGAINST THE GAZETTE - this figure comes from a payroll vendor's published table, not from the notice itself. It is the least well sourced number in this load."
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/202604/54577gen3910.pdf",
+        "notes": "The figure came from a payroll vendor's published table rather than from the notice, which made it the least well sourced number in this load. THE NOTICE IS NOW CITED AND AGREES: Notice 3910 in GG 54577, 24 April 2026 prescribes 'the amount of R668 000 per employee per annum ... effective from 1st March 2026', with a minimum assessment of R1 621 (D-274). The gazette POST-DATES the figure it makes effective, which is why its date is deliberately not in the citation - see D-274 on what that would do to checkstatutory's commencement check."
       },
       {
         "parameter_code": "BCEA_EARNINGS_THRESHOLD",
@@ -347,6 +353,7 @@
         "effective_from": "2025-04-01",
         "effective_to": "2026-05-01",
         "source_reference": "GN 5970, GG 52232, March 2025 (Basic Conditions of Employment Act 75 of 1997, s6(3))",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/202503/52232rg11806gon5970.pdf",
         "notes": "In force for the first two months of this reference version. A high earner loses only s18(3) - they keep the public holiday pay entitlement."
       },
       {
@@ -354,7 +361,8 @@
         "value_numeric": "269600.900000",
         "unit": "ZAR",
         "effective_from": "2026-05-01",
-        "source_reference": "GN 7384, GG 54544, 17 April 2026 (Basic Conditions of Employment Act 75 of 1997, s6(3))"
+        "source_reference": "GN 7384, GG 54544, 17 April 2026 (Basic Conditions of Employment Act 75 of 1997, s6(3))",
+        "source_url": "https://www.labour.gov.za/DocumentCenter/Regulations%20and%20Notices/Notices/Basic%20Conditions%20of%20Employment/Basic%20Conditions%20of%20Employment%20Act_Determination%20Earnings%20Threshold2026.pdf"
       },
       {
         "parameter_code": "VAT_RATE_PCT",
@@ -362,6 +370,7 @@
         "unit": "percent",
         "effective_from": "2026-03-01",
         "source_reference": "Value-Added Tax Act 89 of 1991, s7(1)(a)",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201505/act-89-1991s.pdf",
         "notes": "Still 15 percent. The increases announced in the 2025 Budget were withdrawn and the 2026 Budget did not reinstate them. effective_from is the start of this reference data."
       }
     ],
@@ -369,127 +378,151 @@
       {
         "holiday_date": "2026-01-01",
         "name": "New Year's Day",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2026-03-21",
         "name": "Human Rights Day",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2026-04-03",
         "name": "Good Friday",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2026-04-06",
         "name": "Family Day",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2026-04-27",
         "name": "Freedom Day",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2026-05-01",
         "name": "Workers' Day",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2026-06-16",
         "name": "Youth Day",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2026-08-10",
         "name": "National Women's Day",
         "shifted_from_date": "2026-08-09",
         "source_reference": "Public Holidays Act 36 of 1994, s2(1)",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf",
         "notes": "National Women's Day fell on Sunday 09 August 2026; the Act makes the following Monday the public holiday."
       },
       {
         "holiday_date": "2026-09-24",
         "name": "Heritage Day",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2026-12-16",
         "name": "Day of Reconciliation",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2026-12-25",
         "name": "Christmas Day",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2026-12-26",
         "name": "Day of Goodwill",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2027-01-01",
         "name": "New Year's Day",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2027-03-22",
         "name": "Human Rights Day",
         "shifted_from_date": "2027-03-21",
         "source_reference": "Public Holidays Act 36 of 1994, s2(1)",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf",
         "notes": "Human Rights Day fell on Sunday 21 March 2027; the Act makes the following Monday the public holiday."
       },
       {
         "holiday_date": "2027-03-26",
         "name": "Good Friday",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2027-03-29",
         "name": "Family Day",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2027-04-27",
         "name": "Freedom Day",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2027-05-01",
         "name": "Workers' Day",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2027-06-16",
         "name": "Youth Day",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2027-08-09",
         "name": "National Women's Day",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2027-09-24",
         "name": "Heritage Day",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2027-12-16",
         "name": "Day of Reconciliation",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2027-12-25",
         "name": "Christmas Day",
-        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1"
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
         "holiday_date": "2027-12-27",
         "name": "Day of Goodwill",
         "shifted_from_date": "2027-12-26",
         "source_reference": "Public Holidays Act 36 of 1994, s2(1)",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf",
         "notes": "Day of Goodwill fell on Sunday 26 December 2027; the Act makes the following Monday the public holiday."
       }
     ],

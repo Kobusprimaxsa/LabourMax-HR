@@ -26,6 +26,29 @@ NMW_URL = "https://www.gov.za/sites/default/files/gcis_document/202602/54075rg11
 SARS_2027 = "SARS Rates of Tax for Individuals, 2027 tax year (1 March 2026 - 28 February 2027)"
 SARS_URL = "https://www.sars.gov.za/tax-rates/income-tax/rates-of-tax-for-individuals/"
 
+# Every one of these was fetched and the document confirmed to be the one cited
+# (D-274). A citation whose reader cannot reach the document is doing half its
+# job, and a link to the WRONG document is worse than none.
+HOLIDAYS_URL = "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
+UIC_ACT_URL = "https://www.gov.za/sites/default/files/gcis_document/201409/a4-02.pdf"
+#: Notice 475 in GG 44641. The body of this one is an image, so the page carries
+#: no searchable text - it is still the gazette the citation names.
+UIF_CEILING_URL = "https://www.gov.za/sites/default/files/gcis_document/202105/44641gon475.pdf"
+SDL_ACT_URL = "https://www.gov.za/sites/default/files/gcis_document/201409/a9-99.pdf"
+VAT_ACT_URL = "https://www.gov.za/sites/default/files/gcis_document/201505/act-89-1991s.pdf"
+COIDA_URL = "https://www.gov.za/sites/default/files/gcis_document/202604/54577gen3910.pdf"
+THRESHOLD_2025_URL = (
+    "https://www.gov.za/sites/default/files/gcis_document/202503/52232rg11806gon5970.pdf"
+)
+#: The Department's own copy. gov.za serves this gazette under a path that does
+#: not follow the usual pattern, and labour.gov.za publishes the notice itself.
+THRESHOLD_2026_URL = (
+    "https://www.labour.gov.za/DocumentCenter/Regulations%20and%20Notices/Notices/"
+    "Basic%20Conditions%20of%20Employment/"
+    "Basic%20Conditions%20of%20Employment%20Act_Determination%20Earnings%20Threshold2026.pdf"
+)
+
+
 HOLIDAYS_ACT = "Public Holidays Act 36 of 1994, Schedule 1"
 HOLIDAYS_SHIFT = "Public Holidays Act 36 of 1994, s2(1)"
 
@@ -75,6 +98,7 @@ def public_holidays(year: int) -> list[dict]:
                     "name": name,
                     "shifted_from_date": str(day),
                     "source_reference": HOLIDAYS_SHIFT,
+                    "source_url": HOLIDAYS_URL,
                     "notes": (
                         f"{name} fell on Sunday {day:%d %B %Y}; the Act makes the "
                         f"following Monday the public holiday."
@@ -87,6 +111,7 @@ def public_holidays(year: int) -> list[dict]:
                     "holiday_date": str(day),
                     "name": name,
                     "source_reference": HOLIDAYS_ACT,
+                    "source_url": HOLIDAYS_URL,
                 }
             )
     return rows
@@ -133,7 +158,7 @@ def brackets() -> list[dict]:
 DOCUMENT = {
     # -r2: the two UIF citations corrected (D-211). Same figures, so it travels
     # through --supersede (D-199) rather than as a new load.
-    "version_label": "REF-2026.03.01-r2",
+    "version_label": "REF-2026.03.01-r3",
     "applies_from": "2026-03-01",
     "description": (
         "First statutory reference load: the 1 March 2026 wage floors, the SARS 2027 "
@@ -409,6 +434,7 @@ DOCUMENT = {
                 "unit": "percent",
                 "effective_from": "2002-04-01",
                 "source_reference": "Unemployment Insurance Contributions Act 4 of 2002, s6(1)(a)",
+                "source_url": UIC_ACT_URL,
             },
             {
                 "parameter_code": "UIF_EMPLOYER_RATE_PCT",
@@ -422,6 +448,7 @@ DOCUMENT = {
                 "source_reference": (
                     "Unemployment Insurance Contributions Act 4 of 2002, s6(1)(a)(ii)"
                 ),
+                "source_url": UIC_ACT_URL,
             },
             {
                 "parameter_code": "UIF_MONTHLY_CEILING",
@@ -436,6 +463,7 @@ DOCUMENT = {
                     "Contributions Act 4 of 2002, Government Gazette 44641 of "
                     "28 May 2021, effective 1 June 2021"
                 ),
+                "source_url": UIF_CEILING_URL,
                 "notes": (
                     "VERIFY THE GAZETTE NUMBER - not confirmed from a primary source. "
                     "Unchanged since 1 June 2021, which is the point: this ceiling moves "
@@ -449,6 +477,7 @@ DOCUMENT = {
                 "unit": "percent",
                 "effective_from": "2026-03-01",
                 "source_reference": "Skills Development Levies Act 9 of 1999, s3(1)",
+                "source_url": SDL_ACT_URL,
                 "notes": (
                     "effective_from is the start of this reference data rather than the "
                     "levy's commencement, which was not confirmed from a primary source."
@@ -460,6 +489,7 @@ DOCUMENT = {
                 "unit": "ZAR",
                 "effective_from": "2026-03-01",
                 "source_reference": "Skills Development Levies Act 9 of 1999, s4(b)",
+                "source_url": SDL_ACT_URL,
                 "notes": (
                     "FORWARD-LOOKING. The test is whether the employer reasonably "
                     "believes leviable amounts over the NEXT twelve months will exceed "
@@ -478,10 +508,17 @@ DOCUMENT = {
                     "Compensation Fund maximum amount of earnings, 2026/2027 assessment "
                     "year (1 March 2026 - 28 February 2027)"
                 ),
+                "source_url": COIDA_URL,
                 "notes": (
-                    "VERIFY AGAINST THE GAZETTE - this figure comes from a payroll "
-                    "vendor's published table, not from the notice itself. It is the "
-                    "least well sourced number in this load."
+                    "The figure came from a payroll vendor's published table rather "
+                    "than from the notice, which made it the least well sourced number "
+                    "in this load. THE NOTICE IS NOW CITED AND AGREES: Notice 3910 in "
+                    "GG 54577, 24 April 2026 prescribes 'the amount of R668 000 per "
+                    "employee per annum ... effective from 1st March 2026', with a "
+                    "minimum assessment of R1 621 (D-274). The gazette POST-DATES the "
+                    "figure it makes effective, which is why its date is deliberately "
+                    "not in the citation - see D-274 on what that would do to "
+                    "checkstatutory's commencement check."
                 ),
             },
             {
@@ -494,6 +531,7 @@ DOCUMENT = {
                     "GN 5970, GG 52232, March 2025 (Basic Conditions of Employment Act "
                     "75 of 1997, s6(3))"
                 ),
+                "source_url": THRESHOLD_2025_URL,
                 "notes": (
                     "In force for the first two months of this reference version. A high "
                     "earner loses only s18(3) - they keep the public holiday pay "
@@ -509,6 +547,7 @@ DOCUMENT = {
                     "GN 7384, GG 54544, 17 April 2026 (Basic Conditions of Employment "
                     "Act 75 of 1997, s6(3))"
                 ),
+                "source_url": THRESHOLD_2026_URL,
             },
             {
                 "parameter_code": "VAT_RATE_PCT",
@@ -516,6 +555,7 @@ DOCUMENT = {
                 "unit": "percent",
                 "effective_from": "2026-03-01",
                 "source_reference": "Value-Added Tax Act 89 of 1991, s7(1)(a)",
+                "source_url": VAT_ACT_URL,
                 "notes": (
                     "Still 15 percent. The increases announced in the 2025 Budget were "
                     "withdrawn and the 2026 Budget did not reinstate them. "

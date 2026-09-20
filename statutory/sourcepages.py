@@ -39,9 +39,10 @@ CONTENTS_MARKERS = (
     "contents",
 )
 
-#: More line-start hits than a clause plausibly spans means the token is
-#: something else — a numbered list, a page header, a column of figures.
-AMBIGUOUS_ABOVE = 4
+
+#: A token heading lines on more pages than a clause plausibly spans is not a
+#: clause number - it is a numbered list, a column of figures, a page header.
+AMBIGUOUS_ABOVE = 3
 
 
 def clause_token(clause: str) -> str | None:
@@ -85,14 +86,25 @@ def _pattern(token: str) -> re.Pattern:
     # without it "35" matched thirty-three of the Act's forty pages, the first
     # hit being whichever page happened to be numbered 35. A page chosen that
     # way is exactly the wrong page this module exists not to give.
-    return re.compile(rf"(?m)^[ \t]*{re.escape(token)}\.?[ \t]+[A-Za-z(]")
+    if "." in token:
+        # A dotted agreement clause prints as "12.1 Provided that..." with no
+        # further dot, so one must not be demanded.
+        return re.compile(rf"(?m)^[ \t]*{re.escape(token)}[ \t]+[A-Za-z(]")
+    # A plain section number prints WITH its dot — "22. (1) In this Chapter",
+    # "7. Imposition of value-added tax". Making the dot optional put the VAT
+    # Act's s7 on page 87 of 87, matching a bare "7" in a line of Schedule 2.
+    return re.compile(rf"(?m)^[ \t]*{re.escape(token)}\.[ \t]+[A-Za-z(]")
 
 
 #: A real section page carries one or two headings. A contents page carries a
 #: column of them.
 HEADINGS_PER_CONTENTS_PAGE = 10
 
-_ANY_HEADING = re.compile(r"(?m)^[ \t]*\d+[A-Z]?\.?[ \t]+[A-Za-z(]")
+#: The DOT is required. Without it the Public Holidays Act's Schedule 1 — a
+#: column of "1 January", "21 March", "27 April" — read as twelve headings and
+#: the page was thrown away as a contents listing, taking twenty-one check
+#: groups with it. A contents entry is "61. Public hearings"; a date is not.
+_ANY_HEADING = re.compile(r"(?m)^[ \t]*\d+[A-Z]?\.[ \t]+[A-Za-z(]")
 
 
 def _is_contents(text: str) -> bool:
@@ -134,11 +146,19 @@ def page_for(clause: str, path: Path | str) -> int | None:
     shows no link for that row and the person opens the document themselves —
     exactly what they did before, and better than being sent somewhere wrong.
     """
-    token = clause_token(clause)
-    if token is None:
-        return None
     pages = page_texts(str(path))
     if not pages:
+        return None
+
+    # A one-page notice has nowhere else to be. Several of the cited gazettes
+    # are a single page — the earnings threshold, the UIF ceiling determination
+    # — and those often carry no clause pinpoint either, so this is the only
+    # answer available for them and it cannot be wrong.
+    if len(pages) == 1:
+        return 1
+
+    token = clause_token(clause)
+    if token is None:
         return None
 
     pattern = _pattern(token)
@@ -150,6 +170,15 @@ def page_for(clause: str, path: Path | str) -> int | None:
             continue  # the number is here; the clause is not.
         hits.append(number)
 
+    # The FIRST surviving candidate, and that ordering is a property of how
+    # these documents are printed rather than a hope: an Act runs its sections
+    # in ascending order and its schedules come after the body, so a second hit
+    # on "3." is the amendment schedule saying "Section 10 ... is hereby
+    # amended" and the first is the section itself.
+    #
+    # But a token heading lines all over a document is not a section number at
+    # all, and there the ordering argument says nothing — so more than a few
+    # candidates is no answer.
     if not hits or len(hits) > AMBIGUOUS_ABOVE:
         return None
     return hits[0]

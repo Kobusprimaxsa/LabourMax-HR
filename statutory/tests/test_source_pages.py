@@ -95,9 +95,55 @@ def test_a_clause_that_is_not_there_answers_nothing(pages):
 
 
 def test_a_pinpoint_with_no_number_answers_nothing(pages):
-    pages("12. Study leave and qualifications\n")
+    """Two pages, because a ONE-page document answers page 1 whatever the
+    pinpoint says — see below."""
+    pages("12. Study leave and qualifications\n", "13. Maternity leave\n")
 
     assert sourcepages.page_for("", "any.pdf") is None
+
+
+def test_a_one_page_notice_answers_page_one_whatever_the_pinpoint_says(pages):
+    """Several cited gazettes are a single page and carry no clause pinpoint —
+    the earnings threshold, the UIF ceiling determination. There is nowhere
+    else for the clause to be, so this answer cannot be wrong."""
+    pages("DEPARTMENT OF EMPLOYMENT AND LABOUR ... earnings threshold ...")
+
+    assert sourcepages.page_for("", "any.pdf") == 1
+
+
+def test_a_plain_section_number_must_carry_its_dot(pages):
+    """A bare "7" heading a line inside Schedule 2 put the VAT Act's s7 on page
+    87 of 87. An Act prints its sections WITH the dot — "7. Imposition of
+    value-added tax" — so demanding it drops the stray and keeps the section."""
+    pages(
+        "1. Definitions\n",
+        "7 Zero rating of certain supplies listed in this Schedule\n",
+    )
+
+    assert sourcepages.page_for("s7(1)(a)", "any.pdf") is None
+
+
+def test_a_column_of_dates_is_not_a_contents_page(pages):
+    """The Public Holidays Act's Schedule 1 is a column of "1 January",
+    "21 March", "27 April". Counting those as headings threw the page away as
+    an index and took twenty-one check groups with it — a contents entry has a
+    DOT after its number and a date does not."""
+    dates = "\n".join(["1 January", "21 March", "27 April", "1 May", "16 June", "9 August"] * 2)
+    pages("cover", "SCHEDULE 1\n(SECTION 2)\n" + dates)
+
+    assert sourcepages.page_for("Schedule 1", "any.pdf") == 2
+
+
+def test_the_first_surviving_candidate_wins_because_schedules_follow_the_body(pages):
+    """An Act runs its sections in order and its schedules follow, so a second
+    hit on "3." is the amendment schedule and the first is the section."""
+    pages(
+        "cover page\n",
+        "3. (1) Every employer must pay a skills development levy\n",
+        "3. Section 10 of the Skills Development Act is hereby amended\n",
+    )
+
+    assert sourcepages.page_for("s3(1)", "any.pdf") == 2
 
 
 def test_a_document_with_no_extractable_text_answers_nothing(pages):
