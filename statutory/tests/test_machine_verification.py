@@ -20,6 +20,7 @@ import json
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 
 from core.models import AppUser
 from statutory import checks
@@ -157,3 +158,77 @@ def test_a_lookalike_domain_is_not_caught(loaded, db):
     loaded.refresh_from_db()
     assert loaded.is_machine_verified is False
     assert loaded.is_usable is True
+
+
+# ------------- a superseded machine tick is history, not a standing warning
+
+
+def supersede(label, *, new_label):
+    """Supersede a loaded version the way the loader does: a NEW version row
+    pointing at the old one. Never a deletion (D-199)."""
+    old = ReferenceDataVersion.objects.get(version_label=label)
+    return ReferenceDataVersion.objects.create(
+        version_label=new_label,
+        applies_from=old.applies_from,
+        description="Re-encoded.",
+        supersedes=old,
+        supersede_reason="Normalised the citation.",
+    )
+
+
+@pytest.mark.statutory
+def test_a_superseded_machine_tick_is_not_a_standing_warning(loaded, machine_user):
+    """FOUR OF THESE WARNED ON EVERY RUN, FOREVER. The message said so itself —
+    "(superseded, so nothing reads it)" — and a command that never returns
+    clean trains people to skim it, which is how a real finding gets missed.
+
+    Nothing reads a superseded version: ``in_force_on()`` cannot see it and no
+    run can reach it. It is kept only as the audit record (D-199), so its
+    development verifier is a fact about history rather than something anybody
+    can act on.
+    """
+    verify(MACHINE)
+    supersede("REF-TEST-MACHINE", new_label="REF-TEST-MACHINE-r2")
+
+    assert checks.check_machine_verified_versions() == []
+    assert checks.superseded_machine_verified() == ["REF-TEST-MACHINE"], (
+        "dropped from the warnings, but still countable - a check that went "
+        "silent could not be told apart from one that stopped working"
+    )
+
+
+@pytest.mark.statutory
+def test_a_live_machine_tick_still_warns_once_superseded_ones_are_split_out(loaded, machine_user):
+    """Watched NOT firing, in the direction that matters. If the split were
+    keyed wrongly this would go quiet and the live finding would vanish with
+    the historical ones."""
+    verify(MACHINE)
+
+    assert len(checks.check_machine_verified_versions()) == 1
+    assert checks.superseded_machine_verified() == []
+
+
+@pytest.mark.statutory
+def test_checkstatutory_reports_superseded_ticks_as_a_note_not_a_warning(
+    loaded, machine_user, capsys
+):
+    """The acceptance test: with nothing but superseded machine ticks, the
+    command reconciles. One factual line, not four warnings in with the live
+    findings."""
+    verify(MACHINE)
+    supersede("REF-TEST-MACHINE", new_label="REF-TEST-MACHINE-r2")
+
+    # This fixture holds one parameter and no wage rates or tax years, so
+    # check_something_is_loaded() blocks for its own unrelated reason (D-74).
+    # What matters here is the WARNING count: it must be nil.
+    with pytest.raises(CommandError):
+        call_command("checkstatutory")
+
+    output = capsys.readouterr().out
+    assert "0 to look at" in output, (
+        "four of these warned on every run forever; a superseded machine tick "
+        "must not stand in the same list as a live finding"
+    )
+    assert "[warning]" not in output, "history is not a warning"
+    assert "1 superseded version" in output
+    assert "nothing reads them" in output

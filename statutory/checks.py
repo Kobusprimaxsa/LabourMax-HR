@@ -785,43 +785,69 @@ def check_machine_verified_versions() -> list[Issue]:
     ``verifystatutory`` itself, so a blocking issue would make the FIRST machine
     verification impossible to record and the SECOND one impossible to undo.
     """
-    issues = []
-    suspect = (
-        ReferenceDataVersion.objects.filter(
-            verified_at__isnull=False,
-            verified_by_user__email__iendswith=ReferenceDataVersion.DEVELOPMENT_VERIFIER_SUFFIX,
+    return [
+        Issue(
+            False,
+            f"reference_data_version {version.version_label}",
+            f"verified by {version.verified_by_user.email}, which is a development "
+            f"identity and not a person. RFC 2606 reserves .invalid so the address "
+            f"could never have reached anybody. A payroll run refuses on this exactly "
+            f"as it refuses on a version nobody verified at all, and in_force_on() "
+            f"cannot see it. Re-run verifystatutory naming the person who actually "
+            f"checked every figure against the source document.",
         )
-        .select_related("verified_by_user")
-        .filter(verified_by_user__isnull=False)
-        .order_by("applies_from", "version_label")
-    )
-    # superseded_by is the REVERSE side of a OneToOne, so there is no _id
-    # attribute and touching it on an un-superseded row raises rather than
-    # returning None. One query, then a set membership.
+        for version in _machine_verified(superseded=False)
+    ]
+
+
+def _machine_verified(*, superseded: bool):
+    """Versions carrying a development verifier, split by whether anything can
+    still read them.
+
+    ``superseded_by`` is the REVERSE side of a OneToOne, so there is no ``_id``
+    attribute and touching it on an un-superseded row raises rather than
+    returning None. One query for the superseded labels, then a set membership.
+
+    **The membership test is the SAFE direction round** (D-271). A version is
+    treated as superseded only when another row positively claims to supersede
+    it; anything else counts as live and warns. So if this query ever came back
+    empty through a bug, the effect would be four warnings too many rather than
+    a live finding silently filed under history.
+    """
     superseded_labels = set(
         ReferenceDataVersion.objects.filter(supersedes__isnull=False).values_list(
             "supersedes__version_label", flat=True
         )
     )
-    for version in suspect:
-        superseded = (
-            " (superseded, so nothing reads it)"
-            if version.version_label in superseded_labels
-            else ""
+    rows = (
+        ReferenceDataVersion.objects.filter(
+            verified_at__isnull=False,
+            verified_by_user__isnull=False,
+            verified_by_user__email__iendswith=ReferenceDataVersion.DEVELOPMENT_VERIFIER_SUFFIX,
         )
-        issues.append(
-            Issue(
-                False,
-                f"reference_data_version {version.version_label}",
-                f"verified by {version.verified_by_user.email}, which is a development "
-                f"identity and not a person{superseded}. RFC 2606 reserves .invalid so "
-                f"the address could never have reached anybody. A payroll run refuses on "
-                f"this exactly as it refuses on a version nobody verified at all, and "
-                f"in_force_on() cannot see it. Re-run verifystatutory naming the person "
-                f"who actually checked every figure against the source document.",
-            )
-        )
-    return issues
+        .select_related("verified_by_user")
+        .order_by("applies_from", "version_label")
+    )
+    return [row for row in rows if (row.version_label in superseded_labels) is superseded]
+
+
+def superseded_machine_verified() -> list[str]:
+    """Labels of superseded versions carrying a development verifier — a FACT,
+    not a finding (D-271).
+
+    These warned on every run, forever, and the message said so itself:
+    "(superseded, so nothing reads it)". ``in_force_on()`` cannot see a
+    superseded version and no payroll run can reach one; it is kept solely as
+    the audit record (D-199). So the tick on it is history, and there is
+    nothing anybody can do about it — re-verifying a row nothing reads would be
+    make-work.
+
+    **A command that never returns clean trains people to skim its output**,
+    which is how a real finding gets missed. Reported as a single line by
+    ``checkstatutory`` rather than dropped in silence, because a check that
+    went quiet could not be told apart from one that had stopped working.
+    """
+    return [version.version_label for version in _machine_verified(superseded=True)]
 
 
 def run_all(year: TaxYear | None = None) -> list[Issue]:

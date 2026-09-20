@@ -42,6 +42,18 @@ class Command(BaseCommand):
             style = self.style.ERROR if issue.blocking else self.style.WARNING
             self.stdout.write(style(str(issue)))
 
+        # A fact about history, deliberately NOT an Issue (D-271): nothing reads
+        # a superseded version, so there is nothing to act on, and four standing
+        # warnings in with the live findings is how a command comes to be
+        # skimmed. Still printed, because a check that went silent could not be
+        # told apart from one that had stopped working.
+        historical = checks.superseded_machine_verified()
+        if historical:
+            self.stdout.write(
+                f"Note: {len(historical)} superseded version(s) carry a development "
+                f"verifier (historical, nothing reads them): {', '.join(historical)}."
+            )
+
         if not issues:
             counted = (
                 f"{MinimumWageRate.objects.count()} wage rates, "
