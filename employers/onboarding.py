@@ -98,15 +98,25 @@ SETTING_DEFINITIONS: list[SettingDefinition] = [
         key="SICK_FIRST_CYCLE_REDUCTION",
         value_type=EmployerSetting.ValueType.BOOLEAN,
         description=(
-            "BCEA s22(4): during an employee's FIRST sick leave cycle the employer MAY "
-            "reduce the s22(2) entitlement by the sick leave taken under s22(3). There "
-            "is one entitlement per cycle; s22(3) only restricts how much of it is "
-            "available in the first six months. TRUE (the default): at six months the "
-            "balance of that one entitlement becomes available, less what was already "
-            "drawn. FALSE: the employer has elected not to exercise s22(4) - the full "
-            "entitlement becomes available at six months and nothing already taken is "
-            "deducted. Not a figure: the Act states the six weeks and the 26-day ratio, "
-            "both in leave_rule_set. An election of a discretion the Act grants (D-80)."
+            "Sick leave in an employee's first six months. THIS IS NOT A CHOICE "
+            "BETWEEN TWO EQUAL OPTIONS: the default is what the law requires, and the "
+            "alternative is you choosing to give more than the law requires. "
+            "TRUE (the default, and the BCEA's own position): an employee gets ONE sick "
+            "leave entitlement per cycle - six weeks' worth over three years. For the "
+            "first six months only part of it is available, one day for every 26 days "
+            "worked (s22(3)). At six months the rest becomes available, LESS whatever "
+            "sick leave was already taken in those six months, because those days came "
+            "out of the same entitlement. Nobody is short-changed: the employee still "
+            "gets the full six weeks' worth across the cycle. "
+            "FALSE: you have chosen NOT to deduct what was taken in the first six "
+            "months, so the employee can take MORE PAID SICK LEAVE THAN THE BCEA "
+            "REQUIRES over the cycle. That is lawful - the Act is a floor and nothing "
+            "stops you paying above it - and your contract of employment may oblige you "
+            "to. It will cost more than the statutory minimum, which is the point of it. "
+            "Never the other way round: no setting here can take an employee below the "
+            "Act. Not a figure either - the six weeks and the 26-day ratio are in "
+            "leave_rule_set with their citation; this only records which of s22(4)'s two "
+            "lawful positions you take (D-80, D-181, D-186)."
         ),
         default=True,
     ),

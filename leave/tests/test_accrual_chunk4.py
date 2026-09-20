@@ -337,6 +337,11 @@ def test_s22_4_not_exercised_makes_the_full_entitlement_available_with_no_deduct
     )
     assert "s22(4) not exercised" in txn.reason, txn.reason
     assert "SICK_FIRST_CYCLE_REDUCTION" in txn.reason, txn.reason
+    # The ledger row is the other place this election is surfaced, and a
+    # reader of it must not have to know s22 to see what happened: the
+    # employee is getting more than the Act requires, and that is lawful.
+    assert "more paid sick leave this cycle than the Act requires" in txn.reason, txn.reason
+    assert "lawful" in txn.reason, txn.reason
     assert txn.days == entitlement - Decimal("1.000"), (
         f"top-up must bring a balance of 1 to the full {entitlement}, got {txn.days}"
     )

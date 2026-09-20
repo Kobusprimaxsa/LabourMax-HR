@@ -351,3 +351,54 @@ def test_no_bonus_election_carries_a_statutory_figure(tenant, cleaning):
         definition = BY_KEY[key]
         assert definition.value_type != EmployerSetting.ValueType.NUMERIC, key
         assert not isinstance(definition.default, Decimal), key
+
+
+# ------------- the s22(4) election must not read as a neutral toggle (D-181)
+
+
+def _definition(key):
+    return next(one for one in SETTING_DEFINITIONS if one.key == key)
+
+
+def test_the_sick_first_cycle_setting_says_the_default_is_the_law():
+    """An employer who has never read s22 must be able to tell, from this text
+    alone, that the default is the statutory minimum and the alternative costs
+    them money. It read as two equal options before: "TRUE ... FALSE: the
+    employer has elected not to exercise s22(4)" is accurate and says nothing
+    about which one the Act requires.
+
+    Copy is pinned by test for the same reason a refusal's MESSAGE is (D-134):
+    an employer acts on what the screen says, and nothing else here would
+    notice if it drifted back to neutral.
+    """
+    text = _definition("SICK_FIRST_CYCLE_REDUCTION").description
+
+    assert "NOT A CHOICE BETWEEN TWO EQUAL OPTIONS" in text
+    assert "the default, and the BCEA's own position" in text
+    assert "MORE PAID SICK LEAVE THAN THE BCEA REQUIRES" in text, (
+        "the alternative must say plainly that it exceeds the Act, not merely "
+        "that a discretion was 'not exercised'"
+    )
+    assert "lawful" in text, "and that exceeding it is permitted, so nobody reads it as a warning"
+    assert "Never the other way round" in text, (
+        "no setting can take an employee below the Act, and the text must say so"
+    )
+
+
+def test_the_sick_first_cycle_setting_explains_the_mechanism_without_citations_alone():
+    """ "s22(3) restricts availability" means nothing to a household employer.
+    The text has to say what actually happens to the days."""
+    text = _definition("SICK_FIRST_CYCLE_REDUCTION").description
+
+    assert "one day for every 26 days worked" in text
+    assert "ONE sick leave entitlement per cycle" in text
+    assert "Nobody is short-changed" in text, (
+        "the reduction sounds punitive until the text says the employee still "
+        "gets the full six weeks' worth across the cycle"
+    )
+
+
+def test_the_default_is_still_true_and_is_still_the_statutory_position():
+    """The copy changed; the behaviour did not. A test that only read the prose
+    would not notice the default being flipped underneath it."""
+    assert _definition("SICK_FIRST_CYCLE_REDUCTION").default is True

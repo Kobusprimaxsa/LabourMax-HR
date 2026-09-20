@@ -328,9 +328,13 @@ def _accrue_sick(
         )
     else:
         basis = SICK_TRANSITION_UNREDUCED_BASIS
+        # Kept inside leave_transaction.reason's 255 characters, which the first
+        # attempt at this wording overran by eighty.
         reason = (
-            "BCEA s22(3) availability ends: full s22(2) entitlement, sick leave already "
-            "drawn not deducted (s22(4) not exercised, SICK_FIRST_CYCLE_REDUCTION)"
+            "BCEA s22(3) availability ends: full s22(2) entitlement, drawn days NOT "
+            "deducted (s22(4) not exercised, SICK_FIRST_CYCLE_REDUCTION). This employer "
+            "gives more paid sick leave this cycle than the Act requires - lawful, the "
+            "Act being a floor"
         )
 
     return post_transaction(
