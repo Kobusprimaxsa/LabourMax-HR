@@ -1431,8 +1431,14 @@ both agreements, and is transcribed as printed) and the prenatal clinic day (one
 day in each of the 3 months before the expected date of confinement). **None is a
 per-cycle bank**, so each is a `statutory_parameter` rather than a `leave_rule_set`
 column and every catalogue row carries `accrues=False` — the accrual engine grants none
-of them. Which shop steward figure applies is a DECLARED fact about the person, with no
-column to hold it (D-110's shape). Nothing enforces the caps yet (O-31).
+of them. **The caps ARE enforced, and neither refuses** (D-269): a day over the ceiling
+is recorded as unpaid, because clause 13.2 grants three clinic days and says nothing
+about a fourth, so a fourth is ordinary unpaid time off. Two facts are DECLARED because
+nothing here can compute either — `employee_union_role` (effective-dated, tri-state, no
+row means no entitlement) and `leave_application.expected_date_of_confinement`. The
+prenatal windows are the three CALENDAR months before the month of confinement: windows
+counted back from the due date MOVE, so a revised date bought a fourth paid day, which a
+test caught. The shop steward year is the calendar year, on clause 4.5(d)'s own wording.
 
 **The long-service annual leave band is read by the accrual engine** (D-267). BCCCI
 clause 9.1(b)'s 28 days above ten years' service reached `resolve.annual_leave_days()`
