@@ -452,15 +452,28 @@ class NightAllowance:
         return self.state in (NightAllowanceState.PERCENTAGE, NightAllowanceState.FIXED_AMOUNT)
 
 
-def night_allowance(sector: Sector | None, on_date: datetime.date) -> NightAllowance:
+def night_allowance(
+    sector: Sector | None, on_date: datetime.date, *, sector_area=None
+) -> NightAllowance:
     """What the instrument in force says about the night work allowance.
 
     Returns NOT_LOADED rather than raising, the same shape as
     ``accommodation_cap()``: "no reference data" is a fourth answer the caller
     must handle, not an exception to be caught in passing.
+
+    **``sector_area`` was missing and the answer was right by coincidence**
+    (D-266). One sector can be governed by two instruments (D-240), and this
+    function could not reach the narrower one — for KwaZulu-Natal contract
+    cleaning it answered Sectoral Determination 1's row rather than the BCCCI
+    Main Agreement's. Both say 10% of the hourly wage, in both editions of the
+    agreement, so nothing was ever wrong; it would have gone wrong silently the
+    first time the council moved its figure, which is precisely the March event
+    this table exists for. ``working_time_rules()`` has always taken the
+    argument and narrows most-specific-first, so passing it through is the
+    whole fix.
     """
     try:
-        rules = working_time_rules(sector, on_date)
+        rules = working_time_rules(sector, on_date, sector_area=sector_area)
     except StatutoryValueMissingError as missing:
         return NightAllowance(state=NightAllowanceState.NOT_LOADED, detail=str(missing))
     return NightAllowance(

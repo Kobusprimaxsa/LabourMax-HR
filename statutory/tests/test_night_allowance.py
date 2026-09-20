@@ -36,9 +36,12 @@ PAIR_CONSTRAINTS = {
 }
 
 
-def _rules(*, sector=None, kind="by_agreement", value=None, source="Test fixture"):
+def _rules(
+    *, sector=None, sector_area=None, kind="by_agreement", value=None, source="Test fixture"
+):
     return WorkingTimeRuleSet.objects.create(
         sector=sector,
+        sector_area=sector_area,
         effective_from=datetime.date(1997, 12, 1),
         source_reference=source,
         ordinary_hours_per_week=Decimal("45"),
@@ -192,3 +195,41 @@ def test_the_four_type_values_are_the_four_the_calculator_knows():
     assert {kind.value for kind in NightAllowanceType} == {
         kind.value for kind in NightAllowanceKind
     }
+
+
+def test_the_resolver_reaches_an_area_scoped_rule_set_and_not_only_a_sector_one():
+    """D-266. ONE SECTOR, TWO INSTRUMENTS (D-240): Sectoral Determination 1
+    governs contract cleaning in Areas A and C, and the BCCCI Main Agreement
+    governs Area B. ``night_allowance()`` took no ``sector_area`` at all, so for
+    a KwaZulu-Natal cleaner it answered SD1's row.
+
+    Nothing was ever wrong, because both instruments say 10% of the hourly wage
+    in both editions of the agreement. That is the shape of defect this codebase
+    keeps finding: right by coincidence, silent until the day the two figures
+    diverge — which for a bargaining council is the next time it renegotiates.
+    The figures here are deliberately DIFFERENT so the two answers can be told
+    apart at all.
+    """
+    from statutory.models import SectorArea
+
+    sector = Sector.objects.create(code=Sector.Code.CONTRACT_CLEANING, name="CC")
+    area_b = SectorArea.objects.create(
+        sector=sector, code="AREA_B", name="Area B", uses_bargaining_council_rates=True
+    )
+    _rules(sector=sector, kind="percentage", value="10.0000", source="SD1 clause 12")
+    _rules(
+        sector=sector,
+        sector_area=area_b,
+        kind="percentage",
+        value="12.5000",
+        source="BCCCI clause 4.3",
+    )
+
+    wide = resolve.night_allowance(sector, datetime.date(2026, 3, 31))
+    scoped = resolve.night_allowance(sector, datetime.date(2026, 3, 31), sector_area=area_b)
+
+    assert wide.value == Decimal("10.0000"), "Areas A and C still read SD1"
+    assert scoped.value == Decimal("12.5000"), (
+        "Area B must read the agreement that binds it, not the determination it points away from"
+    )
+    assert scoped.source_reference == "BCCCI clause 4.3"
