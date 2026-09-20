@@ -418,7 +418,15 @@ Things that are easy to get wrong, and have been got wrong before:
 - **The s22(3) sick ratio is not a second entitlement.** One per 26 days worked restricts how
   much of the ONE s22(2) cycle entitlement is available in the first six months. So the first
   cycle resolves to E − A by default, and s22(4)'s "may" is the employer's election
-  (`SICK_FIRST_CYCLE_REDUCTION`, D-181 amended, D-186).
+  (`SICK_FIRST_CYCLE_REDUCTION`, D-181 amended, D-186). Confirmed against the Act text by
+  Kobus on 20 September 2026, and the model verified to match rather than assumed to — one
+  cycle, one `entitlement_quantity`, and a top-up of E − A, pinned by a test on the SUM of
+  accruals. **s22(4)'s "may" reads awkwardly against a cycle beginning at commencement and
+  would sit better as "must" — do not make the code force it.** The BCEA is a floor: an
+  employer who declines the reduction gives MORE paid sick leave than the Act requires, which
+  is lawful and may be required by the contract, so hard-coding it would make a lawful and
+  more generous arrangement unrepresentable (D-242's argument exactly). O-06 carries the
+  confirmation; the engineering is settled either way.
 - **Unpaid leave stays in the application's own unit.** `unpaid_days` for a days-basis
   application, `unpaid_hours` for an hours-basis one, the other zero (D-188). Converting days
   to hours at capture is the D-106 conversion one step earlier, and D-164 forbids it.
