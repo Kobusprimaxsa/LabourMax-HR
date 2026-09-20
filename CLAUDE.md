@@ -1197,7 +1197,9 @@ the gate names it.
   `payroll/validation.py` refuses on it through the same
   `ReferenceDataVersion.unusable_q()` that refuses a version nobody verified at all. One
   expression, used by the gate and by `in_force_on()` both, because two lists that must
-  stay in step do not.
+  stay in step do not. A SUPERSEDED version's machine tick is history rather than a
+  finding (D-271) — nothing reads it, so `checkstatutory` notes it in one line instead of
+  warning about it forever, because a command that never returns clean gets skimmed.
 - **No row may be in force before the instrument it cites existed** (D-263).
   `checkstatutory` parses the date out of `source_reference` — full date, else month, else
   the year of the Act — and REFUSES where `effective_from` precedes it. Nothing in the
