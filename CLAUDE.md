@@ -344,6 +344,14 @@ database holds the record** (D-256): export as often as you like, each one pre-f
 what is already done and leaves newly loaded figures blank. A value edited in the
 spreadsheet REFUSES its version and names the row, because an importer that could
 write a figure is every loader guard routed around by a spreadsheet (D-251).
+**A version may be verified by SEVERAL people** (D-270), and `verified_by_users`
+records them all. The workbook is grouped by source document and versions cut across
+documents, so sharing the pass out by document means some version gets checked by two
+people — which is a stronger result, not a weaker one. Two rules widened with it: the
+loader-cannot-verify rule runs over EVERY checker, not just whoever signs, and a version
+is machine-verified if ANY checker is a development identity. **`--dry-run` is apply,
+rolled back** (D-145's rule), so it reports what the import WOULD record rather than
+what the database already holds.
 **One instrument gets one citation string** (D-257) — two spellings read as two source
 documents, so a version can be fully checked and still show incomplete;
 `checkstatutory` reports a near-duplicate rather than waiting for somebody to notice.

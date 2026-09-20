@@ -17,6 +17,14 @@ version is verified when EVERY figure in it has a checked record in the
 database, not when one workbook happens to hold them all: two people working
 two halves on two evenings complete it between them.
 
+**And they may be two different people** (D-270). This used to refuse a version
+whose figures carried more than one checker's name — for attribution only, since
+``verifystatutory`` recorded one verifier. The workbook is grouped by SOURCE
+DOCUMENT and versions cut across documents, so splitting the pass by document
+guaranteed that refusal on any version spanning both people's documents. Every
+checker is recorded now, the second-pair-of-eyes rule applies to all of them,
+and a development identity among them taints the version.
+
 **It writes verification records and NOTHING else** (D-251). If a value in the
 workbook differs from the loaded value, that is a QUERY for a human — this
 command refuses that version, names the row, and does not record that row as
