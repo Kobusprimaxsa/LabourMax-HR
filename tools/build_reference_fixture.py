@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import pathlib
 
 NMW_GAZETTE = "GN R.7083, GG 54075, 3 February 2026 (National Minimum Wage Act 9 of 2018)"
 NMW_URL = "https://www.gov.za/sites/default/files/gcis_document/202602/54075rg11941gon7083.pdf"
@@ -639,6 +640,25 @@ DOCUMENT = {
     },
 }
 
+# ---------------------------------------------------------------------------
+# WRITES the file rather than printing it for redirection (D-264). A shell
+# redirect re-encodes: PowerShell's `>` writes the console code page, and
+# `python tools/build_notice_band_fixture.py > reference/...json` put U+FFFD
+# REPLACEMENT CHARACTER through every non-ASCII character in that file - the
+# rand sign and the en dashes in the notes. Nothing refused it: the JSON was
+# still valid, the loader read it, and the corruption reached the verification
+# workbook as the mojibake a person would have to decide about. Writing with an
+# explicit encoding cannot be got wrong from the calling shell.
+# ---------------------------------------------------------------------------
+
+
+OUTPUT = pathlib.Path(__file__).resolve().parents[1] / "reference" / "ref-2026.03.01.json"
+
+
+def main():
+    OUTPUT.write_text(json.dumps(DOCUMENT, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"Wrote {OUTPUT.name}")
+
 
 if __name__ == "__main__":
-    print(json.dumps(DOCUMENT, indent=2, ensure_ascii=False))
+    main()

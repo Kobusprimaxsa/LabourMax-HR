@@ -528,6 +528,12 @@ that look like a code problem and are not. `pytest.ini` pins `--basetemp=.pytest
 exactly this reason; if it still happens, point `--basetemp` at a directory you control
 rather than fighting the ACL.
 
+**Never build a fixture with `>`.** PowerShell's redirect re-encodes in the console code
+page, which put U+FFFD through every rand sign and en dash in
+`ref-2026.03.01-notice-bands.json` while leaving the JSON valid and the loader happy
+(D-264). Every builder in `tools/` writes its own file with `encoding="utf-8"`, and
+`statutory/tests/test_fixture_encoding.py` refuses one that prints a document instead.
+
 ---
 
 ## Working style

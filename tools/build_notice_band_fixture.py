@@ -42,6 +42,8 @@ Run: python tools/build_notice_band_fixture.py > reference/ref-2026.03.01-notice
 from __future__ import annotations
 
 import json
+import pathlib
+import sys
 
 BCEA = "Basic Conditions of Employment Act 75 of 1997"
 SD7 = (
@@ -426,9 +428,38 @@ DOCUMENT_BCCCI_BANDS = {
     },
 }
 
-if __name__ == "__main__":
-    import sys
+# ---------------------------------------------------------------------------
+# WRITES the file rather than printing it for redirection (D-264). A shell
+# redirect re-encodes: PowerShell's `>` writes the console code page, and
+# `python tools/build_notice_band_fixture.py > reference/...json` put U+FFFD
+# REPLACEMENT CHARACTER through every non-ASCII character in that file - the
+# rand sign and the en dashes in the notes. Nothing refused it: the JSON was
+# still valid, the loader read it, and the corruption reached the verification
+# workbook as the mojibake a person would have to decide about. Writing with an
+# explicit encoding cannot be got wrong from the calling shell.
+# ---------------------------------------------------------------------------
 
-    which = sys.argv[1] if len(sys.argv) > 1 else ""
-    document = DOCUMENT_BCCCI_BANDS if which == "bccci" else DOCUMENT
-    print(json.dumps(document, indent=2, ensure_ascii=False))
+
+REFERENCE = pathlib.Path(__file__).resolve().parents[1] / "reference"
+
+#: Which document goes in which file. A dict rather than an if/else because the
+#: failure being prevented is "somebody adds a third document and redirects it
+#: at the wrong name", and a mapping makes the pairing the thing you edit.
+OUTPUTS = {
+    "bcea": ("ref-2026.03.01-notice-bands.json", DOCUMENT),
+    "bccci": ("ref-2026.04.01-bccci-notice.json", DOCUMENT_BCCCI_BANDS),
+}
+
+
+def main(argv=None):
+    which = (argv or sys.argv[1:] or ["bcea"])[0]
+    if which not in OUTPUTS:
+        raise SystemExit(f"Unknown document {which!r}. Choose one of {', '.join(OUTPUTS)}.")
+    filename, document = OUTPUTS[which]
+    path = REFERENCE / filename
+    path.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"Wrote {path.name}")
+
+
+if __name__ == "__main__":
+    main()

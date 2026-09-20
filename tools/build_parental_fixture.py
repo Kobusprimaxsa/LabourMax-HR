@@ -35,6 +35,7 @@ Run: python tools/build_parental_fixture.py > reference/ref-2026.03.01-parental.
 from __future__ import annotations
 
 import json
+import pathlib
 
 ZACC = (
     "Van Wyk v Minister of Employment and Labour (CCT 308/23) [2025] ZACC 20 "
@@ -202,6 +203,25 @@ DOCUMENT = {
     },
 }
 
+# ---------------------------------------------------------------------------
+# WRITES the file rather than printing it for redirection (D-264). A shell
+# redirect re-encodes: PowerShell's `>` writes the console code page, and
+# `python tools/build_notice_band_fixture.py > reference/...json` put U+FFFD
+# REPLACEMENT CHARACTER through every non-ASCII character in that file - the
+# rand sign and the en dashes in the notes. Nothing refused it: the JSON was
+# still valid, the loader read it, and the corruption reached the verification
+# workbook as the mojibake a person would have to decide about. Writing with an
+# explicit encoding cannot be got wrong from the calling shell.
+# ---------------------------------------------------------------------------
+
+
+OUTPUT = pathlib.Path(__file__).resolve().parents[1] / "reference" / "ref-2026.03.01-parental.json"
+
+
+def main():
+    OUTPUT.write_text(json.dumps(DOCUMENT, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"Wrote {OUTPUT.name}")
+
 
 if __name__ == "__main__":
-    print(json.dumps(DOCUMENT, indent=2, ensure_ascii=False))
+    main()
