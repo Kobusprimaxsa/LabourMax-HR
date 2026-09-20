@@ -880,3 +880,99 @@ def test_a_reversed_accrual_is_not_deducted_from_the_six_month_top_up(
         f"nothing was drawn, so the whole entitlement ({recomputed.entitlement_quantity}) "
         f"must be available — got {recomputed.balance_quantity}"
     )
+
+
+# ------------- s22(3) is an AVAILABILITY restriction, not a second accrual
+
+
+def test_s22_3_restricts_availability_within_one_entitlement_not_a_second_accrual(
+    employer,
+    employee,
+    engagement,
+    minimum_age,
+    leave_rules,
+    sick_type,
+    sick_first_period,
+    working_time_rules,
+    schedule_5day,
+):
+    """THE MODEL SHAPE, pinned (D-181, confirmed against the Act 20 Sep 2026).
+
+    s22(3)'s one-day-per-26 can be modelled two ways, and **they agree in the
+    ordinary case and diverge the moment anything else changes**, which is the
+    worst kind of agreement:
+
+    * an AVAILABILITY restriction inside the ONE s22(2) entitlement — the ratio
+      amount A is part of E, and the transition tops up by E − A so the cycle
+      has granted E in total; or
+    * a SECOND accrual with its own balance — A is additional to E, and the
+      cycle would end up having granted A + E.
+
+    This is the first. The decisive assertion is the SUM OF ACCRUALS over the
+    cycle, not the balance: with A = 2 and T = 1 the balance is E − 1 under the
+    first reading and E + 1 under the second, but it is the accrual total that
+    says *why*. ``sick_first_cycle_top_up()`` returning ``entitlement - accrued``
+    is only coherent if the ratio accruals were already part of the entitlement.
+
+    Also pinned: there is exactly ONE sick cycle across the whole period, and
+    its ``entitlement_quantity`` never moves. A second entitlement would have to
+    live somewhere, and this is the assertion that would find it.
+    """
+    from dateutil.relativedelta import relativedelta
+
+    with tenant_context_of(employee):
+        cycle = ensure_cycles(employee, sick_type, horizon=START)[0]
+        entitlement_at_start = cycle.entitlement_quantity
+
+        post_transaction(
+            employee=employee,
+            leave_cycle=cycle,
+            leave_type=sick_type,
+            transaction_type=TransactionType.ACCRUAL,
+            quantity=Decimal("2.000"),
+            unit=LeaveCycle.Unit.DAYS,
+            transaction_date=datetime.date(2026, 3, 28),
+            calculation_basis="per_26_days_first_6m",
+        )
+        post_transaction(
+            employee=employee,
+            leave_cycle=cycle,
+            leave_type=sick_type,
+            transaction_type=TransactionType.TAKEN,
+            quantity=Decimal("-1.000"),
+            unit=LeaveCycle.Unit.DAYS,
+            transaction_date=datetime.date(2026, 4, 15),
+            calculation_basis="manual",
+        )
+
+    transition_date = cycle.cycle_start + relativedelta(months=6)
+    with tenant_context_of(employee):
+        accrue_employee(employee, sick_type, as_at=transition_date)
+
+        # ONE cycle. s22(1)(a) runs it from commencement of employment and
+        # leave_type.cycle_months is 36, so the first six months are INSIDE
+        # cycle 1 rather than a cycle of their own.
+        assert LeaveCycle.objects.filter(employee=employee, leave_type=sick_type).count() == 1
+
+        granted = sum(
+            (
+                txn.days
+                for txn in LeaveTransaction.objects.filter(
+                    leave_cycle=cycle, transaction_type=TransactionType.ACCRUAL
+                )
+            ),
+            Decimal("0"),
+        )
+
+    recomputed = recompute_cycle(cycle)
+
+    assert recomputed.entitlement_quantity == entitlement_at_start, (
+        "the one entitlement does not move when the ratio phase ends"
+    )
+    assert granted == entitlement_at_start, (
+        f"the cycle must have granted EXACTLY the one s22(2) entitlement "
+        f"({entitlement_at_start}), not the ratio amount on top of it "
+        f"({entitlement_at_start + Decimal('2.000')}). Granted {granted}: "
+        f"s22(3) has become a second accrual with its own balance."
+    )
+    assert recomputed.balance_quantity == entitlement_at_start - Decimal("1.000")
