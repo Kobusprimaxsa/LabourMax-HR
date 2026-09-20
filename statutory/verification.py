@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import dataclasses
 import decimal
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -375,6 +376,30 @@ class Line:
     @property
     def sort_key(self):
         return (self.document, self.clause, self.effective_from, self.table, self.key)
+
+
+#: The label the fingerprint is written under on the Summary sheet, and looked
+#: up by on import. A workbook without one predates D-272 and is refused.
+FINGERPRINT_LABEL = "Workbook fingerprint"
+
+
+def corpus_fingerprint(groups=None) -> str:
+    """A short hash of the check-group keys this database currently has.
+
+    A workbook is a SNAPSHOT of the groups that existed when it was exported.
+    Load a fixture afterwards and what the file does not mention stops meaning
+    "nothing to do" and starts meaning "rows this file never knew about" — and
+    importing it would report a version complete when figures in it had never
+    been looked at (D-272).
+
+    Keyed on the group keys alone, so recording ticks does not move it: a
+    workbook stays importable across as many evenings as the pass takes, and
+    only a change to the DATA invalidates it.
+    """
+    if groups is None:
+        groups = check_groups()
+    digest = hashlib.sha256("\n".join(sorted(group.key for group in groups)).encode())
+    return digest.hexdigest()[:16]
 
 
 def row_versions() -> dict[tuple[str, int], str]:

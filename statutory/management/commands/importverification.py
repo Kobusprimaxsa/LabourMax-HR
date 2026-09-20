@@ -70,6 +70,25 @@ DATE_COLUMN = 13
 NOTE_COLUMN = 14
 
 
+def _as_date(value) -> datetime.date | None:
+    """A cell's date, or None if it does not hold one.
+
+    Excel hands back a ``datetime`` for a real date cell and a string for one
+    somebody typed. Both are ordinary; anything else is not a date, and saying
+    so beats recording a check against the wrong day.
+    """
+    if isinstance(value, datetime.datetime):
+        return value.date()
+    if isinstance(value, datetime.date):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.date.fromisoformat(value.strip()[:10])
+        except ValueError:
+            return None
+    return None
+
+
 class Command(BaseCommand):
     help = "Verify reference versions from a completed verification workbook."
 
@@ -111,6 +130,8 @@ class Command(BaseCommand):
                 f"tick already imported is in the database and will be pre-filled."
             )
 
+        self._refuse_a_stale_workbook(book, path)
+
         rows = self._read(book["Checks"])
         if not rows:
             raise CommandError("The Checks sheet holds no rows.")
@@ -135,10 +156,20 @@ class Command(BaseCommand):
 
         verified, refused, incomplete, already, recorded = outcome
 
-        if recorded:
+        # ALWAYS, even at nil. This used to print only `if recorded`, so a run
+        # that wrote nothing printed nothing at all and read as success — which
+        # is how seventeen marked rows came to be discarded in silence (D-272).
+        marked = sum(1 for row in rows if row["checked"])
+        verb = "Would record" if options["dry_run"] else "Recorded"
+        self.stdout.write(f"{marked} marked row(s) read, {recorded} recorded.")
+        if marked and not recorded and not refused:
             self.stdout.write(
-                f"{'Would record' if options['dry_run'] else 'Recorded'} {recorded} check(s).\n"
+                "Nothing was written. Every marked row already holds exactly this "
+                "check, so there was nothing to add — re-importing the same workbook "
+                "is expected to do nothing."
             )
+        if recorded:
+            self.stdout.write(f"{verb} {recorded} check(s).\n")
 
         self._report(verified, refused, incomplete, already, by_version, dry_run=options["dry_run"])
 
@@ -251,6 +282,42 @@ class Command(BaseCommand):
 
         return verified, refused, incomplete, already, recorded
 
+    def _refuse_a_stale_workbook(self, book, path):
+        """A workbook is a SNAPSHOT of the check groups (D-272).
+
+        Load a fixture after exporting and the groups the file was built from
+        are no longer the groups that exist. What the file does not mention
+        then stops meaning "nothing to do" and starts meaning "rows this file
+        never knew about" — and importing it could report a version complete
+        when figures in it had never been looked at.
+
+        Keyed on the group keys alone, so recording ticks does not invalidate a
+        workbook: the pass can run over as many evenings as it takes, and only
+        a change to the DATA refuses it.
+        """
+        summary = book["Summary"] if "Summary" in book.sheetnames else None
+        stamped = None
+        if summary is not None:
+            for index in range(1, summary.max_row + 1):
+                if summary.cell(row=index, column=1).value == verification.FINGERPRINT_LABEL:
+                    stamped = (summary.cell(row=index, column=2).value or "").strip()
+                    break
+
+        current = verification.corpus_fingerprint()
+        if stamped == current:
+            return
+
+        raise CommandError(
+            f"{path} was exported from different reference data and is STALE "
+            f"(workbook {stamped or 'unstamped'}, database {current}). Rows have been "
+            f"loaded, superseded or re-encoded since, so this file does not know about "
+            f"all of them - and a version could be reported complete with figures in it "
+            f"nobody has seen. Export a fresh workbook: every tick already imported is "
+            f"in the database and is pre-filled, so nothing checked is asked for twice. "
+            f"If this file holds ticks that were never imported, they are the work at "
+            f"risk - copy them across by hand before re-exporting."
+        )
+
     # ------------------------------------------------------------------ reading
 
     def _read(self, sheet) -> list[dict]:
@@ -333,6 +400,27 @@ class Command(BaseCommand):
                 problems.append(f"row {row['line']} is ticked with no date")
                 continue
 
+            # THE SILENT ZERO (D-272). These two used to be checked for being
+            # NON-BLANK here and then resolved in _record(), which skipped the
+            # row with a bare `continue` when the lookup failed - under a
+            # comment claiming the row was "named in _sift's problems", which it
+            # never was. Seventeen marked rows, nothing written, nothing said.
+            # Both are now resolved HERE, where a failure becomes a problem that
+            # refuses the version and names the cell.
+            if AppUser.objects.filter(email__iexact=row["by"]).first() is None:
+                problems.append(
+                    f"row {row['line']} is ticked by '{row['by']}', which is not a user "
+                    f"of this system. A check is evidence and has to point at somebody: "
+                    f"create the account, or correct the address to the one they use."
+                )
+                continue
+            if _as_date(row["when"]) is None:
+                problems.append(
+                    f"row {row['line']} has '{row['when']}' in the date column, which is "
+                    f"not a date. Use YYYY-MM-DD, or let Excel write a real date."
+                )
+                continue
+
             if state is ReferenceFigureCheck.Outcome.QUERIED:
                 note = row["note"] or ""
                 problems.append(
@@ -363,15 +451,17 @@ class Command(BaseCommand):
         with transaction.atomic():
             for row in rows:
                 user = AppUser.objects.filter(email__iexact=row["by"]).first()
-                if user is None:
-                    continue  # named in _sift's problems; nothing to record against.
-                when = row["when"]
-                when = when.date() if isinstance(when, datetime.datetime) else when
-                if isinstance(when, str):
-                    try:
-                        when = datetime.date.fromisoformat(when.strip()[:10])
-                    except ValueError:
-                        continue
+                when = _as_date(row["when"])
+                # _sift has already refused a row whose checker or date will not
+                # resolve, so reaching here with either missing is a BUG in the
+                # sifting rather than bad input - and the one thing this loop
+                # must never do again is pass over a marked row in silence.
+                if user is None or when is None:  # pragma: no cover - guarded by _sift
+                    raise CommandError(
+                        f"{row['row_key']} passed sifting with checker {row['by']!r} and "
+                        f"date {row['when']!r}, one of which does not resolve. This is a "
+                        f"defect in _sift(), not in the workbook - nothing was written."
+                    )
                 current = existing.get(row["row_key"])
                 same = (
                     current is not None

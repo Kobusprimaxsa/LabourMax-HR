@@ -22,6 +22,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
+from openpyxl import load_workbook
 
 from statutory import verification
 
@@ -106,6 +107,8 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         path = Path(options["path"])
+        if path.exists() and options["force"]:
+            self._refuse_to_discard_unimported_work(path)
         if path.exists() and not options["force"]:
             raise CommandError(
                 f"{path} already exists. Every tick that has been IMPORTED is safe — it "
@@ -124,6 +127,7 @@ class Command(BaseCommand):
         machine = {v["label"] for v in versions if v["machine_verified"] and not v["superseded"]}
 
         book = Workbook()
+        self._fingerprint = verification.corpus_fingerprint(groups)
         self._summary_sheet(
             book.active, lines, groups, versions, checks, options["verifier"].strip()
         )
@@ -273,6 +277,52 @@ class Command(BaseCommand):
                 "exactly like the others — they are not done."
             ),
         ).font = Font(italic=True)
+
+        # The last row, and the one importverification reads back: a hash of the
+        # check-group keys as they were at export (D-272). A workbook is a
+        # snapshot, and once the data moves, what it does NOT mention stops
+        # meaning "nothing to do".
+        row += 2
+        sheet.cell(row=row, column=1, value=verification.FINGERPRINT_LABEL).font = Font(italic=True)
+        sheet.cell(row=row, column=2, value=self._fingerprint).font = Font(italic=True)
+
+    def _refuse_to_discard_unimported_work(self, path):
+        """--force over a file holding ticks nobody has imported (D-272).
+
+        ``--force`` is for a file whose work is already in the database, where
+        the export simply pre-fills it again. Over un-imported ticks it is the
+        destructive operation this whole design exists to make impossible
+        (D-256): an evening of checking, gone, with no record that it happened.
+        """
+        try:
+            book = load_workbook(path, data_only=True)
+        except Exception:  # noqa: BLE001 - not a workbook we wrote; let the export proceed
+            return
+        if "Checks" not in book.sheetnames:
+            return
+
+        sheet = book["Checks"]
+        checks = verification.latest_checks()
+        stranded = []
+        for index in range(2, sheet.max_row + 1):
+            key = sheet.cell(row=index, column=10).value
+            marked = (sheet.cell(row=index, column=11).value or "").strip()
+            if not key or not marked:
+                continue
+            group = verification.group_by_key(key)
+            if group is None or not any(figure.key in checks for figure in group.figures):
+                stranded.append(key)
+
+        if stranded:
+            raise CommandError(
+                f"{path} holds {len(stranded)} marked row(s) that are NOT in the "
+                f"database, so --force would discard them: "
+                f"{', '.join(stranded[:5])}{' ...' if len(stranded) > 5 else ''}. "
+                f"Run `manage.py importverification {path}` first - every tick it "
+                f"records is then pre-filled on the next export and the file becomes "
+                f"disposable. If those rows really are meant to go, delete the file by "
+                f"hand: this command will not throw away work it cannot see recorded."
+            )
 
     def _check_sheet(self, sheet, groups, machine, checks):
         for column, (title, width) in enumerate(CHECK_HEADERS, start=1):
