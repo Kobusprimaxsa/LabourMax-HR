@@ -23,6 +23,7 @@ arithmetic, and the golden tests will fail it on published worked examples.
 
 from __future__ import annotations
 
+import datetime
 import json
 import re
 from dataclasses import dataclass
@@ -638,6 +639,135 @@ def check_fixture_checksums(directory: str | Path | None = None) -> list[Issue]:
     return issues
 
 
+# ---------------------------------------------------------------------------
+# COMMENCEMENT. An effective_from that predates the instrument it cites.
+# ---------------------------------------------------------------------------
+
+_MONTH_NAMES = (
+    "january february march april may june july august september october november december"
+)
+_MONTHS = {name: number for number, name in enumerate(_MONTH_NAMES.split(), start=1)}
+_MONTHS.update({name[:3]: number for name, number in list(_MONTHS.items())})
+
+#: "3 February 2026", "31 Mar 2023". The instrument's own date, and the only
+#: form specific enough to settle a day.
+_FULL_DATE = re.compile(r"\b(\d{1,2})\s+([A-Za-z]{3,9})\.?\s+(\d{4})\b")
+#: "March 2025" - a gazette cited by month, which settles the month and no more.
+_MONTH_YEAR = re.compile(r"\b([A-Za-z]{3,9})\.?\s+(\d{4})\b")
+#: "Act 75 of 1997" - the Act's year, and nothing about which day it commenced.
+_ACT_YEAR = re.compile(r"\bAct\s+\d{1,3}\s+of\s+(\d{4})\b", re.IGNORECASE)
+
+
+def _month_number(word: str) -> int | None:
+    return _MONTHS.get(word.lower().rstrip("."))
+
+
+def cited_commencement(reference: str) -> tuple[datetime.date, str] | None:
+    """The earliest date the citation itself pins the instrument to, and how.
+
+    Three precisions, and the most specific one PRESENT wins rather than the
+    earliest overall. A notice reads "GN R.7083, GG 54075, 3 February 2026
+    (National Minimum Wage Act 9 of 2018)" and carries both its own publication
+    date and the year of the Act it is made under; taking the earliest of those
+    would bound the notice at 2018 and check nothing at all. The notice's own
+    date is the one that says when this document came to exist.
+
+    Within a precision the EARLIEST is taken, because a citation that names a
+    range - "2027 tax year (1 March 2026 - 28 February 2027)" - names the start
+    first and the closing date is not a commencement.
+
+    Returns None where the citation carries no date: a consolidated text, or a
+    determination cited by name alone. That is not a defect and is not
+    reported. A bound nobody can derive is not a bound anybody should invent.
+    """
+    days = [
+        datetime.date(int(year), _month_number(word), int(day))
+        for day, word, year in _FULL_DATE.findall(reference)
+        if _month_number(word) and 1 <= int(day) <= 31
+    ]
+    if days:
+        return min(days), "the date the citation gives"
+
+    months = [
+        datetime.date(int(year), _month_number(word), 1)
+        for word, year in _MONTH_YEAR.findall(reference)
+        if _month_number(word)
+    ]
+    if months:
+        return min(months), "the month the citation gives, read as its first day"
+
+    years = [datetime.date(int(year), 1, 1) for year in _ACT_YEAR.findall(reference)]
+    if years:
+        return min(years), "the year of the Act cited, read as 1 January"
+
+    return None
+
+
+def check_commencement() -> list[Issue]:
+    """No row may be in force before the instrument it cites existed (D-263).
+
+    **The rule, stated plainly**: a row's ``effective_from`` may equal or follow
+    the date its own citation pins the instrument to, and may not precede it.
+    Equality is ordinary and correct - the National Minimum Wage notice of
+    3 February 2026 is effective 1 March 2026, and the Van Wyk reading-in is
+    effective the day the judgment was handed down.
+
+    **Why this one REFUSES where the other citation checks warn.** A resemblance
+    between two citations may genuinely be two documents, so
+    ``check_citation_spellings`` reports and lets a person decide. This is
+    arithmetic instead: a figure cannot have been in force before the document
+    stating it was published. When it fires, either a date was transcribed
+    wrongly or the citation points at the wrong instrument, and both of those
+    put a wrong figure on a payslip. The March load is exactly where this goes
+    unnoticed - last year's rate under this year's citation is a plausible
+    number in a plausible column, and nothing else in this module would catch
+    it.
+
+    **The bound comes from the citation, not from a new column** (D-263). The
+    schema has nowhere to record a commencement date - checked before this was
+    written rather than assumed - and adding one to every cited table would
+    create a second place for the same fact to live and drift from, and would
+    need the whole corpus reloaded to populate it. The citation is already
+    mandatory, already non-blank by CHECK, and is the exact string the human
+    pass reads off the source document. So the date is parsed out of it at
+    whatever precision the citation offers, and a citation offering none is
+    skipped rather than guessed at.
+
+    **Retrospective commencement is real and is not silently permitted.** A
+    collective agreement can be extended with effect from before its gazetting.
+    Nothing in this corpus does, and the refusal names the row, both dates and
+    the citation, so a person can say so - and then the fixture says so too, in
+    the row's own note and citation, rather than this check being widened.
+    """
+    from statutory import verification
+
+    issues = []
+    for line in sorted(verification.lines(), key=lambda one: one.sort_key):
+        if not line.effective_from:
+            continue
+        commencement = cited_commencement(line.document)
+        if commencement is None:
+            continue
+        starts = datetime.date.fromisoformat(line.effective_from)
+        earliest, how = commencement
+        if starts >= earliest:
+            continue
+        issues.append(
+            Issue(
+                True,
+                f"{line.table} {line.row_description or line.description}",
+                f"is effective from {starts:%d %B %Y}, which is BEFORE "
+                f"{earliest:%d %B %Y} - {how} for the instrument it cites. A figure "
+                f"cannot have been in force before the document stating it existed, so "
+                f"either the effective date is wrong or the citation points at the "
+                f"wrong instrument. If the instrument genuinely commenced "
+                f"retrospectively, say so in the row's own note and citation; do not "
+                f"widen this check. Citation: {line.document}",
+            )
+        )
+    return issues
+
+
 def check_machine_verified_versions() -> list[Issue]:
     """Versions whose verification tick is not a person's (D-262).
 
@@ -714,5 +844,6 @@ def run_all(year: TaxYear | None = None) -> list[Issue]:
     issues.extend(check_notice_bands())
     issues.extend(check_citations())
     issues.extend(check_citation_spellings())
+    issues.extend(check_commencement())
     issues.extend(check_machine_verified_versions())
     return issues
