@@ -396,3 +396,77 @@ def test_a_superseded_version_is_not_demanded_of_the_verifier(household, tax_yea
     issues = validation.validate(run)
 
     assert "reference_data_not_verified" not in codes(issues)
+
+
+# ----------- a development identity must not satisfy the gate for a real run
+
+
+MACHINE = "claude-verification@labourmax.invalid"
+
+
+def a_verified_version(label, applies, *, user, current_through=datetime.date(2029, 2, 28)):
+    return ReferenceDataVersion.objects.create(
+        version_label=label,
+        applies_from=applies,
+        description="Checked.",
+        verified_at=WHEN,
+        verified_by_user=user,
+        golden_tests_passed=True,
+        data_current_through=current_through,
+    )
+
+
+def test_a_machine_verified_version_does_not_satisfy_the_gate(household, tax_year, approver):
+    """THE SHAPE THIS WILL ACTUALLY OCCUR IN (D-262). Kobus verifies the
+    fourteen outstanding versions under his own name; four were verified by
+    claude-verification@labourmax.invalid during development and ride along
+    silently. The gate goes green and a real payslip is backed in part by data
+    no person ever read.
+
+    A development identity is recognised by RFC 2606's reserved .invalid suffix,
+    which can never be a deliverable address, so nothing that reaches this
+    branch was ever a person.
+    """
+    machine = get_user_model().objects.create_user(email=MACHINE, password="x" * 14)
+
+    for index in range(14):
+        a_verified_version(f"REF-HUMAN-{index:02d}", datetime.date(2026, 3, 1), user=approver)
+    for index in range(4):
+        a_verified_version(f"REF-MACHINE-{index:02d}", datetime.date(2026, 4, 1), user=machine)
+
+    period = a_period(household, tax_year, start=datetime.date(2026, 6, 1))
+    issues = validation.validate(a_run(household, period))
+
+    assert "reference_data_not_verified" in codes(issues), (
+        "four machine-verified versions must block the run exactly as unverified ones do"
+    )
+    message = next(i for i in issues if i.code == "reference_data_not_verified").message
+    for index in range(4):
+        assert f"REF-MACHINE-{index:02d}" in message
+    assert "REF-HUMAN-00" not in message, "a human-verified version is not the problem"
+    assert "verifystatutory" in message
+    assert "NOT A PERSON" in message
+    assert MACHINE in message, "name the identity, or nobody knows which tick to redo"
+
+
+def test_the_same_versions_verified_by_a_person_do_satisfy_the_gate(household, tax_year, approver):
+    """Watched NOT firing, or the test above proves only that the gate is shut."""
+    for index in range(14):
+        a_verified_version(f"REF-HUMAN-{index:02d}", datetime.date(2026, 3, 1), user=approver)
+    for index in range(4):
+        a_verified_version(f"REF-WAS-MACHINE-{index}", datetime.date(2026, 4, 1), user=approver)
+
+    period = a_period(household, tax_year, start=datetime.date(2026, 6, 1))
+    issues = validation.validate(a_run(household, period))
+
+    assert "reference_data_not_verified" not in codes(issues)
+
+
+def test_a_machine_verified_version_is_not_in_force(household, tax_year, approver):
+    """in_force_on() is the other door into the same room. If it still answered
+    a machine-verified version, the staleness half of the gate would read that
+    version's own data_current_through and the run would pass on it."""
+    machine = get_user_model().objects.create_user(email=MACHINE, password="x" * 14)
+    a_verified_version("REF-MACHINE-ONLY", datetime.date(2026, 3, 1), user=machine)
+
+    assert ReferenceDataVersion.in_force_on(datetime.date(2026, 6, 1)) is None

@@ -246,30 +246,70 @@ class ReferenceDataVersion(AuditedModel, AuditMixin):
     def __str__(self):
         return self.version_label
 
+    #: RFC 2606 reserves ``.invalid`` so that it can never be delegated, which
+    #: makes an address ending in it one that could not have reached a person
+    #: even in principle. That is why the development identity is recognised by
+    #: its SUFFIX and not by a list of known accounts: a list has to be kept up
+    #: to date by whoever adds the next one, and the person who forgets is the
+    #: person the guard exists for (D-262).
+    DEVELOPMENT_VERIFIER_SUFFIX = ".invalid"
+
     @property
     def is_verified(self) -> bool:
         return self.verified_at is not None
 
     @property
+    def is_machine_verified(self) -> bool:
+        """Verified during development, by something that is not a person.
+
+        ``verifystatutory`` deliberately ACCEPTS these — a development database
+        has to be able to get past the gate or nothing downstream of P2 can be
+        built at all. What must never happen is the tick surviving into a real
+        run, which is what :meth:`unusable_q` stops.
+        """
+        return (
+            self.is_verified
+            and self.verified_by_user is not None
+            and self.verified_by_user.email.lower().endswith(self.DEVELOPMENT_VERIFIER_SUFFIX)
+        )
+
+    @property
     def is_usable(self) -> bool:
-        """Verified by a second pass AND reproducing the worked examples."""
-        return self.is_verified and self.golden_tests_passed
+        """Verified by a real second pass AND reproducing the worked examples."""
+        return self.is_verified and self.golden_tests_passed and not self.is_machine_verified
+
+    @classmethod
+    def unusable_q(cls) -> models.Q:
+        """THE ONE DEFINITION of "this version may not back a payroll figure".
+
+        Three reasons, one expression, deliberately: ``in_force_on()`` and
+        ``payroll/validation.py``'s gate are two doors into the same room, and a
+        reason added to one list and not the other is a version that the gate
+        refuses and the resolver happily answers, or the reverse (D-262).
+        """
+        return (
+            models.Q(verified_at__isnull=True)
+            | models.Q(golden_tests_passed=False)
+            | models.Q(
+                verified_by_user__email__iendswith=cls.DEVELOPMENT_VERIFIER_SUFFIX,
+            )
+        )
 
     @classmethod
     def in_force_on(cls, on_date) -> ReferenceDataVersion | None:
         """The newest usable version applying on or before ``on_date``.
 
-        An unverified version, or one whose golden tests fail, is invisible here.
-        That is why activation is derived rather than stored: there is no boolean
-        to set at 17:55 on the last day of February.
+        An unverified version, one whose golden tests fail, and one verified by
+        a development identity are all invisible here. That is why activation is
+        derived rather than stored: there is no boolean to set at 17:55 on the
+        last day of February.
         """
         return (
             cls.objects.filter(
                 applies_from__lte=on_date,
-                verified_at__isnull=False,
-                golden_tests_passed=True,
                 superseded_by__isnull=True,  # a re-encoded version is not the current one
             )
+            .exclude(cls.unusable_q())
             .order_by("-applies_from", "-id")
             .first()
         )

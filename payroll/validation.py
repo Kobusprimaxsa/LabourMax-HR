@@ -42,7 +42,7 @@ import dataclasses
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Sum
 
 from attendance.completeness import missing_attendance_days
 from core.managers import tenant_context_of
@@ -95,6 +95,11 @@ def check_reference_data(run) -> list[Finding]:
     this period could read verified". A superseded version is excluded: it is
     kept forever as the audit record (D-199) and nothing resolves against it, so
     demanding its verification would hold the gate shut permanently.
+
+    A version verified by a DEVELOPMENT identity is unverified here, on this same
+    code path and not on a second one beside it (D-262). Two lists that have to
+    stay in step do not stay in step; ``ReferenceDataVersion.unusable_q()`` is
+    the single expression, shared with ``in_force_on()``.
     """
     period = run.pay_period
 
@@ -103,11 +108,24 @@ def check_reference_data(run) -> list[Finding]:
             applies_from__lte=period.payment_date,
             superseded_by__isnull=True,
         )
-        .filter(Q(verified_at__isnull=True) | Q(golden_tests_passed=False))
+        .filter(ReferenceDataVersion.unusable_q())
+        .select_related("verified_by_user")
         .order_by("applies_from", "version_label")
     )
     if unverified:
+        machine = [v for v in unverified if v.is_machine_verified]
         named = ", ".join(v.version_label for v in unverified)
+        machine_note = ""
+        if machine:
+            machine_note = (
+                f" {len(machine)} of them carry a tick that is NOT A PERSON: "
+                f"{', '.join(v.version_label for v in machine)}, verified by "
+                f"{', '.join(sorted({v.verified_by_user.email for v in machine}))}. "
+                f"A development identity gets a version past `verifystatutory` so the "
+                f"rest of the build can be worked on; it does not get a payslip past "
+                f"this gate, and it is listed above alongside the versions nobody "
+                f"ticked at all because it means exactly the same thing here (D-262)."
+            )
         return [
             Finding(
                 "reference_data_not_verified",
@@ -121,7 +139,7 @@ def check_reference_data(run) -> list[Finding]:
                 f"— a run reads figures from all of them, so a verified wage schedule "
                 f"does not vouch for an unverified tax table sitting behind it (D-250). "
                 f"Running payroll against unchecked figures is the failure this gate "
-                f"exists for.",
+                f"exists for.{machine_note}",
             )
         ]
 

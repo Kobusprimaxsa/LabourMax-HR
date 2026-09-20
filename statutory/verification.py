@@ -711,7 +711,9 @@ def version_state() -> list[dict]:
                 "figures": counts.get(version.version_label, 0),
                 "verified": bool(version.verified_at),
                 "verified_by": verifier,
-                "machine_verified": verifier.endswith("@labourmax.invalid"),
+                "machine_verified": verifier.lower().endswith(
+                    ReferenceDataVersion.DEVELOPMENT_VERIFIER_SUFFIX
+                ),
                 "current_through": version.data_current_through,
                 # The reverse of ``supersedes`` is ``superseded_by`` and it is a
                 # ONE-to-one: the loader itself reads it as hasattr/attribute,

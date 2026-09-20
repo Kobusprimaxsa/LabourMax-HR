@@ -638,6 +638,62 @@ def check_fixture_checksums(directory: str | Path | None = None) -> list[Issue]:
     return issues
 
 
+def check_machine_verified_versions() -> list[Issue]:
+    """Versions whose verification tick is not a person's (D-262).
+
+    REPORTS, never refuses, and the distinction is the whole design.
+    ``verifystatutory`` has to accept a development identity or nothing
+    downstream of P2 could be built against reference data at all — every
+    calculator, the leave engine and the payroll run all read rows that
+    ``in_force_on()`` hides until something has ticked them. So the tick is
+    allowed, the run refuses on it (``payroll/validation.py``, the same code
+    path as never-verified), and this check is the standing reminder in between
+    — the one place that says out loud, on a database anybody can run it
+    against, which figures are still waiting for a human.
+
+    A refusal here would be worse than useless: ``run_all()`` gates
+    ``verifystatutory`` itself, so a blocking issue would make the FIRST machine
+    verification impossible to record and the SECOND one impossible to undo.
+    """
+    issues = []
+    suspect = (
+        ReferenceDataVersion.objects.filter(
+            verified_at__isnull=False,
+            verified_by_user__email__iendswith=ReferenceDataVersion.DEVELOPMENT_VERIFIER_SUFFIX,
+        )
+        .select_related("verified_by_user")
+        .filter(verified_by_user__isnull=False)
+        .order_by("applies_from", "version_label")
+    )
+    # superseded_by is the REVERSE side of a OneToOne, so there is no _id
+    # attribute and touching it on an un-superseded row raises rather than
+    # returning None. One query, then a set membership.
+    superseded_labels = set(
+        ReferenceDataVersion.objects.filter(supersedes__isnull=False).values_list(
+            "supersedes__version_label", flat=True
+        )
+    )
+    for version in suspect:
+        superseded = (
+            " (superseded, so nothing reads it)"
+            if version.version_label in superseded_labels
+            else ""
+        )
+        issues.append(
+            Issue(
+                False,
+                f"reference_data_version {version.version_label}",
+                f"verified by {version.verified_by_user.email}, which is a development "
+                f"identity and not a person{superseded}. RFC 2606 reserves .invalid so "
+                f"the address could never have reached anybody. A payroll run refuses on "
+                f"this exactly as it refuses on a version nobody verified at all, and "
+                f"in_force_on() cannot see it. Re-run verifystatutory naming the person "
+                f"who actually checked every figure against the source document.",
+            )
+        )
+    return issues
+
+
 def run_all(year: TaxYear | None = None) -> list[Issue]:
     """Every row-consistency check, over every tax year unless one is named.
 
@@ -658,4 +714,5 @@ def run_all(year: TaxYear | None = None) -> list[Issue]:
     issues.extend(check_notice_bands())
     issues.extend(check_citations())
     issues.extend(check_citation_spellings())
+    issues.extend(check_machine_verified_versions())
     return issues

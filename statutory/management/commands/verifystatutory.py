@@ -92,6 +92,21 @@ class Command(BaseCommand):
                 "settles - fix the data and re-run."
             )
 
+        machine = verifier.email.lower().endswith(ReferenceDataVersion.DEVELOPMENT_VERIFIER_SUFFIX)
+        if machine:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"{verifier.email} is a DEVELOPMENT IDENTITY, not a person - RFC 2606 "
+                    f"reserves .invalid so the address can never be delegated. This is "
+                    f"accepted, because the rest of the build has to be able to read "
+                    f"reference data before the human pass is finished. It does NOT bring "
+                    f"the version into force: in_force_on() cannot see it and a payroll "
+                    f"run refuses on it by name, on the same code path as a version nobody "
+                    f"verified at all (D-262). checkstatutory lists it every run until a "
+                    f"person re-records it."
+                )
+            )
+
         if not options["golden_tests_passed"]:
             self.stdout.write(
                 self.style.WARNING(
@@ -119,3 +134,7 @@ class Command(BaseCommand):
         self.stdout.write(
             f"  In force: {'yes' if version.is_usable else 'no - payroll cannot use it yet'}"
         )
+        if machine:
+            self.stdout.write(
+                self.style.WARNING("  Verified by a machine. A person still has to do this.")
+            )
