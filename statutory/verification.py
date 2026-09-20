@@ -402,6 +402,83 @@ def corpus_fingerprint(groups=None) -> str:
     return digest.hexdigest()[:16]
 
 
+# ---------------------------------------------------------------------------
+# The downloaded source documents (D-273). ``fetchsources`` writes them and
+# ``exportverification`` links them, so the naming lives here where both can
+# agree on it rather than in either command.
+# ---------------------------------------------------------------------------
+
+SOURCES_DIRECTORY = "reference/sources"
+
+
+def source_slug(document: str) -> str:
+    """A filename a person can recognise in a directory listing.
+
+    Built from the citation's own identifiers rather than from a hash: the
+    point of the directory is that somebody glancing at it can tell the 2023
+    agreement from the 2026 one without opening either.
+    """
+    text = document.strip()
+    gazette = re.search(r"\bGG\s*(\d{4,6})\b", text, re.IGNORECASE)
+    notice = re.search(r"\bGN\s*R?\.?\s*(\d{3,5})\b", text, re.IGNORECASE)
+    numbered = re.search(r"\bNotice\s+(\d{3,5})\s+of\s+(\d{4})\b", text, re.IGNORECASE)
+    act = re.search(r"\bAct\s+(\d{1,3})\s+of\s+(\d{4})\b", text, re.IGNORECASE)
+    guide = re.search(r"\b(PAYE-[A-Z]{2}-\d{2}-[A-Z]\d{2})\b", text)
+    year = re.search(r"\b(19|20)\d{2}\b", text)
+
+    head = re.split(r"[,(]", text)[0].strip()
+    parts = [re.sub(r"[^A-Za-z0-9]+", "-", head).strip("-")[:56]]
+    if guide:
+        parts.append(guide.group(1))
+    if notice:
+        parts.append(f"GN{notice.group(1)}")
+    if numbered:
+        parts.append(f"N{numbered.group(1)}-{numbered.group(2)}")
+    if gazette:
+        parts.append(f"GG{gazette.group(1)}")
+    if act and not gazette and not notice:
+        parts.append(f"Act{act.group(1)}-{act.group(2)}")
+    if year and not any(year.group(0) in part for part in parts[1:]):
+        parts.append(year.group(0))
+    return "_".join(part for part in parts if part)[:110]
+
+
+def source_files(lines_=None) -> dict[str, str]:
+    """Every distinct source URL, and the filename it is saved under.
+
+    **Keyed on the URL and not on the document**, which is not a detail. The
+    BCEA appears under ONE document string with THREE urls — the Act from
+    labour.gov.za, the Act from gov.za, and Form BCEA1A, the Summary of the
+    Act. Taking the first would have linked the two rows citing the SUMMARY at
+    the Act itself, and a verifier would have hunted for the summary's wording
+    in a document that does not contain it. A wrong document is worse than no
+    link, for the same reason a wrong page number is.
+
+    Where one document does have several urls the filename carries a short
+    digest of the url, so the two files sit side by side and are still
+    distinguishable at a glance.
+    """
+    if lines_ is None:
+        lines_ = lines()
+
+    documents: dict[str, str] = {}
+    per_document: dict[str, set] = {}
+    for line in lines_:
+        if not line.source_url:
+            continue
+        documents.setdefault(line.source_url, line.document)
+        per_document.setdefault(line.document, set()).add(line.source_url)
+
+    files = {}
+    for url, document in documents.items():
+        stem = source_slug(document)
+        if len(per_document[document]) > 1:
+            stem = f"{stem}_{hashlib.sha256(url.encode()).hexdigest()[:6]}"
+        tail = url.rsplit("/", 1)[-1].lower()
+        files[url] = f"{stem}{'.pdf' if tail.endswith('.pdf') else '.html'}"
+    return files
+
+
 def row_versions() -> dict[tuple[str, int], str]:
     """Which reference version loaded each row, recovered from the fixtures.
 

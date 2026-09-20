@@ -21,10 +21,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from openpyxl import load_workbook
 
-from statutory import verification
+from statutory import sourcepages, verification
 
 try:  # pragma: no cover - openpyxl is a hard dependency of this command only
     from openpyxl import Workbook
@@ -128,6 +129,11 @@ class Command(BaseCommand):
 
         book = Workbook()
         self._fingerprint = verification.corpus_fingerprint(groups)
+        self._source_files = verification.source_files(lines)
+        self._sources = Path(settings.BASE_DIR) / verification.SOURCES_DIRECTORY
+        self._with_page = 0
+        self._without_page = 0
+        self._with_document = 0
         self._summary_sheet(
             book.active, lines, groups, versions, checks, options["verifier"].strip()
         )
@@ -137,6 +143,16 @@ class Command(BaseCommand):
 
         done = sum(1 for line in lines if line.key in checks)
         self.stdout.write(self.style.SUCCESS(f"Wrote {path}"))
+        self.stdout.write(
+            f"  {self._with_page} group(s) open at the cited page, "
+            f"{self._with_document - self._with_page} at the document only, "
+            f"{self._without_page - (self._with_document - self._with_page)} not linked"
+        )
+        if not self._sources.exists():
+            self.stdout.write(
+                "  reference/sources/ is empty - run `manage.py fetchsources` first and "
+                "export again to get page-deep links"
+            )
         self.stdout.write(
             f"  {len(groups)} check groups over {len(lines)} figures, "
             f"{len({line.document for line in lines})} source documents"
@@ -286,6 +302,30 @@ class Command(BaseCommand):
         sheet.cell(row=row, column=1, value=verification.FINGERPRINT_LABEL).font = Font(italic=True)
         sheet.cell(row=row, column=2, value=self._fingerprint).font = Font(italic=True)
 
+    def _link_for(self, group):
+        """The downloaded file for this group, and the page its clause is on.
+
+        ``(None, None)`` where the document was never downloaded, and
+        ``(path, None)`` where the file is there but the page could not be
+        found confidently — the row then links to the document and the person
+        finds the clause themselves, exactly as they did before.
+
+        **A wrong page is worse than no page** (D-273): it sends somebody to a
+        clause that is not the one cited, and they tick against it. Everything
+        in ``statutory/sourcepages.py`` is biased towards answering nothing.
+        """
+        if not group.source_url:
+            return None, None
+        name = self._source_files.get(group.source_url)
+        if not name:
+            return None, None
+        local = self._sources / name
+        if not local.exists():
+            return None, None
+        if not name.lower().endswith(".pdf"):
+            return local, None
+        return local, sourcepages.page_for(group.clause, local)
+
     def _refuse_to_discard_unimported_work(self, path):
         """--force over a file holding ticks nobody has imported (D-272).
 
@@ -332,7 +372,11 @@ class Command(BaseCommand):
             cell.alignment = Alignment(vertical="center", wrap_text=True)
             sheet.column_dimensions[get_column_letter(column)].width = width
         sheet.freeze_panes = "A2"
-        sheet.auto_filter.ref = f"A1:{get_column_letter(len(CHECK_HEADERS))}1"
+        # Over the DATA, not just the header row: one sitting is one filter
+        # setting on "Source document", and a filter whose range is a single
+        # row leaves Excel to guess how far the block extends.
+        last = get_column_letter(len(CHECK_HEADERS))
+        sheet.auto_filter.ref = f"A1:{last}{max(len(groups) + 1, 2)}"
 
         previous_document = None
         for index, group in enumerate(groups, start=2):
@@ -355,6 +399,26 @@ class Command(BaseCommand):
                 url_cell = sheet.cell(row=index, column=3)
                 url_cell.hyperlink = group.source_url
                 url_cell.style = "Hyperlink"
+
+            # THE CLAUSE CELL OPENS THE DOWNLOADED DOCUMENT, at the page the
+            # clause is printed on where that could be found (D-273). Put on
+            # the clause rather than in a column of its own so the tick columns
+            # keep their positions - importverification reads those by index.
+            local, page = self._link_for(group)
+            if local is not None:
+                self._with_document += 1
+                clause_cell = sheet.cell(row=index, column=2)
+                clause_cell.hyperlink = f"{local.as_uri()}#page={page}" if page else local.as_uri()
+                clause_cell.style = "Hyperlink"
+                if page:
+                    clause_cell.value = (
+                        f"{group.clause}  [p. {page}]" if group.clause else f"p. {page}"
+                    )
+                    self._with_page += 1
+                else:
+                    self._without_page += 1
+            else:
+                self._without_page += 1
             if group.document != previous_document:
                 for column in range(1, len(CHECK_HEADERS) + 1):
                     sheet.cell(row=index, column=column).fill = DOCUMENT_FILL
