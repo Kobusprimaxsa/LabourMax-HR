@@ -79,6 +79,52 @@ def test_verified_reference_data_does_not_block(household, tax_year, approver):
     assert "reference_data_not_verified" not in codes(issues)
 
 
+def test_a_version_that_has_stopped_applying_is_not_demanded(household, tax_year, approver):
+    """D-278. The 2023 BCCCI agreement applies from 1 April 2023 and every row
+    it loaded closes on 1 April 2026, so a run in this period can read nothing
+    from it — and the gate was naming four versions of it among the things
+    somebody must go and verify before anyone is paid.
+
+    A refusal that lists work nobody can do is one people learn to read past,
+    which is D-271's lesson one command along. Watched firing first, so the
+    exclusion is doing the work and not the test's own setup.
+    """
+    a_version(user=approver)
+    expired = ReferenceDataVersion.objects.create(
+        version_label="REF-2023.04.01-EXPIRED",
+        applies_from=datetime.date(2023, 4, 1),
+        description="An instrument that has been replaced",
+    )
+    period = a_period(household, tax_year)
+    run = a_run(household, period)
+
+    assert "reference_data_not_verified" in codes(validation.validate(run)), (
+        "while it is open-ended it IS demanded, correctly"
+    )
+
+    # It stopped on the day this run pays, so the run can read nothing from it.
+    expired.applies_until = period.payment_date
+    expired.save(update_fields=["applies_until"])
+
+    assert "reference_data_not_verified" not in codes(validation.validate(run))
+
+
+def test_a_version_that_stops_applying_later_is_still_demanded(household, tax_year, approver):
+    """The other side of the boundary, because "has an end date" is not the
+    same as "has ended" — an instrument that runs out next year still governs
+    this period and still has to be checked."""
+    a_version(user=approver)
+    ReferenceDataVersion.objects.create(
+        version_label="REF-2026.01.01-STILL-RUNNING",
+        applies_from=datetime.date(2026, 1, 1),
+        description="Ends after this period",
+        applies_until=datetime.date(2027, 1, 1),
+    )
+    run = a_run(household, a_period(household, tax_year))
+
+    assert "reference_data_not_verified" in codes(validation.validate(run))
+
+
 def test_no_reference_data_at_all_blocks_and_counts_what_is_loaded(household, tax_year):
     run = a_run(household, a_period(household, tax_year))
 

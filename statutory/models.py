@@ -172,6 +172,28 @@ class ReferenceDataVersion(AuditedModel, AuditMixin):
         blank=True, help_text="Why it was re-encoded. Mandatory when superseding."
     )
     applies_from = models.DateField(db_index=True)
+    #: When this version stops applying — DERIVED at load, never declared
+    #: (D-278). NULL means open-ended, which is every version whose fixture
+    #: leaves any row's ``effective_to`` open.
+    #:
+    #: The payroll gate asks "is every version this period could read verified"
+    #: (D-250), and without this it could only ask ``applies_from <= payment
+    #: date``. The 2023 BCCCI agreement applies from 1 April 2023 and every one
+    #: of its rows closes on 1 April 2026, so a June 2026 run could reach none
+    #: of them and was still being told to go and verify four versions of it.
+    #: A gate that names versions nobody can act on is a gate people learn to
+    #: read past, which is the same failure D-271 fixed in ``checkstatutory``.
+    #:
+    #: Derived rather than declared because an author who has to remember it
+    #: will not, and the rows already say it: the loader takes the latest
+    #: ``effective_to`` across everything the fixture loaded, and leaves this
+    #: NULL the moment one row is open-ended.
+    applies_until = models.DateField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Derived: the day this version's last row stops. NULL = open-ended.",
+    )
     description = models.TextField(blank=True, help_text="What changed, and why.")
 
     loaded_at = models.DateTimeField(default=timezone.now)

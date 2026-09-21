@@ -89,6 +89,36 @@ def _as_date(value) -> datetime.date | None:
     return None
 
 
+def _out_of_scope(version, total) -> str:
+    """Why this version can never be completed, or "" if it simply has not been.
+
+    Two kinds, and neither is somebody falling behind (D-278):
+
+    **Superseded.** Its fixture has been rewritten under the new label, so no
+    row maps back to it and it owns nothing to check — which is what produced
+    the "0 of 0 checked" line that read like a broken report and sent somebody
+    looking for the missing figures.
+
+    **Expired.** Every row it loaded has closed. The 2023 BCCCI agreement runs
+    to 1 April 2026 and no payroll period after that can read a figure from it,
+    so verifying it would change nothing about any payslip this system will
+    ever produce.
+    """
+    if hasattr(version, "superseded_by"):
+        return (
+            f"superseded by {version.superseded_by.version_label} — nothing reads it, "
+            f"and its rows now answer to the newer label"
+        )
+    if version.applies_until and version.applies_until <= datetime.date.today():
+        return (
+            f"stopped applying {version.applies_until:%d %B %Y} — no payroll period "
+            f"can reach a figure in it"
+        )
+    if total is None or total.figures == 0:
+        return "no loaded figures map to this label"
+    return ""
+
+
 class Command(BaseCommand):
     help = "Verify reference versions from a completed verification workbook."
 
@@ -154,7 +184,7 @@ class Command(BaseCommand):
         else:
             outcome = self._process(by_version, current_through, options)
 
-        verified, refused, incomplete, already, recorded = outcome
+        verified, refused, incomplete, already, recorded, out_of_scope = outcome
 
         # ALWAYS, even at nil. This used to print only `if recorded`, so a run
         # that wrote nothing printed nothing at all and read as success — which
@@ -171,7 +201,15 @@ class Command(BaseCommand):
         if recorded:
             self.stdout.write(f"{verb} {recorded} check(s).\n")
 
-        self._report(verified, refused, incomplete, already, by_version, dry_run=options["dry_run"])
+        self._report(
+            verified,
+            refused,
+            incomplete,
+            already,
+            by_version,
+            out_of_scope,
+            dry_run=options["dry_run"],
+        )
 
         if refused:
             raise CommandError(
@@ -183,7 +221,7 @@ class Command(BaseCommand):
 
     def _process(self, by_version, current_through, options):
         """Both passes, writing for real. The caller decides whether to commit."""
-        verified, refused, incomplete, already = [], [], [], []
+        verified, refused, incomplete, already, out_of_scope = [], [], [], [], []
         recorded = 0
 
         # PASS ONE: record every sound tick, whatever its version's fate. A
@@ -215,6 +253,18 @@ class Command(BaseCommand):
                 total = verification.progress_by_version(
                     verification.lines(), verification.latest_checks()
                 ).get(label)
+                # OUT OF SCOPE IS NOT OUTSTANDING (D-278). Three versions in
+                # the workbook could never be finished and were listed as
+                # though somebody had simply not got to them: two SUPERSEDED,
+                # whose fixtures no longer carry their labels so they own no
+                # rows and read as "0 of 0 checked", and the 2023 BCCCI
+                # agreement, every row of which closed on 1 April 2026 so no
+                # payroll period can reach it. A list of things to do that
+                # holds things nobody can do is a list people stop reading.
+                reason = _out_of_scope(version, total)
+                if reason:
+                    out_of_scope.append((label, reason))
+                    continue
                 incomplete.append(
                     (
                         label,
@@ -280,7 +330,7 @@ class Command(BaseCommand):
                 continue
             verified.append((label, ", ".join(checkers), len(by_version[label])))
 
-        return verified, refused, incomplete, already, recorded
+        return verified, refused, incomplete, already, recorded, out_of_scope
 
     def _refuse_a_stale_workbook(self, book, path):
         """A workbook is a SNAPSHOT of the check groups (D-272).
@@ -486,7 +536,7 @@ class Command(BaseCommand):
 
     # ------------------------------------------------------------------ report
 
-    def _report(self, verified, refused, incomplete, already, by_version, *, dry_run):
+    def _report(self, verified, refused, incomplete, already, by_version, out_of_scope, *, dry_run):
         if dry_run:
             self.stdout.write(self.style.WARNING("DRY RUN — nothing was written.\n"))
 
@@ -503,6 +553,10 @@ class Command(BaseCommand):
             self.stdout.write(f"\nStill outstanding ({len(incomplete)}):")
             for label, outstanding, total in incomplete:
                 self.stdout.write(f"  {label} — {total - outstanding} of {total} checked")
+        if out_of_scope:
+            self.stdout.write(f"\nOut of scope — not checked ({len(out_of_scope)}):")
+            for label, reason in out_of_scope:
+                self.stdout.write(f"  {label} — {reason}")
         if refused:
             self.stdout.write(self.style.ERROR(f"\nREFUSED ({len(refused)}):"))
             for label, problems in refused:

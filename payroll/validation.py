@@ -42,7 +42,7 @@ import dataclasses
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 
 from attendance.completeness import missing_attendance_days
 from core.managers import tenant_context_of
@@ -107,6 +107,16 @@ def check_reference_data(run) -> list[Finding]:
         ReferenceDataVersion.objects.filter(
             applies_from__lte=period.payment_date,
             superseded_by__isnull=True,
+        )
+        # AND IT HAS NOT STOPPED APPLYING (D-278). ``applies_from`` alone made
+        # every version that ever applied applicable forever: the 2023 BCCCI
+        # agreement's rows all close on 1 April 2026, so a June 2026 run can
+        # read none of them, and the gate was still naming four versions of it
+        # among the things somebody must go and verify. Nobody can act on that,
+        # and a refusal listing things nobody can act on is one people learn to
+        # read past — D-271's lesson, one command along.
+        .filter(
+            Q(applies_until__isnull=True) | Q(applies_until__gt=period.payment_date),
         )
         .filter(ReferenceDataVersion.unusable_q())
         .select_related("verified_by_user")

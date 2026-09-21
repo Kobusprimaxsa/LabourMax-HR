@@ -664,6 +664,8 @@ def load_reference_data(
             report.updated[row._meta.db_table] = report.updated.get(row._meta.db_table, 0) + 1
         for spec, raw, where in new_rows:
             _load_row(spec, raw, where=where, closes_from=None, report=report)
+        version.applies_until = scope_of(document)
+        version.save(update_fields=["applies_until", "updated_at"])
         report.superseded = supersede
         return report
 
@@ -686,8 +688,35 @@ def load_reference_data(
             where = f"{table_name}[{index}]"
             _load_row(spec, raw, where=where, closes_from=closes_from, report=report)
 
+    version.applies_until = scope_of(document)
+    version.save(update_fields=["applies_until", "updated_at"])
     version.refresh_from_db()
     return report
+
+
+def scope_of(document: dict[str, Any]):
+    """The day this fixture's last row stops applying, or None if open-ended.
+
+    DERIVED, never declared (D-278). An author asked to state it would be
+    stating twice something the rows already say, and the second statement is
+    the one that goes stale — so this reads the rows instead. One open-ended
+    row anywhere makes the whole version open-ended, which is the safe
+    direction: a version wrongly thought closed drops out of the payroll gate,
+    and that gate is the only thing between unverified figures and a payslip.
+    """
+    latest = None
+    for table_name, spec in TABLES.items():
+        if not spec.is_effective_dated:
+            continue
+        for index, raw in enumerate(document["tables"].get(table_name) or [], start=1):
+            if not isinstance(raw, dict):
+                continue
+            ends = raw.get("effective_to")
+            if not ends:
+                return None
+            ends = _as_date(ends, where=f"{table_name}[{index}].effective_to")
+            latest = ends if latest is None else max(latest, ends)
+    return latest
 
 
 def natural_key_lookup(spec: TableSpec, values: dict, *, where: str) -> dict:

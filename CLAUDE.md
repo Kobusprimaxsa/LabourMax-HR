@@ -369,6 +369,17 @@ a column whose heading asks for one and whose importer needs an address it can r
 an account. The export already knows who is checking. The DATE is deliberately left blank:
 a pass runs over several evenings and only the person knows which one this was.
 
+**A version records when it STOPS applying, and out of scope is not outstanding**
+(D-278). `applies_until` is DERIVED at load — the latest `effective_to` across
+everything the fixture loaded, NULL the moment one row is open-ended — because an
+author asked to state it would be stating twice what the rows already say. Without it
+`applies_from` made every version that ever applied applicable forever: the payroll
+gate demanded verification of the 2023 BCCCI agreement, every row of which closed on
+1 April 2026, and `importverification` listed two superseded versions at "0 of 0
+checked". Both now say what they are, and the import separates "Out of scope — not
+checked" from "Still outstanding". Versions loaded before the column get it from
+`manage.py rescanversionscope`, which replays the shipped fixtures.
+
 **A version may be verified by SEVERAL people** (D-270), and `verified_by_users`
 records them all. The workbook is grouped by source document and versions cut across
 documents, so sharing the pass out by document means some version gets checked by two
