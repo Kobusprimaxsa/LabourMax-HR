@@ -1718,7 +1718,24 @@ class TerminationNoticeBand(AuditedModel, AuditMixin, CitedStatutoryModel):
     is what ``statutory/checks.py::check_notice_bands()`` reconciles.
     ``service_to_value``/``service_to_unit``/``service_to_inclusive`` are
     NULL only for the top, open-ended band; every rule set must have exactly
-    one.
+    one — **per LANE**, see ``probation_condition`` below.
+
+    **A band may be conditional on probation, and that condition is DATA**
+    (D-277), the same way inclusivity is. BCCCI clause 21.1(b) gives two
+    answers between four weeks and six months — two weeks generally, one week
+    "to an employee whilst on probation, as defined" — and those are not two
+    readings of one rule but one general rule and one exception to it. So the
+    range is covered TWICE, once per lane, and ``probation_condition`` says
+    which employee each row is about. A rule set's bands must tile the service
+    range completely in EVERY lane: the unconditional bands plus the
+    on-probation ones, and the unconditional bands plus the off-probation
+    ones. Half a pair therefore reads as a GAP rather than passing quietly,
+    which is what ``statutory/checks.py::check_notice_bands()`` proves.
+
+    ``sequence`` is consequently **identity and load order, not service
+    order** — two bands covering the same range cannot both be "third
+    shortest". The reconciliation sorts by each band's own resolved service
+    range within its lane and never trusts the numbering.
     """
 
     class ServiceUnit(models.TextChoices):
@@ -1727,6 +1744,11 @@ class TerminationNoticeBand(AuditedModel, AuditMixin, CitedStatutoryModel):
         MONTHS = "months", "Months"
         YEARS = "years", "Years"
 
+    class ProbationCondition(models.TextChoices):
+        ANY = "any", "Applies whether or not the employee is on probation"
+        ON_PROBATION = "on_probation", "Only while the employee is on probation"
+        OFF_PROBATION = "off_probation", "Only once probation has ended"
+
     class NoticeUnit(models.TextChoices):
         DAYS = "days", "Days"
         WEEKS = "weeks", "Weeks"
@@ -1734,7 +1756,26 @@ class TerminationNoticeBand(AuditedModel, AuditMixin, CitedStatutoryModel):
     termination_rule_set = models.ForeignKey(
         TerminationRuleSet, on_delete=models.PROTECT, related_name="notice_bands"
     )
-    sequence = models.PositiveSmallIntegerField(help_text="1..n, shortest service first.")
+    sequence = models.PositiveSmallIntegerField(
+        help_text=(
+            "1..n, this band's identity within its rule set. NOT service order — "
+            "two bands may cover one range in different probation lanes."
+        )
+    )
+
+    #: DEFAULTED to ANY, unlike accommodation_deduction_capped's deliberate
+    #: no-default (D-198), and for the opposite reason: an instrument that says
+    #: nothing about probation really does apply its band to everybody, so the
+    #: default IS the correct reading rather than a dangerous guess. What a
+    #: forgetful author can still get wrong is stating one lane and not the
+    #: other, and that is caught as a gap by check_notice_bands() rather than
+    #: left to the column to police.
+    probation_condition = models.CharField(
+        max_length=20,
+        choices=ProbationCondition.choices,
+        default=ProbationCondition.ANY,
+        help_text="Which employees this band is about. Most instruments say nothing.",
+    )
 
     service_from_value = models.DecimalField(max_digits=6, decimal_places=2)
     service_from_unit = models.CharField(max_length=10, choices=ServiceUnit.choices)
@@ -1831,6 +1872,12 @@ class TerminationNoticeBand(AuditedModel, AuditMixin, CitedStatutoryModel):
             models.CheckConstraint(
                 condition=models.Q(service_from_unit__in=["days", "weeks", "months", "years"]),
                 name="termination_notice_band_service_from_unit_is_known",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    probation_condition__in=["any", "on_probation", "off_probation"]
+                ),
+                name="termination_notice_band_probation_condition_is_known",
             ),
             # A contested band carries no unit because it carries no value
             # (D-241) — the pair above already proves the two travel together,

@@ -1139,16 +1139,48 @@ still governs Areas A and C of the same sector — one sector, two instruments, 
 a scope and not a second sector (D-240). Three things came out of it that outlive the
 load.
 
-**Clause 21.1(b) cannot be resolved, and the system says so instead of guessing**
-(D-241). It gives two answers between four weeks and six months: two weeks after the
-first four weeks, and one week while on probation, which clause 3 caps at four months —
-so both reach the same employee, and clause 21.2(a) prices only the one working day and
-the two weeks, giving no payment in lieu for the one-week probation notice. A notice
-band may therefore be CONTESTED: `notice_value` nullable, paired with `is_contested` and
-a mandatory `contested_reason`, two CHECKs holding them together, and
-`resolve.notice_band()` raising with both limbs quoted. **Notice is symmetric** (D-158),
-so "take the longer as safer" is not available — over-stating it holds a resigning
-employee longer than the law permits. This is a BLOCKER on O-06, not a confirmation.
+~~**Clause 21.1(b) cannot be resolved, and the system says so instead of guessing**
+(D-241).~~ **IT CAN, AND D-277 RESOLVES IT (22 September 2026).** D-241 read the
+clause's two limbs as two answers to one question and refused. They are not: the
+two-week limb is qualified by nothing — "after the first four weeks of such
+employment" — and the one-week limb is addressed "to an employee whilst on probation,
+as defined". A general rule and an exception stated for a named class govern
+different people. So between four weeks and six months, **one week on probation and
+two weeks off it**, and from six months two weeks for everybody. The predecessor's
+clause 20.1(b) is word for word the same and moves with it.
+
+**The condition is DATA, the same way inclusivity is** (D-158's own lesson).
+`termination_notice_band.probation_condition` is a `TextChoices` with a CHECK,
+defaulted to `any` — the opposite of D-198's no-default, because an instrument silent
+about probation really does apply its band to everybody. What an author can still get
+wrong is stating one lane and not the other, and `check_notice_bands()` catches that
+as a GAP: it reconciles the unconditional bands plus the on-probation ones, then the
+unconditional bands plus the off-probation ones, and each lane must start at zero and
+tile exactly. **`sequence` is identity, not service order**, now that two bands can
+cover one range; the check sorts by each band's own range and never trusts the
+numbering. `resolve.notice_band()` takes `on_probation` and **REFUSES if the caller
+does not say** — there is no unconditional band in that window to fall back on, so
+guessing picks between one week and two for a real person.
+
+**A CONTESTED band may be resolved, and that is a third kind of load.** A corrected
+READING had nowhere to land: `--supersede` refused it as a figure change and an
+ordinary load refused it as an edit, so the only way in was deleting rows. A contested
+band is the one row here that explicitly holds NO figure, so filling it in moves none
+— the loader permits exactly that plus the conditional twin it arrives with, and
+refuses everything else. Superseding a VERIFIED version still needs
+`--supersede-verified`: somebody who ticked a contested row ticked "this really is
+irreconcilable".
+
+**`employee_engagement.probation_end_date` existed since P4 and nothing had ever read
+it.** `employees/probation.py` does now, and states the boundary rather than assuming
+it: the last day of probation is a day ON probation, and no date means NOT on
+probation. Clause 3's four-month cap is loaded as `PROBATION_MAX_MONTHS` scoped to the
+sector and area, and **enforced at engagement** — a term longer than the agreement
+permits is a breach on the day it is captured. **Payment in lieu needs no figure from
+the agreement**: BCEA s38(1) pays "the remuneration the employee would have received,
+calculated in accordance with section 35, if the employee had worked during the notice
+period", whatever that period is. Three questions go to O-06 rather than being
+asserted.
 
 **BCEA s49 does part of the design work.** s49(1)(d) and (e) forbid a bargaining council
 agreement from reducing the s25 maternity entitlement or the ss22–24 sick leave

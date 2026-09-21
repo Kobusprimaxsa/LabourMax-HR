@@ -1,5 +1,5 @@
 {
-  "version_label": "REF-2023.04.01-BCCCI-TERMINATION",
+  "version_label": "REF-2023.04.01-BCCCI-TERMINATION-r2",
   "applies_from": "2023-04-01",
   "description": "Termination and notice for contract cleaning Area B under the PREDECESSOR BCCCI Main Collective Agreement, Notice 1726 of 2023 in GG 48356: clause 4.5's December bonus, clause 35's severance pay and clause 20.1(b)'s three notice bands, the middle one CONTESTED. Closes on 1 April 2026. NOT verified.",
   "tables": {
@@ -53,11 +53,12 @@
         "service_to_value": "6",
         "service_to_unit": "months",
         "service_to_inclusive": true,
-        "notice_value": null,
-        "notice_unit": "",
-        "is_contested": true,
-        "contested_reason": "TWO LIMBS, TWO ANSWERS. The clause says both \"Not less than two weeks notice shall be given after the first four weeks of such employment\" and \"Not less than one weeks notice shall be given to an employee whilst on probation, as defined, for the period of employment between 4 weeks as in sub clause (i) above and six months\". Probation is defined in clause 3 as a maximum of four months, so an employee between four weeks and six months falls under both. Clause 20.2(a) prices only the one working day and the two weeks, giving no payment in lieu for the one-week probation notice, so the payment clause does not settle it either.",
-        "notes": "Loaded as a band so the range is covered and the contradiction is visible, with no value because inventing one would put a period nobody can stand behind where a gazetted one belongs (D-241). The successor carries this defect word for word at its own clause 21.1(b), so it was not introduced in 2026 - it has been in the gazette since at least March 2023 (D-261)."
+        "notice_value": "1",
+        "notice_unit": "weeks",
+        "probation_condition": "on_probation",
+        "is_contested": false,
+        "contested_reason": "",
+        "notes": "THE EXCEPTION, addressed to employees on probation, not a rival reading of the general rule (D-277, correcting D-241). Clause 3 caps probation at four months, so the top of this band's own stated window is unreachable in practice; the band follows the clause rather than the cap, because the cap is a different clause. The successor carries this wording word for word at its own clause 21.1(b), so it was not introduced in 2026 - it has been in the gazette since at least March 2023 (D-261), and both are read the same way (D-277)."
       },
       {
         "sector": "CONTRACT_CLEANING",
@@ -77,6 +78,26 @@
         "is_contested": false,
         "contested_reason": "",
         "notes": "Unambiguous from six months on: the one-week rule is expressly limited to the window 'between 4 weeks ... and six months' and probation is capped at four months, so only the two-week rule can reach an employee of longer service. Clause 20.2(a)(ii) prices it at double the weekly wage being received at the time of termination, and in doing so calls the two-week rule \"20.1 b) ii)\" - which is how we know the printed 'ii)' is a mis-numbered third item rather than the second."
+      },
+      {
+        "sector": "CONTRACT_CLEANING",
+        "sector_area": "AREA_B",
+        "effective_from": "2023-04-01",
+        "sequence": 4,
+        "source_reference": "Bargaining Council for the Contract Cleaning Services Industry (KZN) Main Collective Agreement, Notice 1726 of 2023 in GG 48356, 31 March 2023, clause 20.1(b), second 'i)' as published",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/202304/48356gen1726.pdf",
+        "service_from_value": "4",
+        "service_from_unit": "weeks",
+        "service_from_inclusive": false,
+        "service_to_value": "6",
+        "service_to_unit": "months",
+        "service_to_inclusive": true,
+        "notice_value": "2",
+        "notice_unit": "weeks",
+        "probation_condition": "off_probation",
+        "is_contested": false,
+        "contested_reason": "",
+        "notes": "THE GENERAL RULE for the same window, governing every employee the probation exception above does not reach (D-277). Same figure and clause as the band from six months on; this row exists because the exception carves a lane out of the window, not because the rule changes at six months. The successor carries this wording word for word at its own clause 21.1(b), so it was not introduced in 2026 - it has been in the gazette since at least March 2023 (D-261), and both are read the same way (D-277)."
       }
     ]
   }

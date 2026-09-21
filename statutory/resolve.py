@@ -774,6 +774,7 @@ def notice_band(
     *,
     employment_start_date: datetime.date,
     sector_area=None,
+    on_probation: bool | None = None,
 ) -> TerminationNoticeBand:
     """The one ``termination_notice_band`` covering this employee's service
     length, for a sector, as at a date (D-68).
@@ -791,6 +792,15 @@ def notice_band(
     loaded bands touch with no gap or overlap; it does not re-verify that
     here, so an inconsistent load could in principle match zero or more than
     one band. Zero is still caught, below.
+
+    ``on_probation`` selects the LANE where an instrument answers differently
+    for an employee still on probation (D-277, BCCCI clause 21.1(b)). It is
+    optional because most instruments never ask, and **omitting it where the
+    instrument does ask REFUSES** rather than quietly taking the
+    unconditional reading — there is none to take, and guessing picks between
+    one week and two for a real person. The caller answers it from
+    ``employee_engagement.probation_end_date`` via
+    ``employees.probation.is_on_probation()``.
     """
     rule_set = termination_rules(sector, on_date, sector_area)
     bands = list(rule_set.notice_bands.all())
@@ -801,8 +811,32 @@ def notice_band(
             f"reference data does not cover this."
         )
 
-    for band in bands:
-        if not _band_contains(band, employment_start_date, on_date):
+    covering = [band for band in bands if _band_contains(band, employment_start_date, on_date)]
+    conditional = [band for band in covering if band.probation_condition != "any"]
+    if conditional and on_probation is None:
+        raise StatutoryValueMissingError(
+            f"Notice for an employee who started {employment_start_date:%d %B %Y}, as at "
+            f"{on_date:%d %B %Y}, depends on whether they are still on probation, and "
+            f"this call did not say. "
+            + " ".join(
+                f"{band.get_probation_condition_display()}: {band.notice_value:g} "
+                f"{band.notice_unit}."
+                for band in conditional
+                if band.notice_value is not None
+            )
+            + f" Cited to {conditional[0].source_reference}. Pass on_probation= from the "
+            f"engagement's probation_end_date; there is no unconditional reading to fall "
+            f"back on, and the two answers differ."
+        )
+
+    wanted = {
+        None: {"any"},
+        True: {"any", "on_probation"},
+        False: {"any", "off_probation"},
+    }[on_probation]
+
+    for band in covering:
+        if band.probation_condition not in wanted:
             continue
         if band.is_contested:
             # D-241. Two limbs, two answers, and NOTICE IS SYMMETRIC — SD1

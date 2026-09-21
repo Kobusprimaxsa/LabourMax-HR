@@ -204,11 +204,30 @@ def test_the_first_four_weeks_are_one_working_day(loaded):
     assert band.is_contested is False
 
 
-def test_the_four_weeks_to_six_months_window_refuses_and_quotes_both_limbs(loaded):
-    """Two rules, two answers, and nothing in the instrument resolves them.
-    Taking the longer as "safer" is not available: notice is SYMMETRIC, so
-    over-stating it holds a resigning employee longer than the law allows
-    (D-158)."""
+def test_the_four_weeks_to_six_months_window_answers_by_probation(loaded):
+    """cl 21.1(b), read again (D-277, correcting D-241). The two limbs are not
+    two answers to one question: the two-week limb is general and the one-week
+    limb is addressed "to an employee whilst on probation, as defined", so they
+    govern different employees. The full set of boundary cases is in
+    statutory/tests/test_probation_notice.py."""
+    sector, made = loaded
+    on, started = datetime.date(2026, 7, 1), datetime.date(2026, 4, 1)
+
+    on_probation = resolve.notice_band(
+        sector, on, employment_start_date=started, sector_area=made["AREA_B"], on_probation=True
+    )
+    off_probation = resolve.notice_band(
+        sector, on, employment_start_date=started, sector_area=made["AREA_B"], on_probation=False
+    )
+
+    assert on_probation.notice_value == Decimal("1.00")
+    assert off_probation.notice_value == Decimal("2.00")
+
+
+def test_the_window_refuses_when_nobody_says_which_employee_this_is(loaded):
+    """Notice is SYMMETRIC (D-158), so there is still no safe direction to
+    guess in — what changed is that the question has an answer once somebody
+    supplies the one fact that decides it."""
     sector, made = loaded
 
     with pytest.raises(resolve.StatutoryValueMissingError) as raised:
@@ -220,11 +239,8 @@ def test_the_four_weeks_to_six_months_window_refuses_and_quotes_both_limbs(loade
         )
 
     message = str(raised.value)
-    assert "two irreconcilable answers" in message
-    assert "Not less than two weeks notice" in message
-    assert "Not less than one weeks notice" in message
-    assert "no payment in lieu for the one-week probation notice" in message
-    assert "notice is symmetric" in message
+    assert "still on probation" in message
+    assert "did not say" in message
 
 
 def test_after_six_months_the_two_week_rule_is_unambiguous(loaded):
@@ -765,33 +781,35 @@ def test_march_2026_prices_the_bonus_and_severance_from_the_agreement(with_termi
     assert "clauses 4.5, 28, 29 and 35" in rules.source_reference
 
 
-def test_the_notice_contradiction_is_older_than_the_2026_agreement(with_termination):
-    """THE FINDING (D-261). Clause 20.1(b) here carries the identical defect the
-    successor carries at 21.1(b) — two items both printed "i)", and a probation
-    limb that overlaps the second. It was not introduced in 2026; it has been in
-    the gazette since at least March 2023."""
+def test_the_probation_wording_is_older_than_the_2026_agreement(with_termination):
+    """THE FINDING (D-261). Clause 20.1(b) here carries the identical wording
+    the successor carries at 21.1(b) — two items both printed "i)", and a
+    probation limb over the second. It was not introduced in 2026; it has been
+    in the gazette since at least March 2023, and D-277 reads both the same
+    way."""
     sector, made = with_termination
 
-    with pytest.raises(resolve.StatutoryValueMissingError) as raised:
-        resolve.notice_band(
-            sector,
-            MARCH_2026,
-            employment_start_date=datetime.date(2025, 12, 15),
-            sector_area=made["AREA_B"],
-        )
+    band = resolve.notice_band(
+        sector,
+        MARCH_2026,
+        employment_start_date=datetime.date(2025, 12, 15),
+        sector_area=made["AREA_B"],
+        on_probation=True,
+    )
 
-    message = str(raised.value)
-    assert "two irreconcilable answers" in message
-    assert "Not less than two weeks notice" in message
-    assert "Not less than one weeks notice" in message
-    assert "clause 20.1(b)" in message, "the predecessor's own clause number, not the successor's"
+    assert band.notice_value == Decimal("1.00")
+    assert band.notice_unit == "weeks"
+    assert "clause 20.1(b)" in band.source_reference, (
+        "the predecessor's own clause number, not the successor's"
+    )
 
 
-def test_loading_this_made_march_2026_notice_refuse_where_it_used_to_answer(with_termination):
-    """Stated plainly because it is a REDUCTION in what the system will do, and
+def test_march_2026_reads_its_own_agreement_and_not_sd1(with_termination):
+    """Stated plainly because it is a CHANGE in what the system answers, and
     the right one. Area B used to fall through to SD1 and get four weeks: a
     confident answer from an instrument that did not bind these employees. The
-    one that did gives two answers and settles neither."""
+    one that did gives one week on probation and two weeks off it — different
+    figures, from the right document."""
     sector, made = with_termination
     started = datetime.date(2025, 12, 15)
 
@@ -799,10 +817,14 @@ def test_loading_this_made_march_2026_notice_refuse_where_it_used_to_answer(with
         sector, MARCH_2026, employment_start_date=started, sector_area=made["AREA_A"]
     ).notice_value == Decimal("4.00"), "SD1 still answers four weeks for Area A"
 
-    with pytest.raises(resolve.StatutoryValueMissingError):
-        resolve.notice_band(
-            sector, MARCH_2026, employment_start_date=started, sector_area=made["AREA_B"]
-        )
+    area_b = resolve.notice_band(
+        sector,
+        MARCH_2026,
+        employment_start_date=started,
+        sector_area=made["AREA_B"],
+        on_probation=False,
+    )
+    assert area_b.notice_value == Decimal("2.00")
 
 
 def test_the_unambiguous_bands_still_answer_in_march_2026(with_termination):
@@ -829,14 +851,14 @@ def test_the_unambiguous_bands_still_answer_in_march_2026(with_termination):
 
 def test_the_two_agreements_notice_bands_do_not_collide(with_termination):
     """Each agreement's bands hang off its own termination rule set, so the two
-    sets of three coexist and the right three answer on each side of 1 April."""
+    sets coexist and the right set answers on each side of 1 April."""
     sector, made = with_termination
 
     before = resolve.termination_rules(sector, datetime.date(2026, 3, 31), made["AREA_B"])
     after = resolve.termination_rules(sector, datetime.date(2026, 4, 1), made["AREA_B"])
 
     assert before.pk != after.pk
-    assert before.notice_bands.count() == 3
-    assert after.notice_bands.count() == 3
+    assert before.notice_bands.count() == 4, "three service ranges, the middle one in two lanes"
+    assert after.notice_bands.count() == 4
     assert "Notice 1726 of 2023" in before.notice_bands.first().source_reference
     assert "GN R.7296" in after.notice_bands.first().source_reference

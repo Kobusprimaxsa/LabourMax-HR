@@ -156,11 +156,41 @@ def test_annual_leave_is_the_same_on_both_sides_including_the_long_service_band(
         assert long_serving == Decimal("24.000"), on_date
 
 
-def test_the_notice_contradiction_refuses_identically_on_both_sides(area_b):
-    """Predecessor cl 20.1(b), successor cl 21.1(b). THE DEFECT IS INHERITED
-    (D-261): an employee between four weeks and six months gets no answer from
-    either agreement, and notice is symmetric so there is no safe direction to
-    guess in."""
+def test_the_probation_exception_reads_identically_on_both_sides(area_b):
+    """Predecessor cl 20.1(b), successor cl 21.1(b), word for word (D-261) —
+    so they must resolve the same way. D-241 read both as contradictions and
+    refused; D-277 reads the one-week limb as an exception for employees on
+    probation and the two-week limb as the general rule, and both agreements
+    now answer.
+
+    Resolving only one of them would have answered an April 2026 termination
+    and refused a March 2026 one on identical wording, which is the whole
+    reason this file checks both sides of the boundary.
+    """
+    sector, area = area_b
+
+    for on_date in (LAST_DAY, FIRST_DAY):
+        started = on_date - datetime.timedelta(days=60)
+        on_probation = resolve.notice_band(
+            sector, on_date, employment_start_date=started, sector_area=area, on_probation=True
+        )
+        off_probation = resolve.notice_band(
+            sector, on_date, employment_start_date=started, sector_area=area, on_probation=False
+        )
+        assert (on_probation.notice_value, on_probation.notice_unit) == (
+            Decimal("1.00"),
+            "weeks",
+        ), on_date
+        assert (off_probation.notice_value, off_probation.notice_unit) == (
+            Decimal("2.00"),
+            "weeks",
+        ), on_date
+
+
+def test_neither_agreement_answers_without_being_told_about_probation(area_b):
+    """Watched failing on both sides. The window has no unconditional band at
+    all, so a caller who does not say gets a refusal rather than whichever lane
+    the query happened to return first."""
     sector, area = area_b
 
     for on_date in (LAST_DAY, FIRST_DAY):
@@ -171,8 +201,8 @@ def test_the_notice_contradiction_refuses_identically_on_both_sides(area_b):
                 employment_start_date=on_date - datetime.timedelta(days=60),
                 sector_area=area,
             )
-        assert "two irreconcilable answers" in str(caught.value), on_date
         assert "probation" in str(caught.value).lower(), on_date
+        assert "did not say" in str(caught.value), on_date
 
 
 @pytest.mark.parametrize(

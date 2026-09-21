@@ -350,96 +350,150 @@ def check_notice_bands() -> list[Issue]:
     issues = []
     for rule_set in TerminationRuleSet.objects.select_related("sector").all():
         scope = rule_set.sector.code if rule_set.sector else "BCEA default"
-        where_set = f"termination_rule_set {scope}"
-        bands = list(rule_set.notice_bands.order_by("sequence"))
+        all_bands = list(rule_set.notice_bands.all())
+        if not all_bands:
+            issues.append(Issue(True, f"termination_rule_set {scope}", "has no notice bands"))
+            continue
+        for lane, bands in _probation_lanes(all_bands):
+            issues.extend(_check_one_lane(scope, lane, bands))
+    return issues
 
-        if not bands:
-            issues.append(Issue(True, where_set, "has no notice bands loaded"))
+
+#: The employee each lane is about. An unconditional band belongs to both,
+#: because it applies to both employees.
+_LANES = (
+    ("on probation", {"any", "on_probation"}),
+    ("off probation", {"any", "off_probation"}),
+)
+
+
+def _probation_lanes(bands):
+    """The band sets to reconcile, one per kind of employee (D-277).
+
+    A rule set with no conditional band at all is ONE lane, so the ordinary
+    instrument is reconciled exactly as it always was and the message does not
+    grow a probation clause it has no business mentioning. Where a condition IS
+    used, each lane is checked in full — which is what turns a stated
+    on-probation band with no off-probation twin into a GAP somebody has to
+    answer for, rather than a row that quietly applies to nobody.
+    """
+    if all(band.probation_condition == "any" for band in bands):
+        return [("", bands)]
+    return [
+        (label, [band for band in bands if band.probation_condition in allowed])
+        for label, allowed in _LANES
+    ]
+
+
+def _service_sort_key(band):
+    """Shortest service first, WITHOUT converting between units.
+
+    ``sequence`` is identity rather than service order once two bands cover one
+    range in different lanes (D-277), so the ordering has to come from the
+    bands themselves. Sorting on (unit rank, value) is exact for the only
+    orderings this data ever produces: within a lane the bands touch in the
+    same unit on both sides by construction, and where the unit changes it
+    changes upward — weeks then months then years — which is what the rank
+    encodes. It does not claim "26 weeks" equals "6 months"; it claims months
+    come after weeks, and the touching check below still insists the data
+    never makes anything ask.
+    """
+    rank = {"days": 0, "weeks": 1, "months": 2, "years": 3}
+    return (rank[band.service_from_unit], band.service_from_value)
+
+
+def _check_one_lane(scope, lane, bands):
+    issues = []
+    where_set = f"termination_rule_set {scope}"
+    if lane:
+        where_set += f" ({lane})"
+    bands = sorted(bands, key=_service_sort_key)
+
+    if not bands:
+        issues.append(Issue(True, where_set, "has no notice bands loaded"))
+        return issues
+
+    if bands[0].service_from_value != 0 or not bands[0].service_from_inclusive:
+        issues.append(
+            Issue(
+                True,
+                f"{where_set} band {bands[0].sequence}",
+                f"starts at {bands[0].service_from_value} {bands[0].service_from_unit} "
+                f"(inclusive={bands[0].service_from_inclusive}), not zero and inclusive. "
+                f"A service length of zero would resolve to no band at all.",
+            )
+        )
+
+    open_ended = [band for band in bands if band.service_to_value is None]
+    if len(open_ended) != 1:
+        issues.append(
+            Issue(
+                True,
+                where_set,
+                f"has {len(open_ended)} open-ended band(s), not exactly 1 "
+                f"({', '.join(str(b.sequence) for b in open_ended) or 'none'}).",
+            )
+        )
+    elif open_ended[0] is not bands[-1]:
+        issues.append(
+            Issue(
+                True,
+                where_set,
+                f"band {open_ended[0].sequence} is open-ended but is not the last "
+                f"band in sequence. The top band must be the open-ended one.",
+            )
+        )
+
+    for previous, current in zip(bands, bands[1:], strict=False):
+        where = f"{where_set} band {current.sequence}"
+
+        if previous.service_to_value is None:
+            issues.append(Issue(True, where, f"band {previous.sequence} below it is open-ended"))
             continue
 
-        if bands[0].service_from_value != 0 or not bands[0].service_from_inclusive:
+        touches = (
+            current.service_from_value == previous.service_to_value
+            and current.service_from_unit == previous.service_to_unit
+        )
+        if not touches:
             issues.append(
                 Issue(
                     True,
-                    f"{where_set} band {bands[0].sequence}",
-                    f"starts at {bands[0].service_from_value} {bands[0].service_from_unit} "
-                    f"(inclusive={bands[0].service_from_inclusive}), not zero and inclusive. "
-                    f"A service length of zero would resolve to no band at all.",
+                    where,
+                    f"starts at {current.service_from_value} {current.service_from_unit} "
+                    f"but the band below ends at {previous.service_to_value} "
+                    f"{previous.service_to_unit}. Bands must touch exactly, in the same "
+                    f"unit.",
                 )
             )
+            continue
 
-        open_ended = [band for band in bands if band.service_to_value is None]
-        if len(open_ended) != 1:
+        claimed_by_both = previous.service_to_inclusive and current.service_from_inclusive
+        claimed_by_neither = (
+            not previous.service_to_inclusive and not current.service_from_inclusive
+        )
+        if claimed_by_both:
             issues.append(
                 Issue(
                     True,
-                    where_set,
-                    f"has {len(open_ended)} open-ended band(s), not exactly 1 "
-                    f"({', '.join(str(b.sequence) for b in open_ended) or 'none'}).",
+                    where,
+                    f"OVERLAPS band {previous.sequence} at exactly "
+                    f"{current.service_from_value} {current.service_from_unit}: both "
+                    f"claim it inclusively (band {previous.sequence}.service_to_inclusive "
+                    f"and this band's service_from_inclusive are both true).",
                 )
             )
-        elif open_ended[0] is not bands[-1]:
+        elif claimed_by_neither:
             issues.append(
                 Issue(
                     True,
-                    where_set,
-                    f"band {open_ended[0].sequence} is open-ended but is not the last "
-                    f"band in sequence. The top band must be the open-ended one.",
+                    where,
+                    f"leaves a GAP at exactly {current.service_from_value} "
+                    f"{current.service_from_unit}: neither band {previous.sequence} nor "
+                    f"this one claims it inclusively, so a service length landing "
+                    f"exactly there resolves to no band at all.",
                 )
             )
-
-        for previous, current in zip(bands, bands[1:], strict=False):
-            where = f"{where_set} band {current.sequence}"
-
-            if previous.service_to_value is None:
-                issues.append(
-                    Issue(True, where, f"band {previous.sequence} below it is open-ended")
-                )
-                continue
-
-            touches = (
-                current.service_from_value == previous.service_to_value
-                and current.service_from_unit == previous.service_to_unit
-            )
-            if not touches:
-                issues.append(
-                    Issue(
-                        True,
-                        where,
-                        f"starts at {current.service_from_value} {current.service_from_unit} "
-                        f"but the band below ends at {previous.service_to_value} "
-                        f"{previous.service_to_unit}. Bands must touch exactly, in the same "
-                        f"unit.",
-                    )
-                )
-                continue
-
-            claimed_by_both = previous.service_to_inclusive and current.service_from_inclusive
-            claimed_by_neither = (
-                not previous.service_to_inclusive and not current.service_from_inclusive
-            )
-            if claimed_by_both:
-                issues.append(
-                    Issue(
-                        True,
-                        where,
-                        f"OVERLAPS band {previous.sequence} at exactly "
-                        f"{current.service_from_value} {current.service_from_unit}: both "
-                        f"claim it inclusively (band {previous.sequence}.service_to_inclusive "
-                        f"and this band's service_from_inclusive are both true).",
-                    )
-                )
-            elif claimed_by_neither:
-                issues.append(
-                    Issue(
-                        True,
-                        where,
-                        f"leaves a GAP at exactly {current.service_from_value} "
-                        f"{current.service_from_unit}: neither band {previous.sequence} nor "
-                        f"this one claims it inclusively, so a service length landing "
-                        f"exactly there resolves to no band at all.",
-                    )
-                )
 
     return issues
 

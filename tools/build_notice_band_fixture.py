@@ -101,6 +101,7 @@ def band(
     effective_from=EFFECTIVE_FROM,
     is_contested=False,
     contested_reason="",
+    probation_condition="any",
     notes="",
 ):
     row = {
@@ -122,6 +123,13 @@ def band(
         "notice_value": notice_value,
         "notice_unit": notice_unit,
     }
+    # WRITTEN ONLY WHERE THE INSTRUMENT STATES ONE. The column defaults to
+    # "any", so emitting it everywhere would change the checksum of every
+    # notice-band fixture in the corpus — and a changed checksum is a version
+    # checkstatutory refuses by name (D-161), so one new column would have cost
+    # a label bump and a reload on files whose figures did not move at all.
+    if probation_condition != "any":
+        row["probation_condition"] = probation_condition
     return row
 
 
@@ -306,17 +314,36 @@ DOCUMENT = {
 # Clause 21.2(a)(ii) pays "double the weekly wage ... in lieu of the two weeks
 # notice called for in sub-clause 21.1 b) ii)", which shows the drafter treated
 # the TWO WEEKS rule as item (ii) — so the printed "ii)" is a mis-numbered
-# third item. That fixes the numbering and NOT the conflict: probation is
-# defined as a maximum of four months, so between four weeks and six months an
-# employee is covered by BOTH the two-week rule and the one-week rule.
+# third item.
 #
-# There is also NO payment-in-lieu figure for the one-week probation notice —
-# 21.2(a) prices only the one working day and the two weeks — which is a second
-# reason the window cannot be resolved by reading the instrument harder.
+# D-241 READ THIS AS A CONTRADICTION AND LOADED THE MIDDLE BAND CONTESTED.
+# D-277 RESOLVES IT, and the resolution is not a preference between two limbs:
+# THEY ARE NOT TWO ANSWERS TO ONE QUESTION. The two-week rule is general —
+# "after the first four weeks of such employment", with no other qualification.
+# The one-week rule is expressly addressed "to an employee WHILST ON PROBATION,
+# as defined". A general rule and an exception stated for a named class of
+# employee are read together, the exception governing its class and the general
+# rule governing everyone else; reading them as rivals is what made the window
+# look irresolvable. So between four weeks and six months:
 #
-# So the middle band is loaded as CONTESTED (D-241) and resolve.notice_band()
-# refuses it by name. After six months the probation rule has expired on its
-# own terms and only the two-week rule can apply, which is unambiguous.
+#   * still on probation  -> one week
+#   * probation ended     -> two weeks
+#
+# and from six months on, two weeks for everybody — probation is capped at four
+# months by clause 3, so nobody is still on it.
+#
+# The band's condition is DATA (probation_condition), the same way its
+# inclusivity is, and check_notice_bands() now reconciles each lane separately
+# so a half-stated pair reads as a gap.
+#
+# PAYMENT IN LIEU of the one-week notice has no figure in this agreement —
+# 21.2(a) prices only the one working day and the two weeks. It does not need
+# one. BCEA s38(1), read off the Act itself: "Instead of giving an employee
+# notice in terms of section 37, an employer may pay the employee the
+# remuneration the employee would have received, calculated in accordance with
+# section 35, if the employee had worked during the notice period." That prices
+# whatever the notice period is, so once the band resolves to one week the
+# payment follows without the agreement naming an amount.
 # ---------------------------------------------------------------------------
 
 #: Shortened deliberately: source_reference is 200 characters and the full
@@ -345,12 +372,14 @@ BCCCI = (
 BCCCI_FROM = "2026-04-01"
 
 DOCUMENT_BCCCI_BANDS = {
-    "version_label": "REF-2026.04.01-BCCCI-NOTICE-r3",
+    "version_label": "REF-2026.04.01-BCCCI-NOTICE-r4",
     "applies_from": "2026-04-01",
     "description": (
         "termination_notice_band for contract cleaning Area B under the BCCCI Main "
-        "Agreement, clause 21.1(b). The four-weeks-to-six-months band is CONTESTED and "
-        "refuses rather than resolving. NOT verified."
+        "Agreement, clause 21.1(b). The four-weeks-to-six-months window is no longer "
+        "contested: the one-week limb is an exception for employees on probation and "
+        "the two-week limb is the general rule, so the window is two bands rather than "
+        "one contradiction (D-277). NOT verified."
     ),
     "tables": {
         "termination_notice_band": [
@@ -383,30 +412,33 @@ DOCUMENT_BCCCI_BANDS = {
                 sector="CONTRACT_CLEANING",
                 sector_area="AREA_B",
                 effective_from=BCCCI_FROM,
-                source=f"{BCCCI}, clause 21.1(b), second 'i)' and 'ii)' as published",
+                source=f"{BCCCI}, clause 21.1(b), 'ii)' as published",
                 from_value="4",
                 from_unit="weeks",
                 from_inclusive=False,
                 to_value="6",
                 to_unit="months",
                 to_inclusive=True,
-                is_contested=True,
-                contested_reason=(
-                    'TWO LIMBS, TWO ANSWERS. The clause says both "Not less than two '
-                    "weeks notice shall be given after the first four weeks of such "
-                    'employment" and "Not less than one weeks notice shall be given to '
-                    "an employee whilst on probation, as defined, for the period of "
-                    "employment between 4 weeks as in sub clause (i) above and six "
-                    'months". Probation is defined in clause 3 as a maximum of four '
-                    "months, so an employee between four weeks and six months falls "
-                    "under both. Clause 21.2(a) prices only the one working day and the "
-                    "two weeks, giving no payment in lieu for the one-week probation "
-                    "notice, so the payment clause does not settle it either."
-                ),
+                notice_value="1",
+                notice_unit="weeks",
+                probation_condition="on_probation",
                 notes=(
-                    "Loaded as a band so the range is covered and the contradiction is "
-                    "visible, with no value because inventing one would put a period "
-                    "nobody can stand behind where a gazetted one belongs."
+                    '"Not less than one weeks notice shall be given to an employee '
+                    "whilst on probation, as defined, for the period of employment "
+                    'between 4 weeks as in sub clause (i) above and six months". THE '
+                    "EXCEPTION, not a rival reading of the general rule below it "
+                    "(D-277, correcting D-241): it is addressed to a named class of "
+                    "employee and the two-week limb is addressed to everybody, so the "
+                    "two govern different people rather than contradicting each other. "
+                    "Clause 3 caps probation at four months, so the upper part of this "
+                    "band's own window is unreachable in practice - the band is written "
+                    "to the clause's stated window rather than to the cap, because the "
+                    "cap is a different clause and may be amended on its own. NO "
+                    "PAYMENT-IN-LIEU FIGURE: clause 21.2(a) prices only the one working "
+                    "day and the two weeks, and BCEA s38(1) supplies the rest - it pays "
+                    "the remuneration the employee would have received under s35 for "
+                    "whatever the notice period is, so it needs no figure from the "
+                    "agreement."
                 ),
             ),
             band(
@@ -430,6 +462,39 @@ DOCUMENT_BCCCI_BANDS = {
                     "reach an employee of longer service. Clause 21.2(a)(ii) prices it "
                     "at double the weekly wage being received at the time of "
                     "termination."
+                ),
+            ),
+            # SEQUENCE 4 AND NOT 3, out of service order on purpose. Renumbering
+            # the open-ended band to make room would EDIT two loaded rows to
+            # move a corrected reading in, and sequence is a band's identity
+            # within its rule set, not its rank (D-277). check_notice_bands()
+            # sorts by each band's own service range for exactly this reason.
+            band(
+                sequence=4,
+                sector="CONTRACT_CLEANING",
+                sector_area="AREA_B",
+                effective_from=BCCCI_FROM,
+                source=f"{BCCCI}, clause 21.1(b), second 'i)' as published",
+                from_value="4",
+                from_unit="weeks",
+                from_inclusive=False,
+                to_value="6",
+                to_unit="months",
+                to_inclusive=True,
+                notice_value="2",
+                notice_unit="weeks",
+                probation_condition="off_probation",
+                notes=(
+                    '"Not less than two weeks notice shall be given after the first '
+                    'four weeks of such employment". THE GENERAL RULE, carrying no '
+                    "qualification of its own, so it governs every employee the "
+                    "probation exception above does not reach - somebody whose "
+                    "probation ended early, and somebody who was never put on one. "
+                    "Same figure and same clause as the band from six months on; this "
+                    "row exists because the probation exception carves a lane out of "
+                    "the same window, not because the rule changes at six months. "
+                    "Clause 21.2(a)(ii) prices it at double the weekly wage being "
+                    "received at the time of termination."
                 ),
             ),
         ]
