@@ -428,21 +428,27 @@ RULES_FIXTURE = {
 # clause 35 is clause 36, the same one-behind numbering as everything after
 # clause 5 (D-260).
 #
-# THE NOTICE CONTRADICTION IS INHERITED, NOT INTRODUCED IN 2026 (D-261). This
-# agreement's clause 20.1(b) carries the identical defect: two items both
-# printed "i)", the second giving two weeks after the first four weeks, and an
-# "ii)" giving one week on probation for the period between four weeks and six
-# months. Probation is capped at four months by clause 3, so both reach the same
-# employee, and clause 20.2(a) prices only the one working day and the two weeks
-# - so there is no payment-in-lieu figure for the one-week probation notice
-# here either. The middle band is loaded CONTESTED and resolve.notice_band()
-# refuses it, exactly as it does for the successor (D-241).
+# THE NOTICE WORDING IS INHERITED, NOT INTRODUCED IN 2026 (D-261). This
+# agreement's clause 20.1(b) carries it identically: two items both printed
+# "i)", the second giving two weeks after the first four weeks, and an "ii)"
+# giving one week on probation for the period between four weeks and six months.
 #
-# LOADING THIS MAKES MARCH 2026 NOTICE REFUSE WHERE IT USED TO ANSWER. Before,
-# Area B fell through to Sectoral Determination 1 and got four weeks. That was a
-# confident answer from the wrong instrument. The agreement that actually bound
-# those employees gives two answers and settles neither, so refusing is correct
-# and answering was not.
+# D-241 READ THAT AS A CONTRADICTION. D-277 RESOLVES IT, here and in the
+# successor together, because the two limbs are not two answers to one question:
+# the two-week limb is general and the one-week limb is expressly addressed "to
+# an employee whilst on probation, as defined". An exception stated for a named
+# class governs that class and the general rule governs everybody else. So
+# between four weeks and six months this agreement gives one week on probation
+# and two weeks off it, and from six months two weeks for everyone.
+#
+# Resolving only the successor would have answered an April 2026 termination and
+# refused a March 2026 one on the very same words, which is why this file moves
+# in the same pass rather than being left for later.
+#
+# Clause 20.2(a) still prices only the one working day and the two weeks. It
+# does not need to price the one week: BCEA s38(1) pays "the remuneration the
+# employee would have received, calculated in accordance with section 35, if the
+# employee had worked during the notice period", whatever that period is.
 # ---------------------------------------------------------------------------
 
 TERMINATION_OUTPUT = (
@@ -451,24 +457,14 @@ TERMINATION_OUTPUT = (
     / "ref-2023.04.01-bccci-termination.json"
 )
 
-CONTESTED = (
-    'TWO LIMBS, TWO ANSWERS. The clause says both "Not less than two weeks notice shall '
-    'be given after the first four weeks of such employment" and "Not less than one weeks '
-    "notice shall be given to an employee whilst on probation, as defined, for the period "
-    'of employment between 4 weeks as in sub clause (i) above and six months". Probation '
-    "is defined in clause 3 as a maximum of four months, so an employee between four weeks "
-    "and six months falls under both. Clause 20.2(a) prices only the one working day and "
-    "the two weeks, giving no payment in lieu for the one-week probation notice, so the "
-    "payment clause does not settle it either."
-)
-
 INHERITED = (
-    "The successor carries this defect word for word at its own clause 21.1(b), so it was "
-    "not introduced in 2026 - it has been in the gazette since at least March 2023 (D-261)."
+    "The successor carries this wording word for word at its own clause 21.1(b), so it "
+    "was not introduced in 2026 - it has been in the gazette since at least March 2023 "
+    "(D-261), and both are read the same way (D-277)."
 )
 
 TERMINATION_FIXTURE = {
-    "version_label": "REF-2023.04.01-BCCCI-TERMINATION",
+    "version_label": "REF-2023.04.01-BCCCI-TERMINATION-r2",
     "applies_from": "2023-04-01",
     "description": (
         "Termination and notice for contract cleaning Area B under the PREDECESSOR BCCCI "
@@ -558,14 +554,17 @@ TERMINATION_FIXTURE = {
                 "service_to_value": "6",
                 "service_to_unit": "months",
                 "service_to_inclusive": True,
-                "notice_value": None,
-                "notice_unit": "",
-                "is_contested": True,
-                "contested_reason": CONTESTED,
+                "notice_value": "1",
+                "notice_unit": "weeks",
+                "probation_condition": "on_probation",
+                "is_contested": False,
+                "contested_reason": "",
                 "notes": (
-                    "Loaded as a band so the range is covered and the contradiction is "
-                    "visible, with no value because inventing one would put a period nobody "
-                    "can stand behind where a gazetted one belongs (D-241). " + INHERITED
+                    "THE EXCEPTION, addressed to employees on probation, not a rival "
+                    "reading of the general rule (D-277, correcting D-241). Clause 3 caps "
+                    "probation at four months, so the top of this band's own stated window "
+                    "is unreachable in practice; the band follows the clause rather than "
+                    "the cap, because the cap is a different clause. " + INHERITED
                 ),
             },
             {
@@ -593,6 +592,32 @@ TERMINATION_FIXTURE = {
                     "received at the time of termination, and in doing so calls the two-week "
                     "rule \"20.1 b) ii)\" - which is how we know the printed 'ii)' is a "
                     "mis-numbered third item rather than the second."
+                ),
+            },
+            {
+                "sector": "CONTRACT_CLEANING",
+                "sector_area": "AREA_B",
+                "effective_from": "2023-04-01",
+                "sequence": 4,
+                "source_reference": f"{GAZETTE}, clause 20.1(b), second 'i)' as published",
+                "source_url": GAZETTE_URL,
+                "service_from_value": "4",
+                "service_from_unit": "weeks",
+                "service_from_inclusive": False,
+                "service_to_value": "6",
+                "service_to_unit": "months",
+                "service_to_inclusive": True,
+                "notice_value": "2",
+                "notice_unit": "weeks",
+                "probation_condition": "off_probation",
+                "is_contested": False,
+                "contested_reason": "",
+                "notes": (
+                    "THE GENERAL RULE for the same window, governing every employee the "
+                    "probation exception above does not reach (D-277). Same figure and "
+                    "clause as the band from six months on; this row exists because the "
+                    "exception carves a lane out of the window, not because the rule "
+                    "changes at six months. " + INHERITED
                 ),
             },
         ],
@@ -714,12 +739,97 @@ LEAVE_TYPE_FIXTURE = {
 }
 
 
+# ---------------------------------------------------------------------------
+# CLAUSE 3's PROBATION CAP, for both agreements.
+#
+# Loaded as a figure rather than left in prose because two things now depend on
+# it: employees/probation.py refuses a longer probation at engagement, and the
+# notice bands' probation lane is only bounded by it (D-277). A number two
+# pieces of behaviour read is a statutory figure and belongs in a cited row.
+#
+# TWO ROWS, ONE PER AGREEMENT, because each states it in its own clause 3 and a
+# figure cites the instrument that sets it. The value does not change - which is
+# D-265's finding over again: the hourly wage is the only figure that differs
+# between these two agreements.
+# ---------------------------------------------------------------------------
+
+NOT_RE_READ = (
+    "NOT RE-READ FROM THE GAZETTE IN THIS PASS. Both BCCCI gazettes extract as "
+    "unreadable text - 99 000 characters in which no clause number and no word of the "
+    "body survives the font encoding (O-38) - so this figure is carried from the "
+    "page-by-page reading recorded in D-247 to D-250, where it already stood in the "
+    "notice bands' own contested_reason. It has never been checked against the printed "
+    "page as a figure in its own right. CHECK IT THERE."
+)
+
+
+def why_the_cap_is_loaded(clause: int) -> str:
+    """Why clause 3's four months is a cited row rather than a sentence in a note."""
+    return (
+        f"The cap is what makes clause {clause}.1(b)'s probation exception finite: "
+        "between four weeks and six months an employee on probation gets one week's "
+        "notice and everyone else two, and this is why nobody is still on probation at "
+        "six months (D-277). It is enforced at engagement rather than only read at "
+        "termination, because a probation period captured longer than the agreement "
+        "allows is a breach on the day it is captured. " + NOT_RE_READ
+    )
+
+
+SUCCESSOR = (
+    "Bargaining Council for the Contract Cleaning Services Industry (KZN) "
+    "Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026"
+)
+SUCCESSOR_URL = (
+    "https://www.gov.za/sites/default/files/gcis_document/202603/54412rg11965gon7296.pdf"
+)
+
+PROBATION_FILENAME = "ref-2023.04.01-bccci-probation.json"
+PROBATION_OUTPUT = pathlib.Path(__file__).resolve().parents[1] / "reference" / PROBATION_FILENAME
+
+PROBATION_FIXTURE = {
+    "version_label": "REF-2023.04.01-BCCCI-PROBATION",
+    "applies_from": "2023-04-01",
+    "description": (
+        "Clause 3's four-month maximum probation for contract cleaning Area B, under "
+        "the predecessor BCCCI agreement and then its successor. NOT verified."
+    ),
+    "tables": {
+        "statutory_parameter": [
+            {
+                "parameter_code": "PROBATION_MAX_MONTHS",
+                "sector": "CONTRACT_CLEANING",
+                "sector_area": "AREA_B",
+                "value_numeric": "4.000000",
+                "unit": "months",
+                "effective_from": "2023-04-01",
+                "effective_to": "2026-04-01",
+                "source_reference": f"{GAZETTE}, clause 3",
+                "source_url": GAZETTE_URL,
+                "notes": why_the_cap_is_loaded(20),
+            },
+            {
+                "parameter_code": "PROBATION_MAX_MONTHS",
+                "sector": "CONTRACT_CLEANING",
+                "sector_area": "AREA_B",
+                "value_numeric": "4.000000",
+                "unit": "months",
+                "effective_from": "2026-04-01",
+                "source_reference": f"{SUCCESSOR}, clause 3",
+                "source_url": SUCCESSOR_URL,
+                "notes": why_the_cap_is_loaded(21),
+            },
+        ]
+    },
+}
+
+
 def main():
     for path, document in (
         (OUTPUT, FIXTURE),
         (RULES_OUTPUT, RULES_FIXTURE),
         (TERMINATION_OUTPUT, TERMINATION_FIXTURE),
         (LEAVE_TYPE_OUTPUT, LEAVE_TYPE_FIXTURE),
+        (PROBATION_OUTPUT, PROBATION_FIXTURE),
     ):
         path.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         print(f"Wrote {path.relative_to(path.parents[1])}")

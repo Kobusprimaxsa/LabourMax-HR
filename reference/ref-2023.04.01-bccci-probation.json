@@ -1,0 +1,32 @@
+{
+  "version_label": "REF-2023.04.01-BCCCI-PROBATION",
+  "applies_from": "2023-04-01",
+  "description": "Clause 3's four-month maximum probation for contract cleaning Area B, under the predecessor BCCCI agreement and then its successor. NOT verified.",
+  "tables": {
+    "statutory_parameter": [
+      {
+        "parameter_code": "PROBATION_MAX_MONTHS",
+        "sector": "CONTRACT_CLEANING",
+        "sector_area": "AREA_B",
+        "value_numeric": "4.000000",
+        "unit": "months",
+        "effective_from": "2023-04-01",
+        "effective_to": "2026-04-01",
+        "source_reference": "Bargaining Council for the Contract Cleaning Services Industry (KZN) Main Collective Agreement, Notice 1726 of 2023 in GG 48356, 31 March 2023, clause 3",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/202304/48356gen1726.pdf",
+        "notes": "The cap is what makes clause 20.1(b)'s probation exception finite: between four weeks and six months an employee on probation gets one week's notice and everyone else two, and this is why nobody is still on probation at six months (D-277). It is enforced at engagement rather than only read at termination, because a probation period captured longer than the agreement allows is a breach on the day it is captured. NOT RE-READ FROM THE GAZETTE IN THIS PASS. Both BCCCI gazettes extract as unreadable text - 99 000 characters in which no clause number and no word of the body survives the font encoding (O-38) - so this figure is carried from the page-by-page reading recorded in D-247 to D-250, where it already stood in the notice bands' own contested_reason. It has never been checked against the printed page as a figure in its own right. CHECK IT THERE."
+      },
+      {
+        "parameter_code": "PROBATION_MAX_MONTHS",
+        "sector": "CONTRACT_CLEANING",
+        "sector_area": "AREA_B",
+        "value_numeric": "4.000000",
+        "unit": "months",
+        "effective_from": "2026-04-01",
+        "source_reference": "Bargaining Council for the Contract Cleaning Services Industry (KZN) Main Collective Agreement, GN R.7296 in GG 54412, 27 March 2026, clause 3",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/202603/54412rg11965gon7296.pdf",
+        "notes": "The cap is what makes clause 21.1(b)'s probation exception finite: between four weeks and six months an employee on probation gets one week's notice and everyone else two, and this is why nobody is still on probation at six months (D-277). It is enforced at engagement rather than only read at termination, because a probation period captured longer than the agreement allows is a breach on the day it is captured. NOT RE-READ FROM THE GAZETTE IN THIS PASS. Both BCCCI gazettes extract as unreadable text - 99 000 characters in which no clause number and no word of the body survives the font encoding (O-38) - so this figure is carried from the page-by-page reading recorded in D-247 to D-250, where it already stood in the notice bands' own contested_reason. It has never been checked against the printed page as a figure in its own right. CHECK IT THERE."
+      }
+    ]
+  }
+}

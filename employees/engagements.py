@@ -48,6 +48,7 @@ from core.managers import tenant_context_of
 from employees.currentstate import refresh_current_state
 from employees.identity import age_on
 from employees.models import Employee, EmployeeEngagement, EmployeePosition
+from employees.probation import ProbationRefusedError, check_probation
 from statutory import resolve
 
 #: The parameter that holds the figure. Named once so a typo is one grep away
@@ -128,6 +129,23 @@ def engage(
     check = check_minimum_age(employee.date_of_birth, start_date)
     if not check.permitted:
         raise EngagementRefusedError(check.reason)
+
+    # BCCCI clause 3 caps probation, and only for the sector it binds (D-277).
+    # Checked BEFORE the transaction opens, like the age rule above it, so a
+    # refusal writes nothing. The workplace decides the area and the employer
+    # the sector — the same scope `employees/remuneration.py` assembles for the
+    # minimum wage, because it is the same question: which instrument governs
+    # this employee.
+    try:
+        check_probation(
+            start_date=start_date,
+            probation_end_date=engagement_fields.get("probation_end_date"),
+            sector=employee.employer.sector,
+            sector_area=(workplace.sector_area if workplace else None)
+            or employee.employer.sector_area,
+        )
+    except ProbationRefusedError as refusal:
+        raise EngagementRefusedError(str(refusal)) from refusal
 
     with transaction.atomic(), tenant_context_of(employee):
         existing = list(EmployeeEngagement.objects.filter(employee=employee))
