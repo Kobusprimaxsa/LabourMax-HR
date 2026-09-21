@@ -35,8 +35,8 @@ BCEA = "Basic Conditions of Employment Act 75 of 1997"
 BCEA_SUMMARY_URL = "https://lrs.org.za/wp-content/uploads/2024/05/Summary-of-the-BCEA.pdf"
 
 SD7 = (
-    "Sectoral Determination 7: Domestic Worker Sector, published in Regulation "
-    "Gazette No. 7434 (consolidated text)"
+    "Sectoral Determination 7: Domestic Worker Sector, GN R.1068 in RG 7434 "
+    "(GG 23732), 15 August 2002"
 )
 SD7_URL = "https://static.pmg.org.za/docs/100824gazette_0.pdf"
 
@@ -116,6 +116,7 @@ def leave_rules(
     *,
     sector,
     source,
+    source_url="",
     family_days,
     sector_area=None,
     effective_from=EFFECTIVE_FROM,
@@ -133,6 +134,7 @@ def leave_rules(
     row = {
         "effective_from": effective_from,
         "source_reference": source,
+        "source_url": source_url,
         "notes": " ".join(notes),
         "annual_leave_days_per_cycle_5day": "15.000",
         "annual_leave_days_per_cycle_6day": "18.000",
@@ -174,6 +176,7 @@ def working_time_rules(
     *,
     sector,
     source,
+    source_url="",
     sector_area=None,
     effective_from=EFFECTIVE_FROM,
     max_overtime_week,
@@ -202,6 +205,7 @@ def working_time_rules(
     row = {
         "effective_from": effective_from,
         "source_reference": source,
+        "source_url": source_url,
         "notes": " ".join(notes),
         "ordinary_hours_per_week": "45.00",
         "ordinary_hours_per_day_5day": "9.00",
@@ -240,6 +244,7 @@ def termination_rules(
     *,
     sector,
     source,
+    source_url="",
     sector_area=None,
     effective_from=EFFECTIVE_FROM,
     bonus_weeks="0.000",
@@ -257,6 +262,7 @@ def termination_rules(
     row = {
         "effective_from": effective_from,
         "source_reference": source,
+        "source_url": source_url,
         "notes": " ".join(notes),
         "severance_weeks_per_completed_year": "1.00",
         "severance_requires_operational_reason": True,
@@ -273,7 +279,7 @@ def termination_rules(
 
 
 DOCUMENT = {
-    "version_label": "REF-2026.03.01-RULES-r4",
+    "version_label": "REF-2026.03.01-RULES-r5",
     "applies_from": "2026-03-01",
     "description": (
         "Sector rule sets: the BCEA default and the domestic sector's Sectoral "
@@ -298,6 +304,7 @@ DOCUMENT = {
             leave_rules(
                 sector="DOMESTIC",
                 source=f"{SD7}, read with {BCEA} ss 20-27",
+                source_url=SD7_URL,
                 family_days=5,
                 extra_notes=(
                     f"SD7 gives FIVE days' family responsibility leave, not the Act's "
@@ -328,6 +335,7 @@ DOCUMENT = {
             working_time_rules(
                 sector="DOMESTIC",
                 source=SD7,
+                source_url=SD7_URL,
                 max_overtime_week="15.00",
                 standby_allowance="20.00",
                 standby_start="20:00:00",
@@ -354,6 +362,7 @@ DOCUMENT = {
             termination_rules(
                 sector="DOMESTIC",
                 source=f"{SD7}, read with {BCEA} s37(1)(c)",
+                source_url=SD7_URL,
             ),
         ],
     },

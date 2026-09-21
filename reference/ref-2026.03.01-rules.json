@@ -1,5 +1,5 @@
 {
-  "version_label": "REF-2026.03.01-RULES-r4",
+  "version_label": "REF-2026.03.01-RULES-r5",
   "applies_from": "2026-03-01",
   "description": "Sector rule sets: the BCEA default and the domestic sector's Sectoral Determination 7 overrides, for leave, working time and termination. Contract cleaning is deliberately absent - SD1 has not been read. Researched 13 September 2026. NOT verified.",
   "tables": {
@@ -7,6 +7,7 @@
       {
         "effective_from": "2026-03-01",
         "source_reference": "Basic Conditions of Employment Act 75 of 1997, ss 20-27",
+        "source_url": "",
         "notes": "effective_from is the start of this reference data, not the provision's commencement. The rule itself is older. DERIVED, not transcribed. The Act grants 21 consecutive days, which is 15 working days on a five-day week and 18 on a six-day week. The monthly accrual follows from that over a 12-month cycle. The Act states none of these four figures directly. Parental leave is not the Act's four months: Van Wyk and Others v Minister of Employment and Labour [2025] ZACC 20, 3 October 2025 (interim reading-in, suspended 36 months) All parents together have four months and ten days, divided as they agree. Family responsibility leave is three days under s27(2); the qualifying conditions of four months' service and four days a week are s27(1).",
         "annual_leave_days_per_cycle_5day": "15.000",
         "annual_leave_days_per_cycle_6day": "18.000",
@@ -37,7 +38,8 @@
       },
       {
         "effective_from": "2026-03-01",
-        "source_reference": "Sectoral Determination 7: Domestic Worker Sector, published in Regulation Gazette No. 7434 (consolidated text), read with Basic Conditions of Employment Act 75 of 1997 ss 20-27",
+        "source_reference": "Sectoral Determination 7: Domestic Worker Sector, GN R.1068 in RG 7434 (GG 23732), 15 August 2002, read with Basic Conditions of Employment Act 75 of 1997 ss 20-27",
+        "source_url": "https://static.pmg.org.za/docs/100824gazette_0.pdf",
         "notes": "effective_from is the start of this reference data, not the provision's commencement. The rule itself is older. DERIVED, not transcribed. The Act grants 21 consecutive days, which is 15 working days on a five-day week and 18 on a six-day week. The monthly accrual follows from that over a 12-month cycle. The Act states none of these four figures directly. SD7 gives FIVE days' family responsibility leave, not the Act's three. Annual and sick leave match the Act. Parental leave is the same interim position: Van Wyk and Others v Minister of Employment and Labour [2025] ZACC 20, 3 October 2025 (interim reading-in, suspended 36 months)",
         "annual_leave_days_per_cycle_5day": "15.000",
         "annual_leave_days_per_cycle_6day": "18.000",
@@ -72,6 +74,7 @@
       {
         "effective_from": "2026-03-01",
         "source_reference": "Basic Conditions of Employment Act 75 of 1997, ss 9-18 and s9A",
+        "source_url": "",
         "notes": "effective_from is the start of this reference data, not the provision's commencement. The rule itself is older. DERIVED, not transcribed. BCEA s10(1)(b) caps the whole day at 12 hours including overtime; three is that cap less a nine-hour ordinary day. On an eight-hour six-day week the same cap allows four. ZERO MEANS THERE IS NO STATUTORY FIGURE, not that the amount is nil. BCEA s17(2) requires night work to be compensated by an allowance or by reduced hours, and deliberately sets no amount - the employer sets it. A calculator must read the employer's own setting, not this column. ZERO MEANS THE CONCEPT DOES NOT EXIST IN THE ACT. Standby is a Sectoral Determination 7 creature; the BCEA has no standby regime at all. accommodation_deduction_capped = false: the BCEA states no accommodation percentage, so no cap is loaded and accommodation_deduction_max_pct is null. That is the ABSENCE of a cap, not a cap of zero. BCEA s34 governs deductions generally but states no percentage; the 10 percent cap is SD7's. Overtime is capped at 10 hours a week under s10(1)(b); a collective agreement may take it to 15 for up to two months a year, which is an agreement-level fact rather than a statutory default. The four-hour minimum payment is s9A and applies to employees earning below the s6(3) threshold.",
         "ordinary_hours_per_week": "45.00",
         "ordinary_hours_per_day_5day": "9.00",
@@ -101,7 +104,8 @@
       },
       {
         "effective_from": "2026-03-01",
-        "source_reference": "Sectoral Determination 7: Domestic Worker Sector, published in Regulation Gazette No. 7434 (consolidated text)",
+        "source_reference": "Sectoral Determination 7: Domestic Worker Sector, GN R.1068 in RG 7434 (GG 23732), 15 August 2002",
+        "source_url": "https://static.pmg.org.za/docs/100824gazette_0.pdf",
         "notes": "effective_from is the start of this reference data, not the provision's commencement. The rule itself is older. DERIVED, not transcribed. BCEA s10(1)(b) caps the whole day at 12 hours including overtime; three is that cap less a nine-hour ordinary day. On an eight-hour six-day week the same cap allows four. ZERO MEANS THERE IS NO STATUTORY FIGURE, not that the amount is nil. BCEA s17(2) requires night work to be compensated by an allowance or by reduced hours, and deliberately sets no amount - the employer sets it. A calculator must read the employer's own setting, not this column. VERIFY THE STANDBY ALLOWANCE. R20 per shift is the figure in the determination as published and no later amendment was found. It may well have escalated - it is the one figure in this load most likely to be stale. SD7 also caps standby at five shifts a month and fifty a year, which this table has no column for. Overtime in this sector is 15 hours a week, not the Act's 10. The 20:00-06:00 standby window comes from a secondary summary rather than the gazette text.",
         "ordinary_hours_per_week": "45.00",
         "ordinary_hours_per_day_5day": "9.00",
@@ -135,6 +139,7 @@
       {
         "effective_from": "2026-03-01",
         "source_reference": "Basic Conditions of Employment Act 75 of 1997, ss 37 and 41",
+        "source_url": "",
         "notes": "effective_from is the start of this reference data, not the provision's commencement. The rule itself is older. There is no statutory annual bonus in this sector, so the weeks are zero and the month is NULL. Contract cleaning is the sector that has one.",
         "severance_weeks_per_completed_year": "1.00",
         "severance_requires_operational_reason": true,
@@ -145,7 +150,8 @@
       },
       {
         "effective_from": "2026-03-01",
-        "source_reference": "Sectoral Determination 7: Domestic Worker Sector, published in Regulation Gazette No. 7434 (consolidated text), read with Basic Conditions of Employment Act 75 of 1997 s37(1)(c)",
+        "source_reference": "Sectoral Determination 7: Domestic Worker Sector, GN R.1068 in RG 7434 (GG 23732), 15 August 2002, read with Basic Conditions of Employment Act 75 of 1997 s37(1)(c)",
+        "source_url": "https://static.pmg.org.za/docs/100824gazette_0.pdf",
         "notes": "effective_from is the start of this reference data, not the provision's commencement. The rule itself is older. There is no statutory annual bonus in this sector, so the weeks are zero and the month is NULL. Contract cleaning is the sector that has one.",
         "severance_weeks_per_completed_year": "1.00",
         "severance_requires_operational_reason": true,

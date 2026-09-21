@@ -46,11 +46,15 @@ import pathlib
 import sys
 
 BCEA = "Basic Conditions of Employment Act 75 of 1997"
+#: Verified against the gazette scan itself: Regulation Gazette No. 7434,
+#: Vol 446, Pretoria, 15 August 2002, No. 23732, carrying GN R.1068 - and
+#: clause 24(1)(a) and (b) read exactly as the two bands below say (D-275).
 SD7 = (
-    "Sectoral Determination 7: Domestic Worker Sector, published in Regulation "
-    "Gazette No. 7434 (consolidated text), read with Basic Conditions of Employment "
+    "Sectoral Determination 7: Domestic Worker Sector, GN R.1068 in RG 7434 "
+    "(GG 23732), 15 August 2002, read with Basic Conditions of Employment "
     "Act 75 of 1997 s37(1)(c)"
 )
+SD7_URL = "https://static.pmg.org.za/docs/100824gazette_0.pdf"
 # The clause itself, added in P6 chunk 5's audit: SD7 clause 24(1) states the
 # domestic notice regime — "(a) one week, if the domestic worker has been employed
 # for six months or less; (b) four weeks, if the domestic worker has been employed
@@ -91,6 +95,7 @@ def band(
     to_inclusive,
     notice_value=None,
     notice_unit="",
+    source_url="",
     sector=None,
     sector_area=None,
     effective_from=EFFECTIVE_FROM,
@@ -106,6 +111,7 @@ def band(
         "effective_from": effective_from,
         "sequence": sequence,
         "source_reference": source,
+        "source_url": source_url,
         "notes": notes,
         "service_from_value": from_value,
         "service_from_unit": from_unit,
@@ -120,7 +126,7 @@ def band(
 
 
 DOCUMENT = {
-    "version_label": "REF-2026.03.01-NOTICE-BANDS-3",
+    "version_label": "REF-2026.03.01-NOTICE-BANDS-4",
     "applies_from": "2026-03-01",
     "description": (
         "termination_notice_band (D-68, D-158 corrected): the BCEA default and the "
@@ -197,6 +203,7 @@ DOCUMENT = {
                 sequence=1,
                 sector="DOMESTIC",
                 source=SD7_BAND_1,
+                source_url=SD7_URL,
                 from_value="0",
                 from_unit="months",
                 from_inclusive=True,
@@ -215,6 +222,7 @@ DOCUMENT = {
                 sequence=2,
                 sector="DOMESTIC",
                 source=SD7_BAND_2,
+                source_url=SD7_URL,
                 from_value="6",
                 from_unit="months",
                 from_inclusive=False,  # band 1 already claims exactly six months.

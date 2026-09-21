@@ -351,9 +351,12 @@ where the page cannot be found confidently, and is plain text where neither is
 possible. **A wrong page is worse than none**, so the matcher answers nothing unless
 sure, and nothing extracts or quotes what a clause SAYS — that would make the pass
 Claude Code's transcription checked against Claude Code's transcription. Coverage today
-is 32 of 156 at a page and 80 more at the document (D-274); what is left is SD1 and
-SD7, whose citations name a consolidated text nobody publishes, and the two BCCCI
-gazettes whose clause numbers do not survive text extraction (O-38).
+is 32 of 156 at a page and 80 more at the document (D-274), over 19 of the 20 cited
+documents. **Only SD1 is unreachable** (D-275): SD7 stopped citing a consolidated text
+nobody publishes and now names GN R.1068 in RG 7434 (GG 23732), 15 August 2002, but
+SD1's notice has three conflicting candidate identities and naming one would be a coin
+toss dressed as a citation. Both BCCCI gazettes download and open at the document; their
+clause numbers do not survive text extraction, so neither opens at a page (O-38).
 
 **The import can no longer be silent** (D-272). It once read seventeen marked rows and
 recorded nothing, saying nothing: the checker and the date were only checked for being
@@ -1101,11 +1104,14 @@ value-equality check catches neither. BCEA's one-year mark is the one boundary t
 genuinely a judgement call: s37(1)(b) "not more than one year" and s37(1)(c)(i) "one year
 or more" both name it, and four weeks is the reading loaded, flagged for the labour law
 review rather than asserted as settled (O-06). SD1's own pay-in-lieu-of-notice
-formula is read as of P7 chunk 5, and the note that used to stand here was wrong about
-the clause (D-224): 23(1)(d) gives figures for one working day and for **four weeks'
-notice** — the figure being "double the weekly wage" — not "for two weeks", so there was
-never a missing band. Its amounts are a floor ("not less than") and BCEA s38 pays more in
-every case, so the two do not conflict.
+formula is read as of P7 chunk 5. **D-224 corrected this note and D-275 corrects
+D-224**: clause 23(1)(d)(ii) says **two weeks' notice, double the weekly wage**, read
+against two independent copies of the determination, so the original note was right and
+its correction was not. Nothing loaded turns on it — payment in lieu is computed from the
+notice band under s38, SD1's amounts are a floor ("not less than") and s38 clears them —
+but the mismatch D-224 declared imaginary is real: 23(1)(b) gives four weeks' notice from
+four weeks' service and 23(1)(d)(ii) prices two. Whether that is a floor or the
+determination contradicting itself is on O-06.
 
 **The fixture checksum guards a reload, not the time in between** (D-161). The loader
 fingerprints a fixture and refuses to reload a version label under different content —
@@ -1368,13 +1374,19 @@ s41 rather than three copies of it (D-226).
 
 **Three findings, and two of them changed what this build believed.**
 
-**SD1 clause 23(1)(d) was misread, and the conflict it was flagged for does not exist**
-(D-224). The note that stood here said the clause "gives figures for one working day and for
-two weeks, and no band in the determination is two weeks". It gives figures for one working
-day and for **four weeks' notice** — the figure being "double the weekly wage". There was
-never a missing band. Its amounts are a floor ("not less than") and s38(1) pays four weekly
-wages where SD1's floor is two, so paying s38 satisfies both. The cached determination text
-had been in the research directory since P6; a note about a clause is not the clause.
+~~**SD1 clause 23(1)(d) was misread, and the conflict it was flagged for does not
+exist**~~ **THIS CORRECTION IS ITSELF WRONG — see D-275, 21 September 2026.** D-224 said
+the clause gives a figure for **four weeks' notice**, "double the weekly wage", and that
+the original note's "for two weeks" was a misreading. Two independent copies of the
+determination — the Department's own and the UCT copy — both read
+**23(1)(d)(ii): two weeks' notice, double the weekly wage**. The note D-224 corrected was
+right. **The conclusion survives its own reasoning**: pay in lieu is computed from the
+notice band under s38(1), SD1's amounts are a floor ("not less than") and s38 clears them,
+so nothing loaded and nothing computed changes. What does not survive is "there was never
+a missing band" — 23(1)(b) gives four weeks' notice from four weeks' service and
+23(1)(d)(ii) prices two, which is now on O-06. D-224's own closing line is the lesson
+pointing back at it: a note about a clause is not the clause, and neither is a correction
+to one.
 
 **s40(c) is a FLOOR, not a formula** (D-225). Pro-rata leave for the incomplete cycle is the
 GREATER of the ledger's own accrual and the Act's one-day-per-17-worked, because s40(c)(ii)
