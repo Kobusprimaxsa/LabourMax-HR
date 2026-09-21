@@ -267,3 +267,66 @@ def test_force_overwrites_freely_once_the_ticks_are_imported(with_extra, kobus, 
     export(path, force=True)
 
     assert len(ticked(path)) == 2, "and the fresh file pre-fills what was imported"
+
+
+# ------------------------------- what the blank column invited, and now does not
+
+
+def test_the_checked_by_column_arrives_pre_filled_with_the_verifier(with_extra, kobus, tmp_path):
+    """D-276. Kobus's own seventeen rows said "Kobus Olivier" — a NAME, in a
+    column that showed him nothing but white space and a heading. Every one was
+    refused, correctly and by name, which is the D-272 fix doing its job and
+    still an evening spent twice.
+
+    The export already knows who is checking: it is the ``--verifier`` on the
+    command line. Filling the column removes the invitation rather than adding
+    an instruction nobody reads.
+    """
+    path = export(tmp_path / "one.xlsx", verifier="kobus@example.com")
+
+    sheet = load_workbook(path)["Checks"]
+    filled = [
+        sheet.cell(row=row, column=BY_COLUMN).value
+        for row in range(2, sheet.max_row + 1)
+        if sheet.cell(row=row, column=KEY_COLUMN).value
+    ]
+
+    assert filled, "there are rows to check"
+    assert set(filled) == {"kobus@example.com"}
+
+
+def test_a_pre_filled_workbook_needs_only_the_tick_and_the_date(with_extra, kobus, tmp_path):
+    """The point of the pre-fill: the person supplies the two things only they
+    know — that it matches, and when they looked — and the evening survives.
+
+    The DATE is deliberately not pre-filled. It is when the check happened, and
+    a pass runs over several evenings; writing the export's own date into it
+    would be this command inventing a fact about a person's work.
+    """
+    path = export(tmp_path / "one.xlsx", verifier="kobus@example.com")
+    book = load_workbook(path)
+    sheet = book["Checks"]
+    keys = []
+    for row in range(2, sheet.max_row + 1):
+        key = sheet.cell(row=row, column=KEY_COLUMN).value
+        if not key or len(keys) >= 2:
+            continue
+        sheet.cell(row=row, column=CHECKED_COLUMN, value="Y")
+        sheet.cell(row=row, column=DATE_COLUMN, value="2026-09-21")
+        keys.append(key)  # and no address typed by hand anywhere
+    book.save(path)
+
+    call_command("importverification", str(path), current_through="2029-02-28", verbosity=0)
+
+    assert ReferenceFigureCheck.objects.count() >= 2
+
+
+def test_a_verifier_nobody_named_leaves_the_column_blank(with_extra, tmp_path):
+    """Watched NOT firing. ``--verifier`` is optional, and an export without
+    one must not invent an address for a column that is evidence."""
+    path = export(tmp_path / "one.xlsx")
+
+    sheet = load_workbook(path)["Checks"]
+    assert not any(
+        sheet.cell(row=row, column=BY_COLUMN).value for row in range(2, sheet.max_row + 1)
+    )

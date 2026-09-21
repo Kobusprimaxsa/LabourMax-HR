@@ -363,6 +363,11 @@ recorded nothing, saying nothing: the checker and the date were only checked for
 non-blank, and the row was dropped where they would not resolve. The count now prints
 unconditionally, a workbook exported before the data moved is refused as stale, and
 `exportverification --force` refuses over a file holding ticks nobody has imported.
+**And the "Checked by" column now arrives PRE-FILLED with the `--verifier`** (D-276) —
+what the silence had been hiding was seventeen cells reading "Kobus Olivier", a name, in
+a column whose heading asks for one and whose importer needs an address it can resolve to
+an account. The export already knows who is checking. The DATE is deliberately left blank:
+a pass runs over several evenings and only the person knows which one this was.
 
 **A version may be verified by SEVERAL people** (D-270), and `verified_by_users`
 records them all. The workbook is grouped by source document and versions cut across

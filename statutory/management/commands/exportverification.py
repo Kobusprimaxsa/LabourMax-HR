@@ -137,7 +137,9 @@ class Command(BaseCommand):
         self._summary_sheet(
             book.active, lines, groups, versions, checks, options["verifier"].strip()
         )
-        self._check_sheet(book.create_sheet("Checks"), groups, machine, checks)
+        self._check_sheet(
+            book.create_sheet("Checks"), groups, machine, checks, options["verifier"].strip()
+        )
         self._figures_sheet(book.create_sheet("Figures"), lines, groups)
         book.save(path)
 
@@ -364,7 +366,7 @@ class Command(BaseCommand):
                 f"hand: this command will not throw away work it cannot see recorded."
             )
 
-    def _check_sheet(self, sheet, groups, machine, checks):
+    def _check_sheet(self, sheet, groups, machine, checks, verifier=""):
         for column, (title, width) in enumerate(CHECK_HEADERS, start=1):
             cell = sheet.cell(row=1, column=column, value=title)
             cell.font = Font(bold=True, color="FFFFFF")
@@ -436,6 +438,15 @@ class Command(BaseCommand):
                 sheet.cell(row=index, column=12, value=first.checked_by.email)
                 sheet.cell(row=index, column=13, value=f"{first.checked_on:%Y-%m-%d}")
                 sheet.cell(row=index, column=14, value=first.note)
+            elif verifier:
+                # PRE-FILLED, because a blank cell invites a NAME (D-276). An
+                # evening of real checking was refused row by row for holding
+                # "Kobus Olivier" where the import needs an address it can
+                # resolve to an account - a check is evidence and has to point
+                # at somebody. Nothing about the column says so, and nothing
+                # should have to: the person running the export already named
+                # themselves on the command line.
+                sheet.cell(row=index, column=12, value=verifier)
 
         last = len(groups) + 1
         if last < 2:
