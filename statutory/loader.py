@@ -298,6 +298,7 @@ FIXTURE_ORDER = [
     "ref-2023.04.01-bccci-rules.json",
     "ref-2023.04.01-bccci-termination.json",
     "ref-2023.04.01-bccci-leave-types.json",
+    "ref-2023.04.01-bccci-probation.json",
     "ref-2026.04.01-bccci.json",
     "ref-2026.04.01-bccci-rules.json",
     "ref-2026.04.01-bccci-notice.json",
@@ -459,6 +460,26 @@ def _differences(instance: models.Model, values: dict[str, Any]) -> list[str]:
 #: these and nothing else — see ``supersede`` in ``load_reference_data``.
 PROSE_FIELDS = frozenset({"source_reference", "source_url", "notes"})
 
+#: What may change on a band that the DATABASE currently records as CONTESTED,
+#: and on no other row (D-277).
+#:
+#: A contested band is the one row in this schema that explicitly holds NO
+#: figure: ``notice_value`` is NULL and ``is_contested`` says why (D-241). So
+#: filling it in moves nothing — there was never a figure there to edit, which
+#: is the whole of what "a statutory value is never edited" protects. Reading a
+#: clause again and finding it resolvable is exactly the event this codebase
+#: keeps having (D-224, D-248, D-275), and before this it had nowhere to land:
+#: ``--supersede`` refused it as a figure change and an ordinary load refused it
+#: as an edit, so a corrected reading could only be got in by deleting rows.
+#:
+#: The guard that matters is not this list but the one already above it: a
+#: VERIFIED version refuses to be superseded at all without ``--supersede-
+#: verified``. Somebody who ticked a contested row ticked "the instrument really
+#: is irreconcilable", and that tick may not be quietly falsified.
+CONTESTED_RESOLUTION_FIELDS = frozenset(
+    {"is_contested", "contested_reason", "notice_value", "notice_unit", "probation_condition"}
+)
+
 
 class SupersedeRefusedError(ReferenceDataLoadError):
     """The new file is not a re-encoding of the old version."""
@@ -476,6 +497,8 @@ def _supersede_rows(document, *, old_label: str, report: LoadReport) -> list[tup
     figure_changes: list[str] = []
     missing: list[str] = []
     updates: list[tuple] = []
+    new_rows: list[tuple] = []
+    resolved_a_contested_band = False
 
     for table_name, spec in TABLES.items():
         rows = document["tables"].get(table_name)
@@ -496,15 +519,29 @@ def _supersede_rows(document, *, old_label: str, report: LoadReport) -> list[tup
                     lookup[key] = None
             existing = spec.model.objects.filter(**lookup).first()
             if existing is None:
+                if _is_a_conditional_twin(values):
+                    # The other lane of a band being resolved in this same load
+                    # (D-277). It adds a row, which a re-encoding may not do —
+                    # but a conditional band is meaningless alone: stating "one
+                    # week while on probation" without its off-probation twin
+                    # leaves every other employee with no band at all, and
+                    # check_notice_bands() reads that as the gap it is. So the
+                    # pair arrives together or the load is refused below.
+                    new_rows.append((spec, raw, where))
+                    continue
                 identity = ", ".join(f"{k}={v}" for k, v in lookup.items() if v is not None)
                 missing.append(f"  - {where}: {identity}")
                 continue
 
+            was_contested = bool(getattr(existing, "is_contested", False))
             prose = {}
             for difference in _differences(existing, values):
                 field_name = difference.split(":", 1)[0].strip()
                 if field_name in PROSE_FIELDS:
                     prose[field_name] = values[field_name]
+                elif was_contested and field_name in CONTESTED_RESOLUTION_FIELDS:
+                    prose[field_name] = values[field_name]
+                    resolved_a_contested_band = True
                 else:
                     figure_changes.append(f"  - {where}.{difference}")
             if prose:
@@ -521,7 +558,25 @@ def _supersede_rows(document, *, old_label: str, report: LoadReport) -> list[tup
             f"--supersede {old_label} refused: the file carries row(s) the database does "
             f"not have, which is new data rather than a re-encoding:\n" + "\n".join(missing)
         )
-    return updates
+    if new_rows and not resolved_a_contested_band:
+        added = "\n".join(f"  - {where}" for _, _, where in new_rows)
+        raise SupersedeRefusedError(
+            f"--supersede {old_label} refused: the file adds a probation-conditional "
+            f"band, but resolves no contested band. A conditional band is only ever the "
+            f"other lane of a band whose contradiction is being settled; on its own it "
+            f"is new data and belongs in its own version:\n" + added
+        )
+    return updates, new_rows
+
+
+def _is_a_conditional_twin(values: dict) -> bool:
+    """Is this fixture row the other lane of a band being resolved (D-277)?
+
+    Narrow on purpose. An unconditional row the database does not have is new
+    data however it arrives, and stays refused.
+    """
+    condition = values.get("probation_condition")
+    return condition in {"on_probation", "off_probation"}
 
 
 @transaction.atomic
@@ -592,7 +647,7 @@ def load_reference_data(
 
     if superseded is not None:
         # Checked BEFORE anything is written: a refusal writes nothing at all.
-        updates = _supersede_rows(document, old_label=supersede, report=report)
+        updates, new_rows = _supersede_rows(document, old_label=supersede, report=report)
         version = ReferenceDataVersion.objects.create(
             version_label=label,
             applies_from=applies_from,
@@ -607,6 +662,8 @@ def load_reference_data(
                 setattr(row, field_name, value)
             row.save(update_fields=[*prose, "updated_at"])
             report.updated[row._meta.db_table] = report.updated.get(row._meta.db_table, 0) + 1
+        for spec, raw, where in new_rows:
+            _load_row(spec, raw, where=where, closes_from=None, report=report)
         report.superseded = supersede
         return report
 

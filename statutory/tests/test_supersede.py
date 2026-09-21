@@ -27,14 +27,20 @@ from __future__ import annotations
 
 import copy
 import json
+from decimal import Decimal
 
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.db import IntegrityError
 
 from core.models import AppUser
 from statutory import checks
-from statutory.models import ReferenceDataVersion
+from statutory.loader import SupersedeRefusedError, load_reference_data
+from statutory.models import (
+    ReferenceDataVersion,
+    TerminationNoticeBand,
+)
 
 pytestmark = [pytest.mark.django_db, pytest.mark.statutory]
 
@@ -254,3 +260,217 @@ def test_trailing_zeros_are_not_a_figure_change(tmp_path, loader):
     load_v1(tmp_path, loader)
     supersede(tmp_path, loader, reencoded(value_numeric="15"), reason="same figure, fewer zeros")
     assert ReferenceDataVersion.objects.filter(version_label=V2).exists()
+
+
+# ------------------------------- resolving a CONTESTED band (D-277)
+
+
+CONTESTED_BAND_V1 = "REF-TEST-CONTESTED"
+CONTESTED_BAND_V2 = "REF-TEST-CONTESTED-r2"
+
+
+def band_document(label, *, bands):
+    return {
+        "version_label": label,
+        "applies_from": "2026-03-01",
+        "description": "Test notice bands",
+        "tables": {
+            "termination_rule_set": [
+                {
+                    "effective_from": "2026-03-01",
+                    "source_reference": "Test agreement, clause 1",
+                    "severance_weeks_per_completed_year": "1.00",
+                    "severance_requires_operational_reason": True,
+                    "annual_bonus_weeks": "0.000",
+                    "annual_bonus_month": None,
+                    "annual_bonus_pro_rata_on_termination": False,
+                    "annual_bonus_min_service_months": 0,
+                }
+            ],
+            "termination_notice_band": bands,
+        },
+    }
+
+
+def band(sequence, *, to_value, to_unit, from_value="0", from_unit="weeks", **extra):
+    row = {
+        "sector": None,
+        "sector_area": None,
+        "effective_from": "2026-03-01",
+        "sequence": sequence,
+        "source_reference": "Test agreement, clause 2",
+        "service_from_value": from_value,
+        "service_from_unit": from_unit,
+        "service_from_inclusive": sequence == 1,
+        "service_to_value": to_value,
+        "service_to_unit": to_unit,
+        "service_to_inclusive": None if to_value is None else True,
+        "notice_value": None,
+        "notice_unit": "",
+        # Written on every row, exactly as the real builder writes them: a
+        # resolution that left is_contested True while setting a value would be
+        # refused by notice_band_contested_has_no_value_and_a_reason, which is
+        # the CHECK pair doing its job — see the test at the end of this file.
+        "is_contested": False,
+        "contested_reason": "",
+    }
+    row.update(extra)
+    return row
+
+
+@pytest.fixture
+def contested(db):
+    """A loaded rule set whose middle band says "this cannot be read"."""
+    load_reference_data(
+        band_document(
+            CONTESTED_BAND_V1,
+            bands=[
+                band(1, to_value="4", to_unit="weeks", notice_value="1", notice_unit="days"),
+                band(
+                    2,
+                    from_value="4",
+                    from_unit="weeks",
+                    to_value="6",
+                    to_unit="months",
+                    is_contested=True,
+                    contested_reason="Two limbs, two answers.",
+                ),
+                band(
+                    3,
+                    from_value="6",
+                    from_unit="months",
+                    to_value=None,
+                    to_unit="",
+                    notice_value="2",
+                    notice_unit="weeks",
+                ),
+            ],
+        )
+    )
+
+
+def resolution_document(label):
+    """The same file with the contested band read again, plus its twin."""
+    return band_document(
+        label,
+        bands=[
+            band(1, to_value="4", to_unit="weeks", notice_value="1", notice_unit="days"),
+            band(
+                2,
+                from_value="4",
+                from_unit="weeks",
+                to_value="6",
+                to_unit="months",
+                notice_value="1",
+                notice_unit="weeks",
+                probation_condition="on_probation",
+            ),
+            band(
+                3,
+                from_value="6",
+                from_unit="months",
+                to_value=None,
+                to_unit="",
+                notice_value="2",
+                notice_unit="weeks",
+            ),
+            band(
+                4,
+                from_value="4",
+                from_unit="weeks",
+                to_value="6",
+                to_unit="months",
+                notice_value="2",
+                notice_unit="weeks",
+                probation_condition="off_probation",
+            ),
+        ],
+    )
+
+
+def test_a_contested_band_may_be_resolved_and_gain_its_twin(contested):
+    """A contested band holds NO figure — notice_value is NULL and
+    is_contested says why — so filling it in edits nothing. That is the whole
+    of what "a statutory value is never edited" protects, and it is why a
+    corrected READING had nowhere to land before D-277: supersede refused it as
+    a figure change and an ordinary load refused it as an edit."""
+    load_reference_data(
+        resolution_document(CONTESTED_BAND_V2),
+        supersede=CONTESTED_BAND_V1,
+        reason="The two limbs are a general rule and a probation exception.",
+    )
+
+    bands = TerminationNoticeBand.objects.order_by("sequence")
+    assert [b.probation_condition for b in bands] == [
+        "any",
+        "on_probation",
+        "any",
+        "off_probation",
+    ]
+    assert bands[1].is_contested is False
+    assert bands[1].notice_value == Decimal("1.00")
+    assert not checks.check_notice_bands(), "and both lanes still tile"
+
+
+def test_a_band_that_was_never_contested_may_not_change_its_figure(contested):
+    """The allowance is narrow on purpose. Band 3 holds a real two weeks, and
+    moving it is a new gazette however it is dressed up."""
+    document = resolution_document(CONTESTED_BAND_V2)
+    document["tables"]["termination_notice_band"][2]["notice_value"] = "4"
+
+    with pytest.raises(SupersedeRefusedError) as raised:
+        load_reference_data(
+            document, supersede=CONTESTED_BAND_V1, reason="Sneaking a figure through."
+        )
+
+    assert "a FIGURE changed" in str(raised.value)
+    assert "notice_value" in str(raised.value)
+
+
+def test_an_unconditional_new_row_is_still_refused(contested):
+    """Adding a row is new data. Only the other LANE of a band being resolved
+    comes in this way, and an unconditional row is never that."""
+    document = resolution_document(CONTESTED_BAND_V2)
+    document["tables"]["termination_notice_band"][3].pop("probation_condition")
+
+    with pytest.raises(SupersedeRefusedError) as raised:
+        load_reference_data(document, supersede=CONTESTED_BAND_V1, reason="New band.")
+
+    assert "new data rather than a re-encoding" in str(raised.value)
+
+
+def test_a_twin_with_nothing_to_be_the_twin_of_is_refused(contested):
+    """A conditional band on its own is meaningless: it says one week applies
+    to some employees and leaves the rest with no band at all. It arrives with
+    the resolution it belongs to, or not at all."""
+    document = resolution_document(CONTESTED_BAND_V2)
+    # Put the contested band back exactly as loaded, so nothing is resolved.
+    document["tables"]["termination_notice_band"][1] = band(
+        2,
+        from_value="4",
+        from_unit="weeks",
+        to_value="6",
+        to_unit="months",
+        is_contested=True,
+        contested_reason="Two limbs, two answers.",
+    )
+
+    with pytest.raises(SupersedeRefusedError) as raised:
+        load_reference_data(document, supersede=CONTESTED_BAND_V1, reason="Twin alone.")
+
+    assert "resolves no contested band" in str(raised.value)
+
+
+def test_a_resolution_that_forgets_to_clear_is_contested_is_refused(contested):
+    """The CHECK pair (D-241), watched firing on the new path. Setting a value
+    while leaving is_contested True would be a band that says both "here is the
+    period" and "this cannot be read", and the database refuses it by name
+    rather than letting the loader decide."""
+    document = resolution_document(CONTESTED_BAND_V2)
+    document["tables"]["termination_notice_band"][1]["is_contested"] = True
+    document["tables"]["termination_notice_band"][1]["contested_reason"] = "Left behind."
+
+    with pytest.raises(IntegrityError) as raised:
+        load_reference_data(document, supersede=CONTESTED_BAND_V1, reason="Half a resolution.")
+
+    assert "notice_band_contested_has_no_value_and_a_reason" in str(raised.value)
