@@ -1,13 +1,14 @@
 {
-  "version_label": "REF-2026.03.01-SD1-r4",
+  "version_label": "REF-2026.03.01-SD1-r5",
   "applies_from": "2026-03-01",
-  "description": "Contract cleaning sector rule sets from Sectoral Determination 1, clauses 3 and 8 to 24. Researched 13 September 2026 from two independent transcriptions of the consolidated determination. NOT verified.",
+  "description": "Contract cleaning sector rule sets from Sectoral Determination 1, clauses 3 and 8 to 24. Researched 13 September 2026 from two independent transcriptions of the consolidated determination. The leave row's citation now names the clause for each figure it carries, maternity's clause 20 included (D-279). NOT verified.",
   "tables": {
     "leave_rule_set": [
       {
         "effective_from": "2026-03-01",
-        "source_reference": "Sectoral Determination 1: Contract Cleaning Sector, current consolidated text (clauses 3, 8-24), clauses 18, 19 and 22",
-        "notes": "effective_from is the start of this reference data, not the provision's commencement. The rule itself is older. DERIVED, not transcribed. The Act grants 21 consecutive days, which is 15 working days on a five-day week and 18 on a six-day week. The monthly accrual follows from that over a 12-month cycle. The Act states none of these four figures directly. Annual leave, sick leave and family responsibility leave all match the BCEA - SD1 adds nothing here, unlike SD7 which gives five family responsibility days. Parental leave is the same interim position: Van Wyk and Others v Minister of Employment and Labour [2025] ZACC 20, 3 October 2025 (interim reading-in, suspended 36 months)",
+        "source_reference": "Sectoral Determination 1: Contract Cleaning Sector, current consolidated text (clauses 3, 8-24), clauses 18 (annual), 19 (sick), 20 (maternity), 22 (family responsibility); parental: BCEA s25",
+        "source_url": "",
+        "notes": "effective_from is the start of this reference data, not the provision's commencement. The rule itself is older. DERIVED, not transcribed. The Act grants 21 consecutive days, which is 15 working days on a five-day week and 18 on a six-day week. The monthly accrual follows from that over a 12-month cycle. The Act states none of these four figures directly. Annual leave, sick leave and family responsibility leave all match the BCEA - SD1 adds nothing here, unlike SD7 which gives five family responsibility days. Parental leave is the same interim position: Van Wyk and Others v Minister of Employment and Labour [2025] ZACC 20, 3 October 2025 (interim reading-in, suspended 36 months) CLAUSE NUMBERING, from the determination itself: 18 annual leave (18(6) is the payout on termination), 19 sick leave, 20 maternity (20(2) four weeks before the birth, 20(3) six weeks after), 22 family responsibility (22(1) the two eligibility limbs, 22(2) the three days). The same numbering appears in the determination as published in 1999 and in the consolidation as at 1 March 2026 (D-194, D-279). THE THREE parental_leave_* COLUMNS ARE NOT IN THIS INSTRUMENT and no clause can be cited for them: they carry the Van Wyk interim reading-in of BCEA s25. Nothing reads them - the live source is parental_leave_quantum, which is effective-dated to end when the suspension does on 3 October 2028 (D-203), while these columns carry no end date at all. O-39.",
         "annual_leave_days_per_cycle_5day": "15.000",
         "annual_leave_days_per_cycle_6day": "18.000",
         "annual_accrual_days_per_month_5day": "1.250",
@@ -41,6 +42,7 @@
       {
         "effective_from": "2026-03-01",
         "source_reference": "Sectoral Determination 1: Contract Cleaning Sector, current consolidated text (clauses 3, 8-24), clauses 3(2), 8 to 17",
+        "source_url": "",
         "notes": "effective_from is the start of this reference data, not the provision's commencement. The rule itself is older. DERIVED, not transcribed. BCEA s10(1)(b) caps the whole day at 12 hours including overtime; three is that cap less a nine-hour ordinary day. On an eight-hour six-day week the same cap allows four. ZERO MEANS THE CONCEPT DOES NOT EXIST IN THE ACT. Standby is a Sectoral Determination 7 creature; the BCEA has no standby regime at all. accommodation_deduction_capped = false: Sectoral Determination 1 states no accommodation percentage, so no cap is loaded and accommodation_deduction_max_pct is null. That is the ABSENCE of a cap, not a cap of zero. BCEA s34 governs deductions generally but states no percentage; the 10 percent cap is SD7's. Two figures here are SD1's own and differ from every other row. Clause 16 sets a REAL night allowance - not less than 10 percent of the hourly wage for each hour worked between 18:00 and 06:00 - so this is the one sector where the column carries a gazetted percentage rather than a zero meaning 'no statutory figure'. And clause 3(2) sets the short-day minimum at SIX hours, not the four of BCEA s9A and SD7. Overtime: clause 9 caps it at 3 hours a day and 10 a week for an employer with ten or more employees, and allows 15 a week by agreement for a smaller employer. The stricter general rule is loaded; the small-employer variant is an agreement-level fact this table has no column for. Standby and accommodation are SD7 concepts; SD1 has neither.",
         "ordinary_hours_per_week": "45.00",
         "ordinary_hours_per_day_5day": "9.00",
@@ -74,6 +76,7 @@
       {
         "effective_from": "2026-03-01",
         "source_reference": "Sectoral Determination 1: Contract Cleaning Sector, current consolidated text (clauses 3, 8-24), clauses 3(3) and 24",
+        "source_url": "",
         "notes": "effective_from is the start of this reference data, not the provision's commencement. The rule itself is older. SD1 clause 3(3): 4,333 weeks of the weekly wage, paid in December or on termination. Under twelve months' service it is pro-rated as full calendar months divided by twelve, times 4,333, times the weekly wage - so a single full month earns a share, which is why the minimum service is zero.",
         "severance_weeks_per_completed_year": "1.00",
         "severance_requires_operational_reason": true,

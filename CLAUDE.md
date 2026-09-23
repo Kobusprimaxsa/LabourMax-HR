@@ -391,6 +391,16 @@ what the database already holds.
 **One instrument gets one citation string** (D-257) — two spellings read as two source
 documents, so a version can be fully checked and still show incomplete;
 `checkstatutory` reports a near-duplicate rather than waiting for somebody to notice.
+**And the PINPOINT must contain every figure its row carries** (D-279). SD1's leave row
+cited "clauses 18, 19 and 22" — annual, sick, family responsibility — for a row that
+also carries two maternity figures, which are clause 20. No figure was wrong; a verifier
+was simply sent to clauses two of them are not in, and the two honest responses are tick
+anyway or decide the load is wrong. A rule set row is one workbook line covering many
+figures, so the pinpoint names each clause WITH ITS SUBJECT — "18 (annual), 19 (sick),
+20 (maternity), 22 (family responsibility)" — rather than leaving the reader to guess
+which clause answers which figure. Where a figure has no clause in the cited instrument,
+the pinpoint says where it does come from: SD1's row ends "parental: BCEA s25", because
+no sectoral determination states parental leave at all (O-39).
 
 ```powershell
 python manage.py fetchsources                                    # reference/sources/, gitignored

@@ -375,25 +375,63 @@ SD1 = (
 )
 SD1_URL = "https://www.acts.co.za/basic/sd1_nr622_3__remuneration.php"
 
+#: THE CITATION MUST CONTAIN EVERY FIGURE THE ROW CARRIES (D-279). The first
+#: encoding named clauses 18, 19 and 22 — annual, sick and family
+#: responsibility — and the row also carries two MATERNITY figures, which are
+#: clause 20. A verifier opening 18, 19 and 22 would have found three of the
+#: row's figures absent from the clauses they were sent to, and the honest
+#: outcomes are both bad: tick anyway, or spend the evening deciding the load
+#: is wrong when only the pinpoint is.
+#:
+#: The parenthesised subject after each number is not decoration. The workbook
+#: prints ONE row for a group of figures and the person has to know which
+#: clause to open for which figure; "clauses 18, 19 and 22" made them guess.
+#:
+#: "parental: BCEA s25" is the other half of the correction and is a POINTER
+#: AWAY from this instrument. SD1 states no parental leave at all — the three
+#: parental_leave_* columns carry the Van Wyk interim reading-in of BCEA s25,
+#: which is not in any clause of any sectoral determination. Saying so in the
+#: citation is the only honest thing available while those columns exist;
+#: whether they should exist is O-39.
+SD1_LEAVE_CLAUSES = (
+    ", clauses 18 (annual), 19 (sick), 20 (maternity), 22 (family responsibility)"
+    "; parental: BCEA s25"
+)
+
 DOCUMENT_SD1 = {
-    "version_label": "REF-2026.03.01-SD1-r4",
+    "version_label": "REF-2026.03.01-SD1-r5",
     "applies_from": "2026-03-01",
     "description": (
         "Contract cleaning sector rule sets from Sectoral Determination 1, clauses 3 "
         "and 8 to 24. Researched 13 September 2026 from two independent transcriptions "
-        "of the consolidated determination. NOT verified."
+        "of the consolidated determination. The leave row's citation now names the "
+        "clause for each figure it carries, maternity's clause 20 included (D-279). "
+        "NOT verified."
     ),
     "tables": {
         "leave_rule_set": [
             leave_rules(
                 sector="CONTRACT_CLEANING",
-                source=f"{SD1}, clauses 18, 19 and 22",
+                source=f"{SD1}{SD1_LEAVE_CLAUSES}",
                 family_days=3,
                 extra_notes=(
                     f"Annual leave, sick leave and family responsibility leave all match "
                     f"the BCEA - SD1 adds nothing here, unlike SD7 which gives five "
                     f"family responsibility days. Parental leave is the same interim "
-                    f"position: {ZACC}"
+                    f"position: {ZACC} "
+                    f"CLAUSE NUMBERING, from the determination itself: 18 annual leave "
+                    f"(18(6) is the payout on termination), 19 sick leave, 20 maternity "
+                    f"(20(2) four weeks before the birth, 20(3) six weeks after), 22 "
+                    f"family responsibility (22(1) the two eligibility limbs, 22(2) the "
+                    f"three days). The same numbering appears in the determination as "
+                    f"published in 1999 and in the consolidation as at 1 March 2026 "
+                    f"(D-194, D-279). "
+                    f"THE THREE parental_leave_* COLUMNS ARE NOT IN THIS INSTRUMENT and "
+                    f"no clause can be cited for them: they carry the Van Wyk interim "
+                    f"reading-in of BCEA s25. Nothing reads them - the live source is "
+                    f"parental_leave_quantum, which is effective-dated to end when the "
+                    f"suspension does on 3 October 2028 (D-203), while these columns "
+                    f"carry no end date at all. O-39."
                 ),
             )
         ],
