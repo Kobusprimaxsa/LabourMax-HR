@@ -443,6 +443,19 @@ Things that are easy to get wrong, and have been got wrong before:
   to ONE balance. Stored as months plus days, never as a day count, and the month-end clamps
   (D-204). The suspension ends 3 October 2028: the quantum then REFUSES rather than falling
   back, while the under-two adoption limit FALLS AWAY, both as loaded data (D-203).
+- **The Sunday rule ADDS a day; it does not move one.** Public Holidays Act 36 of 1994 s2(1)
+  makes the following Monday a public holiday when a Schedule 1 day falls on a Sunday — and
+  Schedule 1 still fixes the Sunday. **Both days are public holidays**, which is what gov.za
+  lists: 9 AND 10 August 2026, 21 AND 22 March 2027, 26 AND 27 December 2027. The fixture
+  generator read it as a move and emitted only the Monday, so three Sundays were ordinary days
+  to everything reading the calendar and a cleaner who worked one was priced under s16 and never
+  reached s18 (D-280). `checkstatutory` now reconciles the pair in both directions. A date can
+  therefore be a Sunday AND a public holiday, which `attendance_day.day_type` cannot say — it
+  holds one value, capture WARNS, and which section prices such a day is O-40.
+- **A proclaimed day is a public holiday for every BCEA purpose.** `is_statutory=False` marks a
+  s2A once-off — 4 November 2026, the local government elections, Proclamation Notice 346 of
+  2026 — and nothing reads that flag to decide holiday treatment. Keep it that way: the flag
+  says where the day came from, never whether it is owed.
 - **The maternity restriction runs after the birth, not before it.** A birth mother may not
   work for six weeks after giving birth unless certified fit; separately, she may start leave
   up to four weeks before. Two different rules, two columns.
@@ -1260,18 +1273,33 @@ non-superseded version is unverified and reads the SHORTEST `data_current_throug
 across them. **P7 is still blocked, correctly** — REF-2026.03.01 is unverified and
 the gate names it.
 
+**The public holiday calendar was a day short in three places, and one proclaimed day
+was missing** (24 September 2026, D-280). s2(1) ADDS the Monday when a Schedule 1 day falls
+on a Sunday; the generator read it as a MOVE and emitted one row, so 9 August 2026,
+21 March 2027 and 26 December 2027 were not public holidays at all. `REF-2026.03.01-HOLIDAYS`
+adds the three Sundays and 4 November 2026's election proclamation; `REF-2026.03.01-r4`
+carries the three corrected notes as prose. `check_public_holiday_sundays()` is the guard that
+did not exist. Two consequences outlive the load: `attendance/summary.py` would have paid the
+s18(2)(a) unworked-holiday day on top of the Sunday premium for a cleaner who WORKED that
+Sunday, now fixed; and which of s16 and s18 prices a day that is both is unread and refused to
+be guessed at (O-40).
+
 **What remains in P2:**
 
 - Kobus verifies every figure against its source document, then `verifystatutory`. **This
   is the only thing left in P2 that needs a person, and everything around it is built.**
-  `exportverification` writes **148 check groups over 672 figures across 18 source
+  `exportverification` writes **168 check groups over 739 figures across 19 source
   documents** to `reference/verification/Labourmax_verification.xlsx`, grouped so one
   lookup in the gazette answers one row rather than eight (D-258); `importverification`
   reads the ticks back into `reference_figure_check`, which is append-only evidence in the
   database rather than a tick trapped in an unmergeable binary (D-256). Nothing is
   pre-ticked, and re-exporting is safe: every recorded tick is carried forward, so a new
-  reference row no longer costs an evening of checking. **Re-export before starting**:
-  D-268 added eight check groups, so the workbook on disk is one load behind.
+  reference row no longer costs an evening of checking. **IMPORT THE WORKBOOK ON DISK
+  BEFORE RE-EXPORTING.** As at 24 September 2026 it holds 84 marked rows and the database
+  holds 29 of them — 55 groups have been ticked and never imported, and an export would
+  destroy exactly those. `exportverification` refuses over the file for this reason and
+  `--force` is the only thing that overrides it (D-272); run `importverification` first.
+  D-280 added four public holiday groups, so the workbook is also one load behind.
 - **A verification tick that is not a person's never gets past the payroll gate** (D-262).
   `verifystatutory` accepts an identity ending in RFC 2606's reserved `.invalid` — the
   build has to be able to read reference data before the human pass finishes — and warns

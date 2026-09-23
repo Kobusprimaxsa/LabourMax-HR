@@ -277,3 +277,82 @@ def test_a_leave_day_with_a_leave_application_reference_is_accepted(employee, le
         )
 
     assert day.leave_application_id == leave_application.pk
+
+
+# ----------------------------------- a date that is a Sunday AND a holiday (D-280)
+#
+# s2(1) ADDS the Monday; it does not move the holiday off the Sunday, so
+# 9 August 2026 is both. ``attendance_day.day_type`` holds exactly one value,
+# and a contract cleaner who works Sundays is naturally captured as SUNDAY —
+# which prices the day under s16 and never reaches s18 at all. Nothing here
+# re-buckets the day or picks between the two sections: which one applies, and
+# whether s18(2)(b)(ii) stacks them, is unread (O-40). The warning names the
+# date and hands the decision to a person, the same shape as D-157's.
+
+WOMENS_DAY_SUNDAY = datetime.date(2026, 8, 9)
+
+
+@pytest.fixture
+def womens_day(db):
+    from statutory.models import PublicHoliday
+
+    return PublicHoliday.objects.create(
+        holiday_date=WOMENS_DAY_SUNDAY,
+        name="National Women's Day",
+        source_reference="Public Holidays Act 36 of 1994, Schedule 1",
+    )
+
+
+def test_a_worked_sunday_that_is_a_public_holiday_warns(employee, rules, schedule, womens_day):
+    day = capture(
+        employee,
+        work_date=WOMENS_DAY_SUNDAY,
+        day_type=DayType.SUNDAY,
+        time_in=datetime.time(8, 0),
+        time_out=datetime.time(14, 0),
+    )
+
+    assert any("National Women's Day" in warning for warning in day.capture_warnings)
+    assert any("s18(2)(b)" in warning for warning in day.capture_warnings)
+    # The buckets are untouched: this warns, it does not re-decide the day.
+    assert day.sunday_hours == Decimal("6.00")
+    assert day.public_holiday_hours == Decimal("0.00")
+
+
+def test_the_same_day_captured_as_a_public_holiday_does_not_warn(
+    employee, rules, schedule, womens_day
+):
+    """Watched NOT firing. The warning exists to be acted on, so it has to stop
+    once somebody has."""
+    day = capture(
+        employee,
+        work_date=WOMENS_DAY_SUNDAY,
+        day_type=DayType.PUBLIC_HOLIDAY,
+        time_in=datetime.time(8, 0),
+        time_out=datetime.time(14, 0),
+    )
+
+    assert not any("s18(2)(b)" in warning for warning in day.capture_warnings)
+    assert day.public_holiday_hours == Decimal("6.00")
+
+
+def test_an_ordinary_worked_day_that_is_not_a_holiday_does_not_warn(employee, rules, schedule):
+    day = capture(
+        employee,
+        work_date=MONDAY,
+        day_type=DayType.ORDINARY,
+        time_in=datetime.time(8, 0),
+        time_out=datetime.time(16, 0),
+    )
+
+    assert not any("s18(2)(b)" in warning for warning in day.capture_warnings)
+
+
+def test_a_holiday_nobody_worked_does_not_warn(employee, rules, schedule, womens_day):
+    """s18(2)(a) is priced from the schedule by ``attendance/summary.py``, which
+    reads the calendar itself rather than this row's day_type. Nothing is lost
+    by staying quiet, and a warning on every unworked holiday is one nobody
+    reads."""
+    day = capture(employee, work_date=WOMENS_DAY_SUNDAY, day_type=DayType.REST_DAY)
+
+    assert not any("s18(2)(b)" in warning for warning in day.capture_warnings)

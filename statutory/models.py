@@ -1923,15 +1923,24 @@ class TerminationNoticeBand(AuditedModel, AuditMixin, CitedStatutoryModel):
 
 
 class PublicHoliday(AuditedModel, AuditMixin, CitedStatutoryModel):
-    """South African public holidays, including shifted Sundays and proclaimed days.
+    """South African public holidays, including the Mondays s2(1) adds and proclaimed days.
 
-    The Public Holidays Act provides that when a holiday falls on a Sunday, the
-    **following Monday** becomes the public holiday. This is stored as the Monday
-    row with ``shifted_from_date`` pointing at the Sunday, rather than computed at
-    read time. Two reasons: the shift affects pay on a specific date and a payroll
-    re-run must reproduce it exactly, and the rule has exceptions in practice —
-    election days and days of mourning are proclaimed once-off and follow no rule at
-    all.
+    **s2(1) ADDS a day; it does not move one** (D-280). "The days mentioned in
+    Schedule 1 shall be public holidays, and whenever any public holiday falls on a
+    Sunday, the following Monday shall be a public holiday." Schedule 1 fixes the
+    date — 9 August is National Women's Day — and nothing in s2(1) takes that away
+    when the date lands on a Sunday. So a Sunday holiday is TWO rows, not one: the
+    Sunday, cited to Schedule 1, and the Monday, cited to s2(1) and carrying
+    ``shifted_from_date``. gov.za lists both days, and this table used to hold only
+    the Monday, which made the Sunday an ordinary day to everything that reads this
+    calendar.
+
+    ``shifted_from_date`` is what distinguishes a Monday the Act added from a Monday
+    Schedule 1 names in its own right (Family Day). It is stored rather than computed
+    at read time for two reasons: the addition affects pay on a specific date and a
+    payroll re-run must reproduce it exactly, and the calendar has entries no rule
+    produces at all — election days and days of mourning are proclaimed under s2A and
+    follow no pattern.
 
     Holidays are stored per calendar date rather than as a recurring rule for the
     same reason. Easter moves, proclamations happen, and a rule engine that gets

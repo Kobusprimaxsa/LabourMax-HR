@@ -345,3 +345,86 @@ def test_a_public_holiday_actually_worked_does_not_double_count(
 
     assert summary.total_public_holiday_hours > 0
     assert summary.total_public_holidays_not_worked == Decimal("0")
+
+
+# ------------------------------ a Sunday that is also a public holiday (D-280)
+
+
+@pytest.fixture
+def works_sundays(db, tenant, schedule):
+    """A contract cleaner's week. Sunday is an ordinary working day, so a public
+    holiday falling on it is one this employee is owed under s18."""
+    with tenant_context(tenant.pk):
+        day = schedule.days.get(cycle_day=6)
+        day.is_working_day = True
+        day.ordinary_hours = Decimal("8")
+        day.save()
+    return schedule
+
+
+def test_a_worked_sunday_holiday_is_not_counted_as_a_holiday_not_worked(
+    employee, tenant, pay_period, rules, works_sundays
+):
+    """THE OVERPAYMENT this fix closes.
+
+    Since s2(1) adds a Monday without taking the Sunday away, 9 August 2026 is
+    both a Sunday and a public holiday — and an employee who works it is
+    naturally captured as SUNDAY. This count used to require
+    ``day_type == PUBLIC_HOLIDAY``, so the date read as a holiday nobody
+    worked: the employee would have been paid the s18(2)(a) unworked-holiday
+    day on top of the Sunday premium, for a day they were at work.
+    """
+    PublicHoliday.objects.create(
+        holiday_date=SUNDAY,
+        name="Test holiday on a Sunday",
+        is_statutory=True,
+        source_reference="Test fixture",
+    )
+    capture(
+        employee,
+        work_date=SUNDAY,
+        day_type=DayType.SUNDAY,
+        time_in=datetime.time(8, 0),
+        time_out=datetime.time(17, 0),
+        unpaid_break_minutes=60,
+    )
+
+    summary = recompute_summary(employee, pay_period)
+
+    assert summary.total_public_holidays_not_worked == Decimal("0")
+
+
+def test_the_same_sunday_holiday_left_uncaptured_still_counts(
+    employee, tenant, pay_period, rules, works_sundays
+):
+    """Watched NOT firing. The employee who stayed home on that Sunday is still
+    owed the day, so the count must not have been widened into silence."""
+    PublicHoliday.objects.create(
+        holiday_date=SUNDAY,
+        name="Test holiday on a Sunday",
+        is_statutory=True,
+        source_reference="Test fixture",
+    )
+
+    summary = recompute_summary(employee, pay_period)
+
+    assert summary.total_public_holidays_not_worked == Decimal("1")
+
+
+def test_a_holiday_taken_as_leave_still_counts_as_not_worked(
+    employee, tenant, pay_period, rules, schedule
+):
+    """``days_worked_equivalent`` is 1.000 for a leave day, which is why the
+    count reads hours actually worked instead. A day of leave is not a day at
+    work, and the holiday is still owed."""
+    PublicHoliday.objects.create(
+        holiday_date=MONDAY,
+        name="Test holiday",
+        is_statutory=True,
+        source_reference="Test fixture",
+    )
+    capture(employee, work_date=MONDAY, day_type=DayType.ABSENT_PAID)
+
+    summary = recompute_summary(employee, pay_period)
+
+    assert summary.total_public_holidays_not_worked == Decimal("1")

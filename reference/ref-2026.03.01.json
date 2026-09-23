@@ -1,5 +1,5 @@
 {
-  "version_label": "REF-2026.03.01-r3",
+  "version_label": "REF-2026.03.01-r4",
   "applies_from": "2026-03-01",
   "description": "First statutory reference load: the 1 March 2026 wage floors, the SARS 2027 tax year tables, the contribution parameters, and public holidays for 2026 and 2027. Researched from primary sources on 13 September 2026. NOT verified - every figure must be checked against the source document before this version can come into force.",
   "tables": {
@@ -418,12 +418,19 @@
         "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
+        "holiday_date": "2026-08-09",
+        "name": "National Women's Day",
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf",
+        "notes": "National Women's Day falls on Sunday 09 August 2026. Schedule 1 fixes the date, so this day is a public holiday in its own right; s2(1) ADDS the following Monday as a second one. Both are public holidays and gov.za lists both."
+      },
+      {
         "holiday_date": "2026-08-10",
         "name": "National Women's Day",
         "shifted_from_date": "2026-08-09",
         "source_reference": "Public Holidays Act 36 of 1994, s2(1)",
         "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf",
-        "notes": "National Women's Day fell on Sunday 09 August 2026; the Act makes the following Monday the public holiday."
+        "notes": "National Women's Day fell on Sunday 09 August 2026, so s2(1) makes this Monday a public holiday as well. The Sunday keeps its own row — the Act adds a day, it does not move one."
       },
       {
         "holiday_date": "2026-09-24",
@@ -456,12 +463,19 @@
         "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
+        "holiday_date": "2027-03-21",
+        "name": "Human Rights Day",
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf",
+        "notes": "Human Rights Day falls on Sunday 21 March 2027. Schedule 1 fixes the date, so this day is a public holiday in its own right; s2(1) ADDS the following Monday as a second one. Both are public holidays and gov.za lists both."
+      },
+      {
         "holiday_date": "2027-03-22",
         "name": "Human Rights Day",
         "shifted_from_date": "2027-03-21",
         "source_reference": "Public Holidays Act 36 of 1994, s2(1)",
         "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf",
-        "notes": "Human Rights Day fell on Sunday 21 March 2027; the Act makes the following Monday the public holiday."
+        "notes": "Human Rights Day fell on Sunday 21 March 2027, so s2(1) makes this Monday a public holiday as well. The Sunday keeps its own row — the Act adds a day, it does not move one."
       },
       {
         "holiday_date": "2027-03-26",
@@ -518,12 +532,19 @@
         "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf"
       },
       {
+        "holiday_date": "2027-12-26",
+        "name": "Day of Goodwill",
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf",
+        "notes": "Day of Goodwill falls on Sunday 26 December 2027. Schedule 1 fixes the date, so this day is a public holiday in its own right; s2(1) ADDS the following Monday as a second one. Both are public holidays and gov.za lists both."
+      },
+      {
         "holiday_date": "2027-12-27",
         "name": "Day of Goodwill",
         "shifted_from_date": "2027-12-26",
         "source_reference": "Public Holidays Act 36 of 1994, s2(1)",
         "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf",
-        "notes": "Day of Goodwill fell on Sunday 26 December 2027; the Act makes the following Monday the public holiday."
+        "notes": "Day of Goodwill fell on Sunday 26 December 2027, so s2(1) makes this Monday a public holiday as well. The Sunday keeps its own row — the Act adds a day, it does not move one."
       }
     ],
     "statutory_watch_item": [

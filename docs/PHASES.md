@@ -106,10 +106,19 @@ The most important phase in the build. Can overlap P1.
 - [x] First data load: `reference/ref-2026.03.01.json` — wage floors, SARS 2027 tax year,
       contribution parameters, public holidays 2026 and 2027, the watch calendar. 61 rows,
       each with a citation, loaded and unverified
+- [x] The public holiday calendar corrected: `reference/ref-2026.03.01-holidays.json`
+      (D-280). s2(1) ADDS the Monday when a Schedule 1 day falls on a Sunday — it does not
+      move the holiday off the Sunday — so 9 August 2026, 21 March 2027 and 26 December 2027
+      are public holidays and were not loaded. Plus 4 November 2026, the local government
+      elections, proclaimed under s2A by Proclamation Notice 346 of 2026. Guarded by
+      `checks.check_public_holiday_sundays()`, which reconciles each pair both ways
 - [ ] **Kobus verifies every figure against its source**, then `verifystatutory`. **The
       only item in P2 still needing a person.** 148 check groups over 672 figures across 18
-      source documents as at D-265; **156 groups over 688 figures after D-268** —
-      re-export before starting. Exported to `reference/verification/Labourmax_verification.xlsx`
+      source documents as at D-265; 156 groups over 688 figures after D-268; **168 groups
+      over 739 figures across 19 source documents as at D-280** — re-export before starting,
+      and **import the workbook on disk FIRST**: it holds 55 groups ticked and never
+      imported, which an export would destroy and which `exportverification` refuses to do
+      without `--force`. Exported to `reference/verification/Labourmax_verification.xlsx`
       and read back into the database as append-only evidence (D-256, D-258). A tick by a
       development identity does NOT count: it is accepted so the build can read reference
       data, reported by `checkstatutory` every run, and refused by the payroll gate on the

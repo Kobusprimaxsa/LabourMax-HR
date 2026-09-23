@@ -278,6 +278,11 @@ TABLES: dict[str, TableSpec] = {
 # fails if a new fixture is added to the directory and not to this list.
 FIXTURE_ORDER = [
     "ref-2026.03.01.json",
+    # The Sundays s2(1) adds a Monday to without taking away, plus the 4 November
+    # 2026 election proclamation (D-280). Straight after the file whose generator
+    # dropped them, so a clone never holds the incomplete calendar for longer than
+    # one load.
+    "ref-2026.03.01-holidays.json",
     "ref-2026.03.01-rules.json",
     "ref-2026.03.01-sd1.json",
     "ref-2026.03.01-notice-bands.json",

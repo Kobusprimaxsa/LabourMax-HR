@@ -2,8 +2,10 @@
 
 The public holiday rows are generated rather than typed, because the Public
 Holidays Act 36 of 1994 gives ten fixed dates plus two that move with Easter, and
-s2(1) moves any of them that falls on a Sunday to the following Monday. Typing
-twenty-four dates by hand is how a year ends up missing Family Day.
+s2(1) ADDS the following Monday whenever one of them falls on a Sunday — it
+does not move the holiday off the Sunday, which is why a Sunday holiday emits
+TWO rows (D-280). Typing twenty-eight dates by hand is how a year ends up
+missing Family Day.
 
 Everything else is transcribed from the source named in that row's
 ``source_reference``. **No figure in this file was calculated, inferred or filled
@@ -82,6 +84,28 @@ def easter_sunday(year: int) -> datetime.date:
 
 
 def public_holidays(year: int) -> list[dict]:
+    """Every public holiday in a calendar year — ONE ROW PER DAY THAT IS ONE.
+
+    **s2(1) ADDS the Monday. It does not move the holiday off the Sunday.**
+    "The days mentioned in Schedule 1 shall be public holidays, and whenever any
+    public holiday falls on a Sunday, the following Monday shall be a public
+    holiday." Schedule 1 fixes the date — 9 August is National Women's Day —
+    and nothing in s2(1) takes that away when the date lands on a Sunday. So a
+    Sunday holiday produces TWO rows, which is what gov.za's own calendar
+    lists: 9 AND 10 August 2026, 21 AND 22 March 2027, 26 AND 27 December 2027.
+
+    **This function used to emit ONE row, dated the Monday** (D-280), with
+    ``shifted_from_date`` pointing back at a Sunday that was never loaded. So
+    ``resolve.is_public_holiday()`` was False on the Sunday: an employee who
+    worked it was paid the s16 Sunday rate and not the s18 public holiday
+    rate, and a salaried employee who did not work it lost the s18(2)(a) paid
+    day. Contract cleaning works Sundays routinely, so that was a live
+    underpayment rather than a cosmetic data point.
+
+    ``shifted_from_date`` stays on the Monday. It is still true and still the
+    only thing that distinguishes a Monday the Act added from a Monday
+    Schedule 1 names in its own right (Family Day).
+    """
     easter = easter_sunday(year)
     days = [(datetime.date(year, m, d), name) for m, d, name in FIXED_HOLIDAYS]
     days.append((easter - datetime.timedelta(days=2), "Good Friday"))
@@ -91,27 +115,41 @@ def public_holidays(year: int) -> list[dict]:
     for day, name in sorted(days):
         # Good Friday is always a Friday and Family Day always a Monday, so only
         # the fixed-date holidays can ever land on a Sunday.
-        if day.weekday() == 6:
+        is_sunday = day.weekday() == 6
+        rows.append(
+            {
+                "holiday_date": str(day),
+                "name": name,
+                "source_reference": HOLIDAYS_ACT,
+                "source_url": HOLIDAYS_URL,
+                **(
+                    {
+                        "notes": (
+                            f"{name} falls on Sunday {day:%d %B %Y}. Schedule 1 fixes the "
+                            f"date, so this day is a public holiday in its own right; "
+                            f"s2(1) ADDS the following Monday as a second one. Both are "
+                            f"public holidays and gov.za lists both."
+                        )
+                    }
+                    if is_sunday
+                    else {}
+                ),
+            }
+        )
+        if is_sunday:
+            monday = day + datetime.timedelta(days=1)
             rows.append(
                 {
-                    "holiday_date": str(day + datetime.timedelta(days=1)),
+                    "holiday_date": str(monday),
                     "name": name,
                     "shifted_from_date": str(day),
                     "source_reference": HOLIDAYS_SHIFT,
                     "source_url": HOLIDAYS_URL,
                     "notes": (
-                        f"{name} fell on Sunday {day:%d %B %Y}; the Act makes the "
-                        f"following Monday the public holiday."
+                        f"{name} fell on Sunday {day:%d %B %Y}, so s2(1) makes this "
+                        f"Monday a public holiday as well. The Sunday keeps its own "
+                        f"row — the Act adds a day, it does not move one."
                     ),
-                }
-            )
-        else:
-            rows.append(
-                {
-                    "holiday_date": str(day),
-                    "name": name,
-                    "source_reference": HOLIDAYS_ACT,
-                    "source_url": HOLIDAYS_URL,
                 }
             )
     return rows
@@ -158,7 +196,11 @@ def brackets() -> list[dict]:
 DOCUMENT = {
     # -r2: the two UIF citations corrected (D-211). Same figures, so it travels
     # through --supersede (D-199) rather than as a new load.
-    "version_label": "REF-2026.03.01-r3",
+    # -r4: the three Sunday holiday NOTES corrected (D-280). The Sunday ROWS
+    # themselves are new data and arrive in ref-2026.03.01-holidays.json, which
+    # loads before this supersede does - a re-encoding may not add a row, and
+    # this one does not: every row here already exists by the time it runs.
+    "version_label": "REF-2026.03.01-r4",
     "applies_from": "2026-03-01",
     "description": (
         "First statutory reference load: the 1 March 2026 wage floors, the SARS 2027 "

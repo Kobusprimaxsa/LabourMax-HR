@@ -81,6 +81,45 @@ def rules_in_force(employee: Employee, on_date: datetime.date) -> RuleFigures:
     return _rule_figures(row)
 
 
+def _public_holiday_warning(work_date: datetime.date, day_type: str, worked: bool) -> str | None:
+    """A day captured as something other than a public holiday, on a date the
+    calendar says is one (D-280).
+
+    **A warning, not a refusal, and it does not re-bucket anything.** Since
+    s2(1) adds a Monday without taking the Sunday away, a date can be a Sunday
+    and a public holiday at once — 9 August 2026 is both — and
+    ``attendance_day.day_type`` holds exactly one value. Which of s16 and s18
+    prices such a day, or whether s18(2)(b)(ii)'s "the amount earned by the
+    employee for the work performed on that day" means the SUNDAY amount and so
+    stacks the two, is a reading of the Act that nothing in this build has
+    settled (O-40). Choosing one here would be inventing the answer.
+
+    What can be said without a reading is that s18 is not optional: a public
+    holiday captured as an ordinary or a Sunday day is priced as if the holiday
+    were not there. So this names the date and leaves the decision with a
+    person, exactly as D-157's night-hours warning does.
+    """
+    if not worked:
+        # s18(2)(a) - a holiday NOT worked is paid from the schedule, by
+        # attendance/summary.py, which reads the calendar itself rather than
+        # this row's day_type. Nothing is lost by staying quiet.
+        return None
+    if day_type == AttendanceDay.DayType.PUBLIC_HOLIDAY:
+        return None
+    holiday = resolve.public_holiday_on(work_date)
+    if holiday is None:
+        return None
+    return (
+        f"{work_date:%d %B %Y} is a public holiday ({holiday.name}) and this day was "
+        f"captured as '{day_type}'. BCEA s18(2)(b) prices a worked public holiday and "
+        f"nothing here applies it to a day captured as anything else. A date can be "
+        f"both — s2(1) adds a Monday without taking the Sunday away, so 9 August 2026 "
+        f"is a Sunday AND a public holiday — and whether s16 and s18 stack on such a "
+        f"day is unread (O-40). Capture it as a public holiday, or decide deliberately "
+        f"not to."
+    )
+
+
 def capture(
     employee: Employee,
     *,
@@ -112,9 +151,11 @@ def capture(
 
     The returned row carries a non-persisted ``capture_warnings`` attribute —
     the calculator's own warnings (D-157: a bare hours total whose night hours
-    could not honestly be computed, among others). Not a column: nothing here
-    is stored, only surfaced to whichever caller just wrote the day, so the
-    grid and the importer report the same thing from the same call.
+    could not honestly be computed, among others), plus this module's own
+    (D-280: a worked day on a public holiday captured as something else). Not a
+    column: nothing here is stored, only surfaced to whichever caller just
+    wrote the day, so the grid and the importer report the same thing from the
+    same call.
     """
     with transaction.atomic(), tenant_context_of(employee):
         existing = AttendanceDay.objects.filter(employee=employee, work_date=work_date).first()
@@ -149,6 +190,21 @@ def capture(
             leave_day_portion=leave_day_portion,
         )
         result = bucket_day(day_input, rules)
+        warnings = list(result.warnings)
+        holiday_warning = _public_holiday_warning(
+            work_date,
+            day_type,
+            worked=(
+                result.ordinary_hours
+                + result.overtime_hours
+                + result.sunday_hours
+                + result.public_holiday_hours
+                + result.standby_hours_worked
+            )
+            > 0,
+        )
+        if holiday_warning is not None:
+            warnings.append(holiday_warning)
 
         fields = {
             "tenant": employee.tenant,
@@ -179,11 +235,11 @@ def capture(
                 setattr(existing, key, value)
             existing.full_clean()
             existing.save()
-            existing.capture_warnings = result.warnings
+            existing.capture_warnings = tuple(warnings)
             return existing
 
         day = AttendanceDay(**fields)
         day.full_clean()
         day.save()
-        day.capture_warnings = result.warnings
+        day.capture_warnings = tuple(warnings)
         return day

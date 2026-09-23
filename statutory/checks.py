@@ -34,6 +34,7 @@ from statutory.models import (
     Bank,
     MinimumWageRate,
     PayeRebate,
+    PublicHoliday,
     ReferenceDataVersion,
     SarsSourceCode,
     StatutoryParameter,
@@ -316,6 +317,81 @@ def check_night_allowance_coherence() -> list[Issue]:
                     f"names no figure, and a night_allowance_value of {value}. One of "
                     f"the two is wrong, and the value is the one a calculator will use. "
                     f"A type that states no figure carries NULL, never a zero (O-22).",
+                )
+            )
+    return issues
+
+
+def check_public_holiday_sundays() -> list[Issue]:
+    """s2(1) ADDS the following Monday. Both days must be loaded, or neither is
+    what the Act says it is (D-280).
+
+    "The days mentioned in Schedule 1 shall be public holidays, and whenever any
+    public holiday falls on a Sunday, the following Monday shall be a public
+    holiday." The fixture generator read that as a MOVE and emitted one row,
+    dated the Monday, with ``shifted_from_date`` pointing back at a Sunday it
+    never loaded — so three Sundays in the shipped corpus were ordinary days to
+    everything that reads this calendar, and an employee who worked one was paid
+    the s16 Sunday rate instead of the s18 public holiday rate.
+
+    Nothing caught it, because there was nothing to catch it WITH. Both halves
+    of the pair are checked here, in both directions: a loaded Sunday must have
+    its Monday, and a Monday claiming to have been added by s2(1) must have the
+    Sunday that added it. Blocking, because the failure is an underpayment on a
+    named date rather than a figure that reads oddly.
+    """
+    holidays = list(PublicHoliday.objects.order_by("country_code", "holiday_date"))
+    if not holidays:
+        # Emptiness is check_something_is_loaded's concern, not this one's -
+        # run_all gates verification of ONE version and the calendar may not be
+        # the version being verified.
+        return []
+
+    dates = {(row.country_code, row.holiday_date) for row in holidays}
+    issues = []
+    for row in holidays:
+        where = f"public_holiday {row.holiday_date} {row.name}"
+        if row.holiday_date.weekday() == 6:
+            monday = row.holiday_date + datetime.timedelta(days=1)
+            if (row.country_code, monday) not in dates:
+                issues.append(
+                    Issue(
+                        True,
+                        where,
+                        f"falls on a Sunday and {monday} is not loaded. s2(1) makes the "
+                        f"following Monday a public holiday AS WELL - it does not move "
+                        f"the holiday off the Sunday, so both days are rows.",
+                    )
+                )
+        if row.shifted_from_date is None:
+            continue
+        if (row.country_code, row.shifted_from_date) not in dates:
+            issues.append(
+                Issue(
+                    True,
+                    where,
+                    f"says s2(1) added it because the holiday fell on "
+                    f"{row.shifted_from_date}, but that Sunday is not loaded. The Act "
+                    f"adds a day; it does not take one away.",
+                )
+            )
+        if row.shifted_from_date.weekday() != 6:
+            issues.append(
+                Issue(
+                    True,
+                    where,
+                    f"carries shifted_from_date {row.shifted_from_date}, which is a "
+                    f"{row.shifted_from_date:%A}. s2(1) only ever adds a Monday to a "
+                    f"Sunday.",
+                )
+            )
+        elif row.holiday_date != row.shifted_from_date + datetime.timedelta(days=1):
+            issues.append(
+                Issue(
+                    True,
+                    where,
+                    f"is not the day after {row.shifted_from_date}. s2(1) names the "
+                    f"FOLLOWING Monday, not the next free one.",
                 )
             )
     return issues
@@ -936,6 +1012,7 @@ def run_all(year: TaxYear | None = None) -> list[Issue]:
     issues.extend(check_source_codes())
     issues.extend(check_banks())
     issues.extend(check_night_allowance_coherence())
+    issues.extend(check_public_holiday_sundays())
     issues.extend(check_notice_bands())
     issues.extend(check_citations())
     issues.extend(check_citation_spellings())

@@ -67,6 +67,22 @@ def _period_days(employee: Employee, pay_period: PayPeriod):
     )
 
 
+def _hours_actually_worked(day: AttendanceDay) -> Decimal:
+    """Hours this employee was at work for, whichever buckets they landed in.
+
+    Deliberately NOT ``days_worked_equivalent``, which is 1.000 for a leave day
+    and for a paid absence — neither of which is a day anybody worked. Standby
+    is included: a standby occasion is time the employee gave the employer.
+    """
+    return (
+        day.ordinary_hours
+        + day.overtime_hours
+        + day.sunday_hours
+        + day.public_holiday_hours
+        + day.standby_hours_worked
+    )
+
+
 def _count_public_holidays_not_worked(
     employee: Employee, pay_period: PayPeriod, days: list[AttendanceDay]
 ) -> Decimal:
@@ -75,11 +91,15 @@ def _count_public_holidays_not_worked(
     the BCEA earnings threshold loses s18(3) but KEEPS this entitlement, so it
     is never gated on earnings, only on the schedule.
     """
-    worked_dates = {
-        day.work_date
-        for day in days
-        if day.day_type == AttendanceDay.DayType.PUBLIC_HOLIDAY and day.public_holiday_hours > 0
-    }
+    # WORKED, whatever day_type the capture carries (D-280). This used to read
+    # day_type == PUBLIC_HOLIDAY, which was safe only while a public holiday
+    # could never also be something else. Since s2(1) adds a Monday without
+    # taking the Sunday away, 9 August 2026 is BOTH a Sunday and a public
+    # holiday, and a contract cleaner who works it is naturally captured as
+    # SUNDAY. Counting that date as "not worked" would pay the s18(2)(a)
+    # unworked-holiday day on top of the Sunday premium, for a day the employee
+    # was at work.
+    worked_dates = {day.work_date for day in days if _hours_actually_worked(day) > 0}
 
     count = 0
     for holiday in resolve.public_holidays_between(pay_period.period_start, pay_period.period_end):

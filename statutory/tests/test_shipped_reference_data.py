@@ -24,15 +24,22 @@ from statutory import checks, resolve
 from statutory.loader import load_reference_data
 from statutory.models import MinimumWageRate, PublicHoliday, Sector
 
-FIXTURE = pathlib.Path(__file__).resolve().parents[2] / "reference" / "ref-2026.03.01.json"
+REFERENCE = pathlib.Path(__file__).resolve().parents[2] / "reference"
+FIXTURE = REFERENCE / "ref-2026.03.01.json"
+#: The calendar correction that travels with it (D-280): the three Sundays
+#: s2(1) adds a Monday to without taking away, and the 4 November 2026 election
+#: proclamation. Loaded here because ``loaded`` is what the reconciliation test
+#: runs over, and the two files are one public holiday calendar between them.
+HOLIDAYS_FIXTURE = REFERENCE / "ref-2026.03.01-holidays.json"
 
 MARCH_2026 = datetime.date(2026, 3, 1)
 
 
 @pytest.fixture
 def loaded(db):
-    document = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    return load_reference_data(document)
+    report = load_reference_data(json.loads(FIXTURE.read_text(encoding="utf-8")))
+    load_reference_data(json.loads(HOLIDAYS_FIXTURE.read_text(encoding="utf-8")))
+    return report
 
 
 @pytest.mark.statutory
@@ -167,21 +174,95 @@ def test_the_uif_ceiling_and_rates_resolve(loaded):
 
 
 @pytest.mark.statutory
-def test_the_2026_womens_day_shift_is_stored_as_the_monday(loaded):
-    """9 August 2026 is a Sunday, so the holiday is the 10th — stored, not computed."""
-    monday = PublicHoliday.objects.get(holiday_date=datetime.date(2026, 8, 10))
-    assert monday.shifted_from_date == datetime.date(2026, 8, 9)
-    assert resolve.is_public_holiday(datetime.date(2026, 8, 9)) is False
-    assert resolve.is_public_holiday(datetime.date(2026, 8, 10)) is True
+def test_9_august_2026_is_a_public_holiday(loaded):
+    """THE REGRESSION, named by its date (D-280).
+
+    9 August 2026 is a Sunday, and the fixture generator read s2(1) as MOVING
+    National Women's Day to the 10th. It adds the Monday; it does not move the
+    holiday off the Sunday. For as long as only the Monday was loaded, a
+    contract cleaner who worked this Sunday was paid the s16 Sunday rate and
+    not the s18 public holiday rate, and a salaried employee who did not work
+    it lost the s18(2)(a) paid day.
+    """
+    assert resolve.is_public_holiday(datetime.date(2026, 8, 9)) is True
+
+
+@pytest.mark.statutory
+@pytest.mark.parametrize(
+    ("sunday", "monday"),
+    [
+        (datetime.date(2026, 8, 9), datetime.date(2026, 8, 10)),
+        (datetime.date(2027, 3, 21), datetime.date(2027, 3, 22)),
+        (datetime.date(2027, 12, 26), datetime.date(2027, 12, 27)),
+    ],
+)
+def test_s2_1_adds_the_monday_and_keeps_the_sunday(loaded, sunday, monday):
+    """Both days, every pair in the corpus. gov.za lists both."""
+    assert resolve.is_public_holiday(sunday) is True, f"{sunday} is a Schedule 1 date."
+    assert resolve.is_public_holiday(monday) is True, f"{monday} is the day s2(1) adds."
+
+    added = PublicHoliday.objects.get(holiday_date=monday)
+    assert added.shifted_from_date == sunday
+    assert PublicHoliday.objects.get(holiday_date=sunday).shifted_from_date is None
+
+
+@pytest.mark.statutory
+def test_the_4_november_2026_election_day_is_loaded(loaded):
+    """Proclamation Notice 346 of 2026, s2A. The first ``is_statutory=False``
+    row in the corpus — and a public holiday for every BCEA purpose all the
+    same, which is why the resolver answers True without consulting the flag.
+    """
+    election = PublicHoliday.objects.get(holiday_date=datetime.date(2026, 11, 4))
+    assert election.is_statutory is False
+    assert election.shifted_from_date is None
+    assert "s2A" in election.source_reference
+    assert "346 of 2026" in election.source_reference
+    assert resolve.is_public_holiday(datetime.date(2026, 11, 4)) is True
 
 
 @pytest.mark.statutory
 def test_both_calendar_years_are_loaded_in_full(loaded):
-    for year in (2026, 2027):
-        count = PublicHoliday.objects.filter(
-            holiday_date__year=year,
-        ).count()
-        assert count == 12, f"{year} has {count} public holidays loaded, expected 12."
+    """13 and 14, not 12 and 12. A Sunday holiday is two days, and 2026 also
+    carries the proclaimed election day."""
+    counts = {
+        year: PublicHoliday.objects.filter(holiday_date__year=year).count() for year in (2026, 2027)
+    }
+    assert counts == {2026: 14, 2027: 14}, counts
+
+
+@pytest.mark.statutory
+def test_the_loaded_calendar_matches_what_the_generator_emits(loaded):
+    """The fix and the data cannot drift.
+
+    ``tools/build_holiday_fixture.py`` derives its rows by subtracting the base
+    fixture from ``public_holidays()``, so a generator that regressed to one row
+    per Sunday would quietly stop producing the correction. This asserts the
+    other direction: every date the corrected generator emits is loaded.
+    """
+    import sys
+
+    sys.path.insert(0, str(REFERENCE.parent / "tools"))
+    from build_reference_fixture import public_holidays
+
+    expected = {
+        datetime.date.fromisoformat(row["holiday_date"])
+        for year in (2026, 2027)
+        for row in public_holidays(year)
+    }
+    loaded_dates = set(PublicHoliday.objects.values_list("holiday_date", flat=True))
+    assert not expected - loaded_dates, sorted(expected - loaded_dates)
+
+
+@pytest.mark.statutory
+def test_the_shipped_calendar_pairs_every_sunday_with_its_monday(loaded):
+    """The standing check, over the real corpus.
+
+    ``statutory/tests/test_public_holiday_sundays.py`` watches this guard refuse
+    every shape it exists for, the shipped defect included; this is the other
+    half — it passing over the data that actually ships. Until D-280 it did not,
+    for three dates.
+    """
+    assert checks.check_public_holiday_sundays() == []
 
 
 @pytest.mark.statutory

@@ -1,0 +1,38 @@
+{
+  "version_label": "REF-2026.03.01-HOLIDAYS",
+  "applies_from": "2026-03-01",
+  "description": "Public holidays the 1 March 2026 corpus is missing. THREE SUNDAYS: s2(1) ADDS the following Monday, it does not move the holiday off the Sunday, and the generator read it as a move (D-280). ONE PROCLAIMED DAY: 4 November 2026, s2A, the local government elections. Researched 24 September 2026. NOT verified.",
+  "tables": {
+    "public_holiday": [
+      {
+        "holiday_date": "2026-08-09",
+        "name": "National Women's Day",
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf",
+        "notes": "National Women's Day falls on Sunday 09 August 2026. Schedule 1 fixes the date, so this day is a public holiday in its own right; s2(1) ADDS the following Monday as a second one. Both are public holidays and gov.za lists both."
+      },
+      {
+        "holiday_date": "2027-03-21",
+        "name": "Human Rights Day",
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf",
+        "notes": "Human Rights Day falls on Sunday 21 March 2027. Schedule 1 fixes the date, so this day is a public holiday in its own right; s2(1) ADDS the following Monday as a second one. Both are public holidays and gov.za lists both."
+      },
+      {
+        "holiday_date": "2027-12-26",
+        "name": "Day of Goodwill",
+        "source_reference": "Public Holidays Act 36 of 1994, Schedule 1",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/201409/act36of1994.pdf",
+        "notes": "Day of Goodwill falls on Sunday 26 December 2027. Schedule 1 fixes the date, so this day is a public holiday in its own right; s2(1) ADDS the following Monday as a second one. Both are public holidays and gov.za lists both."
+      },
+      {
+        "holiday_date": "2026-11-04",
+        "name": "Local government elections",
+        "is_statutory": false,
+        "source_reference": "Proclamation Notice 346 of 2026, GG 55352, 8 September 2026 (Public Holidays Act 36 of 1994, s2A)",
+        "source_url": "https://www.gov.za/sites/default/files/gcis_document/202609/55352-rg12046pr346.pdf",
+        "notes": "Read off the gazette page (rendered from the scan; the PDF carries no text layer). PROCLAMATION NOTICE 346 OF 2026, By the President of the Republic of South Africa: \"DECLARATION OF THE FOURTH DAY OF NOVEMBER 2026 AS A PUBLIC HOLIDAY THROUGHOUT THE REPUBLIC. In terms of Section 2A of the Public Holidays Act, 1994 (Act No. 36 of 1994), I hereby declare the Fourth day of November 2026 as a public holiday throughout the Republic in connection with the holding of local government elections.\" Signed at Johannesburg on the 4th day of September 2026 by the President, by order of the President-in-Cabinet. is_statutory is FALSE because this is a s2A proclamation rather than a Schedule 1 day — it is a public holiday for every BCEA purpose all the same, and nothing in this build reads the flag to decide holiday treatment."
+      }
+    ]
+  }
+}
