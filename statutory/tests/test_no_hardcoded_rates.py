@@ -59,6 +59,16 @@ EXCLUDED_DIRECTORIES = {"migrations", "tests", "__pycache__", ".venv"}
 # the rule by exception.
 DJANGO_SCAFFOLDING = {"apps.py", "admin.py", "models.py", "__init__.py"}
 
+# Files excluded BY NAME, each with its reason. Kept to files whose every figure
+# is invented on purpose, so the permitted list above never has to grow to hold a
+# number like 40 or 8 that could pass for an hours limit anywhere else.
+#
+# seeddemo.py writes FAKE demo tenants, refuses outright unless DEBUG is on, and
+# puts every rate it invents through the real minimum-wage check. Its R6 500 and
+# R35 are made-up pay, and its 5 days / 40 hours / 8 hours are one invented
+# schedule. None of them is read by payroll as a rule.
+EXCLUDED_FILES = {"core/management/commands/seeddemo.py"}
+
 # The only decimal constants that are not statutory figures.
 #
 # "0.01" is the rounding quantum from invariant 6 — rounding to two places happens at
@@ -124,6 +134,8 @@ def application_sources() -> list[pathlib.Path]:
     for package in APPLICATION_PACKAGES:
         for path in (REPO_ROOT / package).rglob("*.py"):
             if EXCLUDED_DIRECTORIES & set(path.parts):
+                continue
+            if relative(path) in EXCLUDED_FILES:
                 continue
             found.append(path)
     return sorted(found)
@@ -246,3 +258,28 @@ def test_calculators_never_read_the_clock():
     assert not offences, "calculators/ must be handed every date it uses:\n  " + "\n  ".join(
         offences
     )
+
+
+def test_a_file_excluded_by_name_still_exists():
+    """An exclusion for a file that has moved or been renamed silently exempts
+    nothing — and the next file to take its name is exempted without anyone
+    deciding it should be."""
+    for name in EXCLUDED_FILES:
+        assert (REPO_ROOT / name).exists(), f"{name} is excluded by name and no longer exists"
+
+
+def test_the_named_exclusion_is_the_only_thing_hiding_seeddemos_figures():
+    """PROVE EVERY GUARD FAILS: without its exclusion, seeddemo's invented
+    figures are exactly what the scan reports."""
+    path = REPO_ROOT / "core/management/commands/seeddemo.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    literals = {
+        str(node.args[0].value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and getattr(node.func, "id", getattr(node.func, "attr", None)) == "Decimal"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+    }
+    assert literals - PERMITTED_DECIMAL_CONSTANTS >= {"6500.00", "40", "8"}
+    assert path not in application_sources()
