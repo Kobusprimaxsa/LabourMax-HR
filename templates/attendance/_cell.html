@@ -1,0 +1,17 @@
+{# One grid cell. Re-rendered on its own after every save, so a refusal lands on the cell it is about. #}
+<td class="cell{% if day %} t-{{ day.day_type }}{% if day.is_standby %} t-standby{% endif %} s-{{ day.status }}{% else %} empty{% endif %}{% if error %} failed{% endif %}{% if saved %} saved{% endif %}"
+    data-date="{{ work_date|date:'Y-m-d' }}">
+  <input type="text" name="value" value="{{ value }}" placeholder="{{ placeholder }}"
+         autocomplete="off" spellcheck="false" maxlength="8"
+         aria-label="{{ employee.first_name }} {{ employee.last_name }}, {{ work_date|date:'l j F' }}{% if day %}, {{ day.get_day_type_display }}{% if day.status != 'captured' %}, {{ day.get_status_display }}{% endif %}{% endif %}{% if error %}, not saved: {{ error }}{% endif %}"
+         {% if error %}aria-invalid="true"{% endif %}
+         {% if not editable or not can_write %}readonly{% else %}hx-post="{{ post_url }}" hx-trigger="change" hx-target="closest td" hx-swap="outerHTML"{% endif %}>
+  {% if day and day.status == 'approved' %}<span class="mark" title="Approved" aria-hidden="true">✓</span>{% endif %}
+  {% if day and day.status == 'locked' %}<span class="mark" title="Locked by a finalised payroll run" aria-hidden="true">■</span>{% endif %}
+  {% if error %}
+    <span class="err" role="alert">{{ error }}</span>
+    {% if 'was approved' in error and can_write %}
+      <button type="button" class="replace" hx-post="{{ post_url }}" hx-vals='{"replace": "approved", "value": "{{ value|escapejs }}"}' hx-target="closest td" hx-swap="outerHTML">Replace and withdraw approval</button>
+    {% endif %}
+  {% endif %}
+</td>

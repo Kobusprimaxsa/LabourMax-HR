@@ -87,6 +87,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "core.context_processors.shell",
             ],
         },
     },
@@ -129,6 +130,35 @@ USE_TZ = True  # everything stored UTC, rendered SAST
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+# Our own CSS and JS, and HTMX vendored at a pinned version (static/vendor/) -
+# never loaded from a CDN, so a screen cannot change because somebody else's
+# server did.
+STATICFILES_DIRS = [BASE_DIR / "static"]
+
+# ---------------------------------------------------------------- sessions
+# D-296. HttpOnly: no script reads the session cookie, ours included. SameSite
+# Lax: the cookie is not sent on a cross-site POST, so a forged form on another
+# site cannot act as the employer - CSRF is the second lock on the same door.
+# The CSRF cookie is HttpOnly too: HTMX sends the token as a header taken from
+# the page, not from the cookie. Secure is set in prod.py (dev runs on http).
+# Eight hours and ends with the browser: a payroll screen on a shared household
+# computer should not still be signed in tomorrow.
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_AGE = 8 * 60 * 60
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = "Lax"
+
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "home"
+LOGOUT_REDIRECT_URL = "login"
+
+# Failed sign-ins before an account is locked, and for how long. Security
+# policy, not a statutory figure: AppUser.failed_login_count and locked_until
+# have existed since P0 and nothing set them.
+LOGIN_FAILURE_LIMIT = 5
+LOGIN_LOCKOUT_MINUTES = 15
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 

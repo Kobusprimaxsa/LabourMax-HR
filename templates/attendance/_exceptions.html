@@ -1,0 +1,12 @@
+<h2>Exceptions</h2>
+<p class="{% if blocking %}bad{% else %}ok{% endif %}"><strong>{{ blocking|length }}</strong> blocking · {{ warnings|length }} warning{{ warnings|length|pluralize }}</p>
+{% if blocking %}
+<ul class="blocking">
+  {% for b in blocking %}<li><strong>{{ b.name }}</strong>, {{ b.exception.work_date|date:"j M" }} — {{ b.exception.message }}</li>{% endfor %}
+</ul>
+{% endif %}
+{% if warnings %}
+<details><summary>Warnings — shown, not blocking</summary>
+<ul>{% for w in warnings %}<li><strong>{{ w.name }}</strong>, {{ w.exception.work_date|date:"j M" }} — {{ w.exception.message }}</li>{% endfor %}</ul>
+</details>
+{% endif %}

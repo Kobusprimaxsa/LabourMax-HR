@@ -1132,6 +1132,22 @@ is built, tested and RLS-isolated, including the one the workbook didn't carry
 own success criterion are demonstrable only once P5's screens and P7's gate exist — this
 is a prerequisite completed, not the outcome itself.
 
+**P5 — the first view layer and the capture grid** (24 September 2026, D-295 to D-300).
+Django templates + HTMX 2.0.11 (vendored in `static/vendor/`, never a CDN). **Every employer
+screen is `core/web.py::employer_view`**, and `core/tests/test_view_isolation.py` enumerates
+every URL and FAILS one that is unmarked or has no line in its `CASES` table — a new screen
+costs one line there, and gets anonymous, other-tenant (404, never 403), read-only and
+self-service refusals for free. **The middleware pins the tenant INSIDE a transaction it
+opens around the view** (D-295): before, `ATOMIC_REQUESTS` wrapped only the view, the pin
+expired first, and every tenant table read as EMPTY in a real request — no test could see it,
+because pytest wraps each one in a transaction. Test anything request-shaped that touches RLS
+with `transaction=True`. **The session's tenant is re-checked against a live membership on
+every request.** Sign-in writes `login_audit` for every attempt and is two steps so an OTP
+fits between them. **`capture()` refuses an approved day unless told** (D-297). The grid's
+cell grammar is `attendance/cellcodes.py` (D-299); its speed is `attendance/scheduling.py::
+ScheduleBook` (D-300). **The ten-minute "Done when" is NOT ticked — it needs one timed run by
+Kobus**; the measured numbers are in docs/PHASES.md.
+
 **Still open in P5:** the screens themselves (the capture grid, the exception panel) and
 `timesheet_summary`'s own display — UI work this codebase has not started. Consecutive
 sick days needing a leave application are P6 and are not stubbed.

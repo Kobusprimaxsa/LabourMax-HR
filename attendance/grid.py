@@ -65,6 +65,10 @@ class GridCell:
 class EmployeeGridRow:
     employee: Employee
     cells: tuple[GridCell, ...]
+    #: This employee's own exceptions. ``AttendanceException`` carries a date and
+    #: no employee, so the merged ``MonthGrid.exceptions`` cannot say WHOSE a
+    #: blocking exception is — which the screen must (D-299).
+    exceptions: tuple[AttendanceException, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -84,13 +88,27 @@ def _month_bounds(month: datetime.date) -> tuple[datetime.date, datetime.date]:
     return start, end
 
 
-def _prefill_for(employee: Employee, work_date: datetime.date) -> PrefillProposal | None:
-    schedule = scheduling.current_schedule(employee, work_date)
-    schedule_day = scheduling.schedule_day_for(schedule, work_date)
+def _prefill_for(
+    employee: Employee,
+    work_date: datetime.date,
+    *,
+    book: scheduling.ScheduleBook | None = None,
+    holidays: set[datetime.date] | None = None,
+) -> PrefillProposal | None:
+    """``book`` and ``holidays`` let a whole month be answered from memory
+    (D-300); one cell on its own reads them fresh."""
+    if book is not None:
+        schedule_day = book.day(work_date)
+    else:
+        schedule = scheduling.current_schedule(employee, work_date)
+        schedule_day = scheduling.schedule_day_for(schedule, work_date)
     if schedule_day is None or not schedule_day.is_working_day:
         return None
 
-    if resolve.is_public_holiday(work_date):
+    is_holiday = (
+        work_date in holidays if holidays is not None else resolve.is_public_holiday(work_date)
+    )
+    if is_holiday:
         # Presumed not worked until the employer says otherwise (BCEA s18(1)):
         # paid, no times captured.
         return PrefillProposal(
@@ -108,13 +126,18 @@ def _prefill_for(employee: Employee, work_date: datetime.date) -> PrefillProposa
     )
 
 
-def _span_day_from_model(day: AttendanceDay) -> SpanDay:
+def _span_day_from_model(
+    day: AttendanceDay, book: scheduling.ScheduleBook | None = None
+) -> SpanDay:
     """Reconstruct a calculator SpanDay from an already-bucketed, stored row —
     the exception evaluator is given what was computed, not asked to
     recompute it.
     """
-    schedule = scheduling.current_schedule(day.employee, day.work_date)
-    schedule_day = scheduling.schedule_day_for(schedule, day.work_date)
+    if book is not None:
+        schedule, schedule_day = book.schedule(day.work_date), book.day(day.work_date)
+    else:
+        schedule = scheduling.current_schedule(day.employee, day.work_date)
+        schedule_day = scheduling.schedule_day_for(schedule, day.work_date)
 
     day_input = AttendanceDayInput(
         work_date=day.work_date,
@@ -141,22 +164,31 @@ def _span_day_from_model(day: AttendanceDay) -> SpanDay:
 
 
 def employee_exceptions(
-    employee: Employee, days: list[AttendanceDay]
+    employee: Employee, days: list[AttendanceDay], *, book: scheduling.ScheduleBook | None = None
 ) -> tuple[AttendanceException, ...]:
     """The live exceptions for one employee's days, from chunk 1's evaluator.
     Shared with ``attendance/approval.py`` — one place derives these, ever.
     """
     if not days:
         return ()
-    spans = tuple(_span_day_from_model(day) for day in sorted(days, key=lambda d: d.work_date))
+    book = book or scheduling.ScheduleBook(employee)
+    spans = tuple(
+        _span_day_from_model(day, book) for day in sorted(days, key=lambda d: d.work_date)
+    )
     # Rule sets rarely change mid-month; resolved once, against the span's
     # last date, which is the one most likely to still be current.
     rules = rules_in_force(employee, spans[-1].input.work_date)
     return evaluate_exceptions(spans, rules)
 
 
-def month_grid(employees: list[Employee], month: datetime.date) -> MonthGrid:
+def month_grid(employees: list[Employee], month: datetime.date, *, pay_group=None) -> MonthGrid:
     """The rows and days the grid renders for ``month`` (any date within it).
+
+    ``pay_group`` is the group the screen is showing, and decides whether a row
+    is pre-filled (salaried) or opens blank (attendance-driven). Without it the
+    employee's ``current_pay_group`` is used — a cache refreshed as at TODAY
+    (D-107), so wrong for a past month and empty for an employee whose cache
+    was never refreshed. D-298: the screen always knows the group, and passes it.
 
     Each cell carries either the captured day, or — for a salaried base only,
     and only where nothing is captured yet — a pre-fill proposal. Nothing is
@@ -164,12 +196,16 @@ def month_grid(employees: list[Employee], month: datetime.date) -> MonthGrid:
     """
     start, end = _month_bounds(month)
     dates = list(scheduling.iter_dates(start, end))
+    holidays = set(
+        resolve.public_holidays_between(start, end).values_list("holiday_date", flat=True)
+    )
 
     rows: list[EmployeeGridRow] = []
     all_exceptions: list[AttendanceException] = []
 
     for employee in employees:
         with tenant_context_of(employee):
+            book = scheduling.ScheduleBook(employee)
             existing = {
                 day.work_date: day
                 for day in AttendanceDay.objects.filter(
@@ -177,19 +213,20 @@ def month_grid(employees: list[Employee], month: datetime.date) -> MonthGrid:
                 )
             }
 
-            pay_group = employee.current_pay_group
-            salaried = pay_group is not None and not pay_group.is_attendance_driven
+            group = pay_group if pay_group is not None else employee.current_pay_group
+            salaried = group is not None and not group.is_attendance_driven
 
             cells = []
             for work_date in dates:
                 captured = existing.get(work_date)
                 prefill = None
                 if captured is None and salaried:
-                    prefill = _prefill_for(employee, work_date)
+                    prefill = _prefill_for(employee, work_date, book=book, holidays=holidays)
                 cells.append(GridCell(work_date=work_date, day=captured, prefill=prefill))
 
-            rows.append(EmployeeGridRow(employee=employee, cells=tuple(cells)))
-            all_exceptions.extend(employee_exceptions(employee, list(existing.values())))
+            own = employee_exceptions(employee, list(existing.values()), book=book)
+            rows.append(EmployeeGridRow(employee=employee, cells=tuple(cells), exceptions=own))
+            all_exceptions.extend(own)
 
     return MonthGrid(rows=tuple(rows), exceptions=tuple(all_exceptions))
 

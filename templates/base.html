@@ -1,0 +1,32 @@
+{% load static %}<!doctype html>
+<html lang="en-ZA">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}LabourMax-HR{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  {# HTMX 2.0.11, vendored and pinned (never a CDN). The CSRF token rides in a header. #}
+  <script src="{% static 'vendor/htmx-2.0.11.min.js' %}" defer></script>
+</head>
+<body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+  <a class="skip" href="#content">Skip to content</a>
+  <header class="top">
+    <span class="brand">LabourMax-HR</span>
+    {% if tenant_name %}<span class="account" aria-label="Employer account">{{ tenant_name }}</span>{% endif %}
+    {% if user.is_authenticated %}
+      <span class="who">{{ user.email }}{% if membership_role %} · {{ membership_role }}{% endif %}</span>
+      <a href="{% url 'change_password' %}">Password</a>
+      <form method="post" action="{% url 'logout' %}" class="inline">{% csrf_token %}<button type="submit">Sign out</button></form>
+    {% endif %}
+  </header>
+  {% if tenant_name %}
+  <nav class="nav" aria-label="Main">
+    <a href="{% url 'home' %}">Home</a>
+  </nav>
+  {% endif %}
+  <div class="messages" role="status" aria-live="polite">
+    {% for message in messages %}<p class="msg {{ message.tags }}">{{ message }}</p>{% endfor %}
+  </div>
+  <main id="content">{% block content %}{% endblock %}</main>
+</body>
+</html>

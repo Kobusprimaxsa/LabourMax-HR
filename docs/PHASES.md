@@ -333,17 +333,38 @@ as a unit. **All three passed on 14 September 2026 — P4 COMPLETE**, 824 tests 
 - [x] `attendance/completeness.py::missing_attendance_days` — the P7 hook (chunk 2).
       Attendance-driven bases only; a salaried employee with no row is assumed to have
       worked the day, not flagged missing. P7's gate will call this and is not built here
+- [x] **The first view layer** (24 Sep 2026, D-295, D-296). Django templates and HTMX
+      2.0.11, vendored. Sign-in writes `login_audit` for every attempt; every employer screen
+      goes through `core/web.py::employer_view`; `core/tests/test_view_isolation.py` enumerates
+      every URL and refuses one that is unprotected or has no cross-tenant case. Building it
+      found that the middleware's tenant pin EXPIRED before the view ran (D-295) — every tenant
+      table read as empty in a real request — and that a session naming a tenant the user had
+      left was still honoured
+- [x] **The monthly capture grid** (D-297 to D-300): one employer, one pay group, one month;
+      sticky headers; a letter as well as a colour for every day type; arrow keys, Enter and
+      Tab, nothing needing the mouse; each cell saves itself and a refusal lands on that cell;
+      the exception panel live and naming whose; bulk fill of empty days through `bulk_fill()`;
+      approval through `approve()`. Three defects in the existing services, each fixed with its
+      failing test first
 
 **Done when:** a month for twenty employees is captured in under ten minutes, and an
 uncaptured attendance-driven day blocks the payroll run.
 
-**Not yet demonstrated, and not ticked as met.** Every table and service the phase specified
-is built and tested (chunk 3 closes the build), but both halves of this criterion need
-things that do not exist yet: the ten-minute claim needs the capture screen (no views, no
-templates, anywhere in this phase), and the payroll-blocking claim needs P7's validation
-gate calling `attendance/completeness.py::missing_attendance_days()` — the function is
-correct and ready, but nothing calls it because there is no payroll run yet. This is a
-completed prerequisite, not the outcome the "Done when" clause actually asks for.
+**The second half PASSES** (P7 chunk 7): `payroll/validation.py` calls
+`attendance.completeness.missing_attendance_days()`, and an uncaptured attendance-driven
+day blocks approval — `payroll/tests/test_validation.py::test_the_attendance_completeness_hook_is_wired_up`.
+
+**The first half is NOT ticked, and must not be ticked by a machine.** What is proven
+(D-300, `attendance/tests/test_capture_measurement.py`): for twenty employees on an hourly
+group over June 2026, a complete capture is **1 040 keystrokes** — 440 worked days typed as
+two keys each (`9`, Enter) and 160 weekend cells passed with one — and **440 saves, one round
+trip per cell**, measured through the real views at **49 ms average and 86 ms slowest**
+server time, with the exceptions panel redrawing a full month in **0.28 s** and the whole
+grid reloading in **0.46 s**. A salaried group is fewer: fill the month from the schedule in
+one action, then correct the exceptions — about **252 keystrokes** at two corrections per
+employee. What is NOT proven is how fast a person reads a timesheet, types, and notices a
+mistake: a keystroke count is not a human trial. **The mechanism supports the ten-minute
+target. Kobus must do one timed run of a real twenty-employee month to tick it.**
 
 ---
 

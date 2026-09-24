@@ -51,3 +51,43 @@ def iter_dates(start: datetime.date, end: datetime.date):
     while current <= end:
         yield current
         current += one_day
+
+
+class ScheduleBook:
+    """One employee's schedules and schedule days, read ONCE, answered per date
+    in memory — the same answers ``current_schedule()`` and
+    ``schedule_day_for()`` give, without two queries per date.
+
+    A month's grid asks for every day of every employee; answered one query at
+    a time that was 1 320 queries for twenty employees, and the exceptions
+    panel took 2.7 seconds to redraw after each save (D-300's measurement).
+    Call with the employee's tenant pinned.
+    """
+
+    def __init__(self, employee: Employee):
+        self.schedules = list(
+            WorkSchedule.objects.filter(employee=employee)
+            .prefetch_related("days")
+            .order_by("-effective_from")
+        )
+        self.days = {
+            schedule.pk: {day.cycle_day: day for day in schedule.days.all()}
+            for schedule in self.schedules
+        }
+
+    def schedule(self, on_date: datetime.date) -> WorkSchedule | None:
+        return next(
+            (
+                s
+                for s in self.schedules
+                if s.effective_from <= on_date
+                and (s.effective_to is None or s.effective_to > on_date)
+            ),
+            None,
+        )
+
+    def day(self, on_date: datetime.date) -> WorkScheduleDay | None:
+        schedule = self.schedule(on_date)
+        if schedule is None:
+            return None
+        return self.days[schedule.pk].get(cycle_day_for(schedule, on_date))

@@ -1,0 +1,70 @@
+/* LabourMax-HR - the whole stylesheet. Small on purpose: one person can read it.
+   Colours take their cue from the prototype sketch; nothing else is borrowed. */
+:root {
+  --ground: #f4f6f7; --surface: #fff; --line: #d5dde1; --ink: #16222b; --ink-2: #4a5d68;
+  --accent: #0e6b5a; --warn: #8a5a00; --warn-soft: #fbf0dc; --bad: #a02a24; --bad-soft: #fae7e5;
+  --ok-soft: #e2f0ec; --info-soft: #e4eef7;
+  --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 15px/1.45 var(--sans); }
+a { color: var(--accent); }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.skip { position: absolute; left: -999px; } .skip:focus { left: 8px; top: 8px; background: #fff; padding: 4px 8px; }
+
+.top { display: flex; gap: 16px; align-items: center; padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.brand { font-weight: 700; }
+.account { font-weight: 600; color: var(--accent); }
+.who { margin-left: auto; color: var(--ink-2); }
+.inline { display: inline; }
+.nav { padding: 6px 20px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.nav a { margin-right: 16px; }
+main { padding: 16px 20px 40px; }
+.messages { padding: 0 20px; }
+.msg { margin: 10px 0 0; padding: 8px 12px; border-radius: 4px; background: var(--info-soft); }
+.msg.error { background: var(--bad-soft); color: var(--bad); }
+.msg.warning { background: var(--warn-soft); color: var(--warn); }
+.msg.success { background: var(--ok-soft); }
+.muted { color: var(--ink-2); font-size: 13px; }
+
+.narrow { max-width: 360px; display: grid; gap: 6px; }
+input, select, button { font: inherit; }
+button { padding: 6px 12px; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 4px; cursor: pointer; }
+.top button { background: none; color: var(--accent); }
+
+/* ---------------------------------------------------------------- the grid */
+.gridhead h1 { margin: 0 0 4px; font-size: 20px; }
+.monthnav { display: flex; gap: 16px; align-items: center; }
+.help kbd { border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; background: #fff; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; list-style: none; padding: 0; font-size: 13px; }
+.swatch { display: inline-block; min-width: 22px; text-align: center; border: 1px solid var(--line); border-radius: 3px; font-weight: 700; }
+.toolbar, .approve { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 10px 0; }
+
+.gridwrap { overflow: auto; max-height: 70vh; border: 1px solid var(--line); background: var(--surface); }
+table.grid { border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
+.grid th, .grid td { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 0; }
+.grid thead th { position: sticky; top: 0; z-index: 2; background: var(--surface); font-size: 12px; min-width: 42px; padding: 2px; }
+.grid .name { position: sticky; left: 0; z-index: 1; background: var(--surface); text-align: left; padding: 4px 8px; white-space: nowrap; font-weight: 600; }
+.grid thead .name { z-index: 3; }
+.dn { display: block; font-weight: 700; } .wd { display: block; color: var(--ink-2); }
+.grid th.sun, .grid th.ph { background: var(--warn-soft); }
+.phm { display: block; font-weight: 700; color: var(--warn); }
+.cell { position: relative; }
+.cell input { width: 42px; border: 0; padding: 6px 2px; text-align: center; background: transparent; font-weight: 600; }
+.cell input::placeholder { color: #9aa9b0; font-weight: 400; }
+.cell input[readonly] { color: var(--ink-2); }
+.mark { position: absolute; top: 0; right: 1px; font-size: 9px; }
+.cell .err { display: block; max-width: 180px; font-size: 11px; color: var(--bad); padding: 2px; }
+.cell.failed { background: var(--bad-soft); box-shadow: inset 0 0 0 2px var(--bad); }
+.cell .replace { font-size: 11px; padding: 2px 4px; margin: 2px; }
+
+/* Day types: a colour AND the letter each cell already shows. Never colour alone. */
+.t-ordinary { background: #eef7f3; } .t-rest_day { background: #f1f1f1; }
+.t-sunday { background: #fdf3e1; } .t-public_holiday { background: #fbe9d0; }
+.t-leave { background: #e4eef7; } .t-absent_unpaid { background: #fae7e5; }
+.t-absent_paid { background: #f3e8f6; } .t-no_work_available { background: #ececec; }
+.t-standby { background: #e8ecfb; }
+
+.panel { margin-top: 16px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--line); }
+.panel h2 { margin: 0; font-size: 16px; }
+.panel .bad { color: var(--bad); } .panel .ok { color: var(--accent); }

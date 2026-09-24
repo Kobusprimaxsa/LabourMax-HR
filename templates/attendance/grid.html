@@ -1,0 +1,63 @@
+{% extends "base.html" %}{% load static %}
+{% block title %}Attendance {{ scope.start|date:"F Y" }} · {{ scope.group.name }}{% endblock %}
+{% block content %}
+<div class="gridhead">
+  <h1>{{ scope.employer.trading_name }} — {{ scope.group.name }}</h1>
+  <p class="monthnav">
+    <a href="{{ previous_url }}" rel="prev">← Previous month</a>
+    <strong>{{ scope.start|date:"F Y" }}</strong>
+    <a href="{{ next_url }}" rel="next">Next month →</a>
+  </p>
+  <p class="help" id="grid-help">Type hours (<kbd>9</kbd>, <kbd>8.5</kbd>) or a letter, then <kbd>Enter</kbd> or <kbd>Tab</kbd>. Arrow keys move. <kbd>Esc</kbd> undoes an edit not yet saved.
+  {% if not scope.group.is_attendance_driven %}Grey text is the schedule's proposal — nothing is saved until you type it or fill from the schedule.{% else %}This group is paid by the hour or day: nothing is pre-filled.{% endif %}</p>
+  <ul class="legend" aria-label="Day types">
+    {% for letter, label, value in legend %}<li><span class="swatch t-{{ value }}">{{ letter }}</span> {{ label }}</li>{% endfor %}
+    <li><span class="swatch t-standby">B</span> Standby</li>
+    <li><span class="swatch">✓</span> Approved</li>
+    <li><span class="swatch">■</span> Locked by a payroll run</li>
+  </ul>
+</div>
+
+{% if can_write %}
+<form class="toolbar" hx-post="{% url 'attendance:bulk' scope.employer.public_uid scope.group.public_uid scope.month %}" hx-swap="none">
+  <label>Fill <select name="who"><option value="all">the whole group</option>{% for row in rows %}<option value="{{ row.employee.public_uid }}">{{ row.employee.first_name }} {{ row.employee.last_name }}</option>{% endfor %}</select></label>
+  <label>for <select name="span"><option value="month">the month</option>{% for d in dates %}{% if d.weekday == 0 %}<option value="week:{{ d.day }}">week of {{ d|date:"j M" }}</option>{% endif %}{% endfor %}</select></label>
+  <label>with <input name="value" size="9" placeholder="schedule" aria-describedby="fill-help"></label>
+  <button type="submit">Fill empty days</button>
+  <span class="muted" id="fill-help">Empty scheduled working days only. "schedule" = scheduled times; or R, A, P, N, H.</span>
+</form>
+{% endif %}
+
+<div class="gridwrap" tabindex="-1">
+<table class="grid" aria-describedby="grid-help">
+  <thead><tr>
+    <th scope="col" class="name">Employee</th>
+    {% for d in dates %}<th scope="col" class="{% if d.weekday == 6 %}sun{% endif %}{% if d in holidays %} ph{% endif %}"><span class="dn">{{ d.day }}</span><span class="wd">{{ d|date:"D"|slice:":2" }}</span>{% if d in holidays %}<span class="phm" title="Public holiday">H</span>{% endif %}</th>{% endfor %}
+  </tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <th scope="row" class="name">{{ row.employee.first_name }} {{ row.employee.last_name }}</th>
+      {% for c in row.cells %}{% include "attendance/_cell.html" with scope=c.scope employee=c.employee work_date=c.work_date day=c.day value=c.value placeholder=c.placeholder error=c.error saved=c.saved editable=c.editable post_url=c.post_url %}{% endfor %}
+    </tr>
+    {% empty %}
+    <tr><td colspan="{{ dates|length|add:1 }}" class="muted">Nobody is paid on this group in {{ scope.start|date:"F Y" }}.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<section id="exceptions" class="panel" aria-live="polite"
+         hx-get="{% url 'attendance:exceptions' scope.employer.public_uid scope.group.public_uid scope.month %}"
+         hx-trigger="cellSaved from:body delay:1500ms">
+  {% include "attendance/_exceptions.html" %}
+</section>
+
+{% if can_write %}
+<form hx-post="{% url 'attendance:approve' scope.employer.public_uid scope.group.public_uid scope.month %}" hx-swap="none" class="approve">
+  <button type="submit">Approve the month</button>
+  <span class="muted">Refused, naming each one, while a blocking exception stands.</span>
+</form>
+{% endif %}
+<script src="{% static 'js/grid.js' %}" defer></script>
+{% endblock %}

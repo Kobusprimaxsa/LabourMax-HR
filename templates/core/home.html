@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Home · LabourMax-HR{% endblock %}
+{% block content %}
+<h1>{{ tenant_name }}</h1>
+<h2>Attendance</h2>
+{% if groups %}
+<ul class="links">
+  {% for g in groups %}
+  <li><a href="{% url 'attendance:grid' g.employer.public_uid g.public_uid month|date:'Y-m' %}">{{ g.employer.trading_name }} — {{ g.name }}, {{ month|date:"F Y" }}</a></li>
+  {% endfor %}
+</ul>
+{% else %}<p class="muted">No pay groups yet.</p>{% endif %}
+{% endblock %}

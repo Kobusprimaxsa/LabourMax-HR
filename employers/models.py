@@ -558,6 +558,11 @@ class PayGroup(AuditedModel, TenantScopedModel):
     #: The frequencies whose pay follows captured attendance rather than a salary.
     ATTENDANCE_DRIVEN = {PayFrequency.HOURLY, PayFrequency.DAILY}
 
+    #: D-296, an addition to sheet 02 (which gives public_uid to tenant, user,
+    #: employer, employee and file only). The attendance grid addresses a pay
+    #: group in its URL, and CLAUDE.md's convention is that nothing in a URL is
+    #: an integer id.
+    public_uid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     employer = models.ForeignKey(Employer, on_delete=models.PROTECT, related_name="pay_groups")
     name = models.CharField(max_length=100, help_text="e.g. 'Monthly staff', 'Weekly cleaners'.")
 

@@ -92,6 +92,11 @@ DJANGO_SCAFFOLDING = {"apps.py", "admin.py", "models.py", "__init__.py"}
 # class as "12": how many of a period fit in a year, identical under every
 # gazette. Named for the calendar; a statutory WEEK count (s35(4)'s thirteen,
 # s41's one per year) is a figure in a row and never belongs here.
+#
+# "24" (attendance/cellcodes.py) is the hours in a day: the grid refuses a typed
+# "25" because no day holds it. Same class as "60" - the clock, identical under
+# every gazette. A statutory DAILY limit (the 12-hour ceiling, a shift minimum)
+# is a figure in working_time_rule_set and never belongs here.
 PERMITTED_DECIMAL_CONSTANTS = {
     "0",
     "0.000001",
@@ -104,6 +109,7 @@ PERMITTED_DECIMAL_CONSTANTS = {
     "1.00",
     "1.000",
     "12",
+    "24",
     "26",
     "52",
     "60",

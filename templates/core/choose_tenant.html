@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Choose an account · LabourMax-HR{% endblock %}
+{% block content %}
+<h1>Choose an employer account</h1>
+{% if memberships %}
+<form method="post" class="narrow">{% csrf_token %}
+  <fieldset><legend>Accounts you belong to</legend>
+  {% for m in memberships %}
+    <label class="choice"><input type="radio" name="tenant" value="{{ m.tenant.public_uid }}" {% if forloop.first %}checked{% endif %}> {{ m.tenant.trading_name }} <span class="muted">({{ m.get_role_display }})</span></label>
+  {% endfor %}
+  </fieldset>
+  <button type="submit">Continue</button>
+</form>
+{% endif %}
+{% endblock %}
