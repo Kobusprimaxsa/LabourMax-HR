@@ -617,7 +617,12 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       notice, the SDL rate. Two G01 examples do NOT reproduce and are strict xfails naming O-43
       (medical credit on weekly and fortnightly pay). DEL publishes no worked example for
       premium pay, leave pay or termination — those are `statute` tests (D-150)
-- [ ] Property-based invariants: balance equals ledger, net never negative, UIF never over ceiling
+- [x] Property-based invariants (D-284): UIF never over ceiling, SDL only on a liable
+      employer, PAYE monotonic and never over taxable income on random bracket ladders,
+      invariant 6 through every calculator, and EVERY TRACE REPLAYS ITS OWN OUTPUTS — which
+      found five trace defects, gross recording no days at all among them. Balance equals
+      ledger is P6's. Net never negative is half here (PAYE + UIF never exceed gross)
+- [ ] Net never negative across EVERY deduction and the s34 cap — needs chunk 8's assembly
 
 **Done when:** SARS worked examples reproduce exactly and a finalised payslip is
 reproducible from its trace alone.

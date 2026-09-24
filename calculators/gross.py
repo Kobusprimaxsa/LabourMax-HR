@@ -221,6 +221,38 @@ class GrossResult:
     trace: CalculationTrace
 
 
+def day_as_text(pay: DayPay) -> str:
+    """One day, as the trace records it: every fact about the day this module
+    prices from, and nothing else, in a fixed order.
+
+    The trace used to record ``days=len(data.days)`` and no day at all, so a
+    gross figure could not be reproduced from its trace — only from the
+    attendance rows, which a reversed run is allowed to delete. The property
+    that replays every trace found it (D-284). Pipe-separated rather than
+    nested, because ``CalculationTrace.inputs`` is a flat mapping of strings
+    and a stored trace must read the same in 2029.
+    """
+    day, hours = pay.day, pay.hours
+    return "|".join(
+        str(value)
+        for value in (
+            day.work_date.isoformat(),
+            day.day_type,
+            day.is_ordinary_working_day,
+            day.is_standby,
+            day.scheduled_ordinary_hours,
+            hours.ordinary_hours,
+            hours.overtime_hours,
+            hours.sunday_hours,
+            hours.public_holiday_hours,
+            hours.night_hours,
+            hours.paid_hours_guaranteed,
+            hours.standby_hours_worked,
+            hours.days_worked_equivalent,
+        )
+    )
+
+
 # ------------------------------------------------------------------- refusals
 
 
@@ -508,7 +540,8 @@ def gross_pay(data: GrossInput) -> GrossResult:
             public_holiday_worked_multiplier=rates.public_holiday_worked_multiplier,
             night_allowance_type=rates.night_allowance_type.value,
             night_allowance_value=rates.night_allowance_value,
-        ),
+        )
+        | {f"day_{index:02d}": day_as_text(pay) for index, pay in enumerate(data.days, 1)},
         statutory_rows=rows_of(rates),
         outputs=as_text(
             gross=gross.exact,

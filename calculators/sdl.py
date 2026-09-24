@@ -98,6 +98,8 @@ def levy(data: SdlInput) -> SdlResult:
             leviable_amount=data.leviable_amount,
             rate_percent=data.rate_percent.value,
             employer_is_liable=data.employer_is_liable,
+            # An INPUT, echoed in the outputs as it always was (D-284).
+            exemption_reason=data.exemption_reason,
         ),
         statutory_rows=rows_of(data.rate_percent),
         outputs=as_text(

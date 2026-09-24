@@ -136,6 +136,10 @@ def contribution(data: UifInput) -> UifResult:
             employee_rate_percent=data.employee_rate_percent.value,
             employer_rate_percent=data.employer_rate_percent.value,
             is_exempt=data.is_exempt,
+            # An INPUT: it is what the employer declared. It is also echoed in
+            # the outputs, where stored traces have always carried it; a trace
+            # that held it only there could not be replayed (D-284).
+            exemption_reason=data.exemption_reason,
         ),
         statutory_rows=rows_of(
             data.monthly_ceiling, data.employee_rate_percent, data.employer_rate_percent

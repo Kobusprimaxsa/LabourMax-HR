@@ -481,14 +481,23 @@ def termination_payout(data: TerminationInput) -> TerminationResult:
 
     total = Money.of(sum((line.amount.exact for line in lines), ZERO))
 
+    # A row is recorded when it was READ, not only when it produced a line: a
+    # severance rule consulted for an operational dismissal that s41(4) or a
+    # short service then zeroed was still read, and a trace without it could not
+    # be replayed — the replay refuses for want of the rule (D-284). Same for
+    # s40(c)(i)'s ratio, read whenever the days path clears the qualifying period.
+    ratio_was_read = (
+        data.months_of_service > data.pro_rata_minimum_service_months.value
+        and not data.incomplete_cycle_hours
+    )
     provenance = [
         source
         for source in (
             data.notice_band if data.notice_is_paid_in_lieu else None,
             data.window,
-            data.pro_rata_rule if pro_rata_days else None,
+            data.pro_rata_rule if ratio_was_read else None,
             data.pro_rata_minimum_service_months,
-            data.severance_rule if severance is not None else None,
+            data.severance_rule if data.dismissed_for_operational_requirements else None,
         )
         if source is not None
     ]
@@ -500,6 +509,15 @@ def termination_payout(data: TerminationInput) -> TerminationResult:
             weekly_rate=data.weekly_rate,
             daily_rate=data.daily_rate,
             hourly_rate=data.hourly_rate,
+            # The working pattern and the s35(4) window, which the variable path
+            # divides by. Not recorded until the replay property found a variable
+            # earner's payout could not be reproduced from its trace (D-284) —
+            # leave_pay's trace had always carried the same four.
+            days_per_week=data.days_per_week,
+            hours_per_week=data.hours_per_week,
+            window_weeks=None if data.window is None else data.window.weeks.value,
+            window_weeks_available=None if data.window is None else data.window.weeks_available,
+            window_remuneration=None if data.window is None else data.window.remuneration,
             remuneration_is_variable=data.remuneration_is_variable,
             notice_is_paid_in_lieu=data.notice_is_paid_in_lieu,
             notice_value=None if data.notice_band is None else data.notice_band.notice_value,
