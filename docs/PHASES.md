@@ -353,6 +353,10 @@ uncaptured attendance-driven day blocks the payroll run.
 **The second half PASSES** (P7 chunk 7): `payroll/validation.py` calls
 `attendance.completeness.missing_attendance_days()`, and an uncaptured attendance-driven
 day blocks approval — `payroll/tests/test_validation.py::test_the_attendance_completeness_hook_is_wired_up`.
+**Corrected 24 September 2026 (D-314):** it read `employee.current_pay_group`, a cache
+refreshed as at today, so an employee whose cache was stale got no check at all. It now reads
+the remuneration row in force on each date and counts only days inside the engagement, and
+`payroll/tests/test_end_to_end.py` watches an uncaptured hourly day block approval in a real run.
 
 **The first half is NOT ticked, and must not be ticked by a machine.** What is proven
 (D-300, `attendance/tests/test_capture_measurement.py`): for twenty employees on an hourly
