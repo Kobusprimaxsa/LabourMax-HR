@@ -35,6 +35,7 @@ GOLDEN_MODULES = {
     "calculators/tests/test_paye_golden_2027.py": "SARS PAYE-GEN-01-G01 rev 16 §6; G21 rev 1",
     "calculators/tests/test_uif.py": "SARS, 'UIF ceiling earnings', 3 Aug 2021 (R177,12)",
     "calculators/tests/test_sdl.py": "SDL Act s3(1)(a)(ii), SDL-GEN-01-G01 §6 (the rate)",
+    "calculators/tests/test_coida.py": "DEL GN 2390 of 2024 p5, GN 1723 of 2023 (capping)",
     "statutory/tests/test_golden_figures.py": "the golden literals against ref-2026.03.01.json",
 }
 

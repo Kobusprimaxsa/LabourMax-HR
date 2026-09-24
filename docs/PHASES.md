@@ -585,7 +585,11 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       worked examples use the other one, so the golden file splits into exact reproductions
       (six cumulative band bases, three tax thresholds, the medical credit scale, SARS's own
       annual-equivalent arithmetic) and method reproductions of the two fully worked examples
-- [ ] COIDA accumulation (UIF and SDL are done — see chunk 1 above)
+- [x] COIDA accumulation (D-285): `calculators/coida.py` caps each employee's period total
+      once, never pro-rated, golden against DEL's own examples (GN 2390 of 2024, GN 1723 of
+      2023); `payroll/coida.py` reads finalised lines by payment date and the component's
+      `is_coida_base` flag. The minimum assessments (R1 621, R560 domestic) are NOT loaded and
+      are P8's — they floor the premium, not the earnings
 - [x] Leave pay, including the variable-earnings average — CHUNK 4 (D-220 to D-223).
       Two rates and s35 decides which; the s35(4) trigger is DECLARED because "fluctuates
       significantly" has no statutory threshold, and the 13-week window is loaded reference

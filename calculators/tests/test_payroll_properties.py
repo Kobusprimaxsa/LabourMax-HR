@@ -35,6 +35,7 @@ from hypothesis import strategies as st
 
 from calculators.attendance import AttendanceDayInput, DayType, bucket_day
 from calculators.base import CENTS, EXACT, ZERO, CalculationTrace, Money, StatutoryFigure
+from calculators.coida import CoidaEarning, CoidaInput, assessment_earnings
 from calculators.gross import (
     DayPay,
     GrossInput,
@@ -846,6 +847,67 @@ def test_a_termination_payout_is_never_negative_and_replays_from_its_trace(data)
         data.severance_rule,
     )
     assert_replays(result.trace, replay_termination(result.trace, store))
+
+
+# ================================================================ COIDA
+
+
+@st.composite
+def coida_inputs(draw):
+    lines = draw(
+        st.lists(
+            st.builds(
+                CoidaEarning,
+                source_code=st.sampled_from(["3601", "3605", "3607", "3901"]),
+                amount=mostly(money("0", "120000"), money("-20000", "120000")),
+                is_coida_base=st.booleans(),
+            ),
+            max_size=14,
+        )
+    )
+    return CoidaInput(
+        calculated_for=MARCH,
+        assessment_period_start=datetime.date(2026, 3, 1),
+        assessment_period_end=datetime.date(2027, 2, 28),
+        annual_ceiling=figure(draw(money("1", "800000")), 921),
+        earnings=tuple(lines),
+    )
+
+
+def replay_coida(trace: CalculationTrace, store: RowStore):
+    inputs = trace.inputs
+    (ceiling,) = store.recorded(trace, "statutory_parameter")
+    lines = []
+    for key in sorted(k for k in inputs if k.startswith("line_")):
+        code, amount, flag = inputs[key].split("|")
+        lines.append(CoidaEarning(code, Decimal(amount), B(flag)))
+    return assessment_earnings(
+        CoidaInput(
+            calculated_for=trace.calculated_for,
+            assessment_period_start=datetime.date.fromisoformat(inputs["assessment_period_start"]),
+            assessment_period_end=datetime.date.fromisoformat(inputs["assessment_period_end"]),
+            annual_ceiling=ceiling,
+            earnings=tuple(lines),
+        )
+    ).trace
+
+
+@PROPERTY
+@given(data=coida_inputs())
+def test_coida_declares_the_flagged_earnings_capped_once_and_replays(data):
+    """Declared is never over the ceiling, never over the flagged earnings,
+    never negative, and a line whose flag is off never moves it — whatever
+    order, sign or mixture the lines arrive in."""
+    result = assessment_earnings(data)
+    flagged = sum((line.amount for line in data.earnings if line.is_coida_base), ZERO)
+
+    assert (
+        result.declared.exact == Money.of(min(max(flagged, ZERO), data.annual_ceiling.value)).exact
+    )
+    assert ZERO <= result.declared.exact <= data.annual_ceiling.value
+    assert result.capped == (flagged > data.annual_ceiling.value)
+    assert_invariant_6(result)
+    assert_replays(result.trace, replay_coida(result.trace, RowStore().add(data.annual_ceiling)))
 
 
 # ============================================ net of statutory deductions

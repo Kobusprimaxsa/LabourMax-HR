@@ -438,9 +438,11 @@ whether it reproduces something PUBLISHED. The command string lives in
 | `calculators/tests/test_paye_golden_2027.py` | G01 rev 16 §6 pp5–6: weekly, fortnightly, monthly, annual tables examples; G21 rev 1 pp9–10, 30–34: 7 months, three part-periods, overtime, advance, backdated, commission, bonus, production bonus |
 | `calculators/tests/test_uif.py` (2 tests) | SARS "UIF ceiling earnings", 3 Aug 2021: R177,12 |
 | `calculators/tests/test_sdl.py` (1 test) | SDL Act s3(1)(a)(ii) / SDL-GEN-01-G01 §6: the 1% rate — no worked figure exists |
+| `calculators/tests/test_coida.py` (4 tests) | DEL GN 2390 of 2024 p5 and GN 1723 of 2023: R600 000 capped at the season's ceiling; part-year declared as is; the full ceiling for a part-year employee |
 | `statutory/tests/test_golden_figures.py` | the literals above against the shipped fixture |
 
-**No DEL worked example exists for anything this build computes except COIDA capping.**
+**No DEL worked example exists for anything this build computes except COIDA capping**
+(D-285) — printed in the notice that sets each season's maximum earnings.
 The Department's Basic Guides state rules and work no figures; the worked overtime and
 leave examples on the open web are secondary (labourguide.co.za, payroll vendors) and are
 not golden. The golden set is global, not per version: the flag records that the command
@@ -1574,6 +1576,17 @@ lines are negative and netting them is how a correction reaches the IRP5.
 NOT transcribed from sheet 02, which was not available to the session that built them. Every
 earlier table in this build was reconciled against the workbook. These should be, before the
 assembly writes a row.
+
+**P7 — COIDA accumulation** (24 September 2026, D-285). `calculators/coida.py` is one
+employee's earnings for one assessment period, capped ONCE at the Minister's maximum and never
+pro-rated — the Department's own words: "applied annually at the end of the assessment period
+to the individual employee's annual total earnings, not per month". `payroll/coida.py` reads
+FINALISED payslip lines by their pay period's PAYMENT DATE and each line's
+`payroll_component.is_coida_base` — the flag, never a code list, so O-06's 3607 question and
+O-15's severance question are answered by data. The assessment period is an INPUT: the notices
+date it 1 March to end-February, which coincides with the tax year but is a different
+instrument. **Loaded: the R668 000 ceiling only.** Notice 3910's R1 621 and R560 are minimum
+ASSESSMENTS — floors on the premium, which is P8's — and are in a notes string, not a row.
 
 **P7 chunk 7 — the payroll run and the validation gate** (19 September 2026, D-232 to
 D-235). 1 559 tests green. `payroll/runs.py` is the lifecycle and `payroll/validation.py` is
