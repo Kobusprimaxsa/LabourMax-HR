@@ -597,11 +597,14 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       calculation — and what counts as remuneration stays the component flag, held to
       Government Notice 691 by a test that pins the flagged set by name
 - [x] `termination_payout` — notice, pro-rata leave, severance — CHUNK 5 (D-224 to
-      D-227). The pro-rata BONUS is not built: it belongs with `annual_bonus_cycle` below,
-      and SD1's is the only one gazetted. s40(c) turned out to be a FLOOR rather than a
+      D-227). The pro-rata BONUS arrived with `annual_bonus_cycle` below (D-286). s40(c) turned out to be a FLOOR rather than a
       formula, SD1 clause 23(1)(d) turned out not to conflict with s38 at all, and BCEA
       s84(1) turned out not to be implemented anywhere (O-26)
-- [ ] `annual_bonus_cycle` accruing monthly
+- [x] `annual_bonus_cycle` accruing monthly (D-286): one formula for SD1 3(3)(a) and (b)
+      and BCCCI 4.5, a rebuildable cache under FORCE RLS, NO ROWS for a sector without a
+      bonus, and the leaver's share on the termination payout as `BONUS_PRO_RATA` — R2 702,98
+      for the hand-computed June leaver. The cycle reading is O-44. The December payment
+      itself is chunk 8's
 - [x] `payslip`, `payslip_line` with SARS source codes and employee snapshot — CHUNK 6
       (D-228 to D-231). The TABLES, with every guard on them: invariant 4 by trigger,
       invariant 6 as a CHECK that the rounded amount IS the exact one rounded, invariant 7

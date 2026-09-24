@@ -35,6 +35,15 @@ from hypothesis import strategies as st
 
 from calculators.attendance import AttendanceDayInput, DayType, bucket_day
 from calculators.base import CENTS, EXACT, ZERO, CalculationTrace, Money, StatutoryFigure
+from calculators.bonus import (
+    BonusInput,
+    BonusInputError,
+    BonusRule,
+    RateBasis,
+    WeeklyWage,
+    annual_bonus,
+    cycle_containing,
+)
 from calculators.coida import CoidaEarning, CoidaInput, assessment_earnings
 from calculators.gross import (
     DayPay,
@@ -710,6 +719,124 @@ def test_leave_pay_is_never_negative_and_replays_from_its_trace(data):
     assert_replays(result.trace, replay_leave_pay(result.trace, store))
 
 
+# ======================================================== annual bonus
+
+BONUS_RULE = st.builds(
+    BonusRule,
+    weeks=st.sampled_from([Decimal("4.333"), Decimal("4.330")]),
+    payment_month=st.integers(min_value=1, max_value=12),
+    pro_rata_on_termination=st.booleans(),
+    min_service_months=st.sampled_from([0, 0, 0, 3]),
+    table=st.just("termination_rule_set"),
+    row_id=st.just(91),
+)
+
+
+@st.composite
+def bonus_inputs(draw, *, terminating=None):
+    rule = draw(BONUS_RULE)
+    as_at = draw(st.dates(datetime.date(2025, 1, 1), datetime.date(2028, 12, 31)))
+    cycle_start, cycle_end = cycle_containing(as_at, rule.payment_month)
+    service_start = draw(st.dates(datetime.date(2020, 1, 1), as_at))
+    leaving = draw(st.booleans()) if terminating is None else terminating
+    # One wage from before the service started, and maybe an increase later —
+    # a history with a gap in it is its own refusal, tested by example.
+    raised_on = draw(st.one_of(st.none(), st.dates(service_start, cycle_end)))
+    first, second = draw(money("1", "5000")), draw(money("1", "5000"))
+    wages = (
+        (WeeklyWage(service_start, None, first),)
+        if raised_on is None or raised_on <= service_start
+        else (
+            WeeklyWage(service_start, raised_on, first),
+            WeeklyWage(raised_on, None, max(first, second)),
+        )
+    )
+    return BonusInput(
+        calculated_for=as_at,
+        rule=rule,
+        cycle_start=cycle_start,
+        cycle_end=cycle_end,
+        service_start=service_start,
+        service_end=as_at if leaving else None,
+        as_at=as_at,
+        wages=wages,
+        rate_basis=draw(st.sampled_from(list(RateBasis))),
+        part_first_month_counts=draw(st.booleans()),
+        is_termination=leaving,
+        qualifies=draw(mostly(st.just(True), st.just(False))),
+        disqualified_because=draw(st.sampled_from(["", "casual, BCCCI clause 4.5(f)"])),
+    )
+
+
+def bonus_from_trace(inputs, rule) -> BonusInput | None:
+    """The bonus input, read back out of a trace's own keys — the bonus
+    calculator's, or the termination payout's ``bonus_``-prefixed copy."""
+
+    def day(text):
+        return None if text == "" else datetime.date.fromisoformat(text)
+
+    wages = []
+    for key in sorted(k for k in inputs if k.startswith("wage_")):
+        start, end, weekly = inputs[key].split("|")
+        wages.append(WeeklyWage(day(start), day(end), Decimal(weekly)))
+    return BonusInput(
+        calculated_for=day(inputs["as_at"]),
+        rule=rule,
+        cycle_start=day(inputs["cycle_start"]),
+        cycle_end=day(inputs["cycle_end"]),
+        service_start=day(inputs["service_start"]),
+        service_end=day(inputs["service_end"]),
+        as_at=day(inputs["as_at"]),
+        wages=tuple(wages),
+        rate_basis=RateBasis(inputs["rate_basis"]),
+        part_first_month_counts=B(inputs["part_first_month_counts"]),
+        is_termination=B(inputs["is_termination"]),
+        qualifies=B(inputs["qualifies"]),
+        disqualified_because=inputs["disqualified_because"],
+    )
+
+
+@PROPERTY
+@given(data=bonus_inputs(), later=st.integers(min_value=1, max_value=400))
+def test_the_bonus_never_exceeds_a_full_year_grows_with_time_and_replays(data, later):
+    """Never more than the weeks at the highest wage, never negative, never
+    more than twelve months; a later date in the same cycle never earns less;
+    and the trace replays."""
+    result = annual_bonus(data)
+    top = max(wage.weekly for wage in data.wages)
+
+    assert 0 <= result.full_months <= 12
+    assert ZERO <= result.amount.exact <= Money.of(top * data.rule.weeks).exact
+    assert_invariant_6(result)
+
+    (rule_key,) = result.trace.statutory_rows
+    assert rule_key == (data.rule.table, data.rule.row_id)
+    replayed = annual_bonus(bonus_from_trace(result.trace.inputs, data.rule))
+    assert_replays(result.trace, replayed.trace)
+
+    after = data.as_at + datetime.timedelta(days=later)
+    if data.service_end is None and after <= data.cycle_end:
+        grown = annual_bonus(dataclasses.replace(data, as_at=after, calculated_for=after))
+        assert grown.full_months >= result.full_months
+        assert grown.amount.exact >= result.amount.exact
+
+
+def test_the_bonus_refuses_by_name_and_never_with_an_arithmetic_error():
+    with pytest.raises(BonusInputError, match="gives no annual bonus"):
+        annual_bonus(
+            BonusInput(
+                calculated_for=MARCH,
+                rule=BonusRule(ZERO, None, False, 0, "termination_rule_set", 93),
+                cycle_start=datetime.date(2026, 1, 1),
+                cycle_end=datetime.date(2026, 12, 31),
+                service_start=datetime.date(2026, 1, 1),
+                service_end=None,
+                as_at=MARCH,
+                wages=(),
+            )
+        )
+
+
 # ========================================================= termination
 
 FOUR_MONTHS = figure(Decimal("4.000000"), 51)
@@ -776,6 +903,7 @@ def termination_inputs(draw):
         dismissed_for_operational_requirements=draw(st.booleans()),
         unreasonably_refused_alternative_employment=draw(st.booleans()),
         completed_years_of_service=draw(money("0", "30", places=0)),
+        annual_bonus=draw(st.one_of(st.none(), bonus_inputs(terminating=True))),
     )
 
 
@@ -786,6 +914,7 @@ def replay_termination(trace: CalculationTrace, store: RowStore):
         rows = store.recorded(trace, table)
         return rows[0] if rows else None
 
+    rules = store.recorded(trace, "termination_rule_set")
     parameters = {row.row_id: row for row in store.recorded(trace, "statutory_parameter")}
     window = (
         AveragingWindow(
@@ -818,7 +947,7 @@ def replay_termination(trace: CalculationTrace, store: RowStore):
             pro_rata_minimum_service_months=parameters.get(FOUR_MONTHS.row_id),
             months_of_service=Decimal(inputs["months_of_service"]),
             negative_leave_balance=Decimal(inputs["negative_leave_balance"]),
-            severance_rule=one("termination_rule_set"),
+            severance_rule=next((r for r in rules if isinstance(r, SeveranceRule)), None),
             dismissed_for_operational_requirements=B(
                 inputs["dismissed_for_operational_requirements"]
             ),
@@ -826,6 +955,18 @@ def replay_termination(trace: CalculationTrace, store: RowStore):
                 inputs["unreasonably_refused_alternative_employment"]
             ),
             completed_years_of_service=Decimal(inputs["completed_years_of_service"]),
+            annual_bonus=(
+                bonus_from_trace(
+                    {
+                        k.removeprefix("bonus_"): v
+                        for k, v in inputs.items()
+                        if k.startswith("bonus_")
+                    },
+                    next(r for r in rules if isinstance(r, BonusRule)),
+                )
+                if "bonus_as_at" in inputs
+                else None
+            ),
         )
     ).trace
 
@@ -845,6 +986,7 @@ def test_a_termination_payout_is_never_negative_and_replays_from_its_trace(data)
         data.pro_rata_rule,
         data.pro_rata_minimum_service_months,
         data.severance_rule,
+        None if data.annual_bonus is None else data.annual_bonus.rule,
     )
     assert_replays(result.trace, replay_termination(result.trace, store))
 

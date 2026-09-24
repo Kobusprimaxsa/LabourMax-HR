@@ -323,6 +323,28 @@ def _monthly_factor(employee: Employee, on_date: datetime.date) -> Decimal:
         ) from error
 
 
+def weekly_wage(row: EmployeeRemuneration) -> Decimal:
+    """One remuneration row's WEEKLY figure — the hub every other rate comes off
+    (D-106), recomputed from what was captured rather than back-multiplied from
+    a stored derived rate, so the cents are the contract's.
+
+    The monthly factor is the one in force on the row's own effective date, for
+    this employee's instrument (D-236), exactly as capture resolved it. Call it
+    with the employee's tenant pinned.
+    """
+    pattern = rates.WorkingPattern(
+        hours_per_day=row.hours_per_day,
+        days_per_week=row.days_per_week,
+        hours_per_week=row.hours_per_week,
+    )
+    return rates.weekly_rate_from(
+        row.pay_basis,
+        row.rate_amount,
+        pattern,
+        _monthly_factor(row.employee, row.effective_from),
+    )
+
+
 def _close_open_rate(employee: Employee, on_date: datetime.date):
     """End the rate in force the day the new one starts.
 

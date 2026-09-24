@@ -1588,6 +1588,17 @@ date it 1 March to end-February, which coincides with the tax year but is a diff
 instrument. **Loaded: the R668 000 ceiling only.** Notice 3910's R1 621 and R560 are minimum
 ASSESSMENTS — floors on the premium, which is P8's — and are in a notes string, not a row.
 
+**P7 — the annual bonus cycle** (24 September 2026, D-286). `calculators/bonus.py` is ONE
+formula for SD1 3(3)(a) and (b) and BCCCI 4.5: each FULL calendar month in the cycle earns a
+twelfth of the rule's weeks at that month's weekly wage. The cycle is the twelve months ending
+with the rule's payment month. **A sector with no bonus REFUSES in the calculator and gets
+NO `annual_bonus_cycle` rows** — a row of nil would read as a bonus that came to zero.
+`payroll/bonus.py::accrue()` rebuilds the cache from the engagement, the remuneration history
+and the rule set (D-153); the BCCCI elections (D-242) are read only for an AREA-scoped rule
+set. The leaver's share is a `BONUS_PRO_RATA` line on `termination_payout` — R2 702,98 for an
+SD1 cleaner at R1 497,15 a week leaving on 20 June, by hand. **Whether a long-serving leaver is
+owed the whole of 3(3)(a) is O-44**; the cycle reading is built because it is the workbook's.
+
 **P7 chunk 7 — the payroll run and the validation gate** (19 September 2026, D-232 to
 D-235). 1 559 tests green. `payroll/runs.py` is the lifecycle and `payroll/validation.py` is
 the gate.

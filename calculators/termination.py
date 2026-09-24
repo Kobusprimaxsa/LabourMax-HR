@@ -91,6 +91,7 @@ from calculators.base import (
     as_text,
     rows_of,
 )
+from calculators.bonus import BonusInput, annual_bonus
 from calculators.leave_pay import LeavePayInput, leave_pay
 from calculators.remuneration import (
     AveragingWindow,
@@ -206,6 +207,12 @@ class TerminationInput:
     #: build aggregates it yet.
     completed_years_of_service: Decimal = ZERO
 
+    # --- the pro-rata annual bonus ------------------------------------------
+    #: SD1 3(3) and BCCCI 4.5, priced by ``calculators/bonus.py`` as at the
+    #: termination date. None where the instrument gives no bonus — the caller
+    #: resolves that, and a sector without one never builds an input (D-286).
+    annual_bonus: BonusInput | None = None
+
 
 @dataclasses.dataclass(frozen=True)
 class TerminationResult:
@@ -215,6 +222,7 @@ class TerminationResult:
     leave_due_pay: Money
     pro_rata_leave_pay: Money
     severance: Money
+    pro_rata_bonus: Money
     rates: Section35Rates
     trace: CalculationTrace
 
@@ -470,6 +478,25 @@ def termination_payout(data: TerminationInput) -> TerminationResult:
     if severance is not None:
         lines.append(severance)
 
+    bonus = None
+    if data.annual_bonus is not None:
+        # The months served in the current cycle, priced by the one calculator
+        # that prices the December payment too — so a leaver's share and a
+        # stayer's bonus cannot come from two formulas (D-286).
+        bonus = annual_bonus(data.annual_bonus)
+        warnings.extend(bonus.trace.warnings)
+        if bonus.amount.exact:
+            lines.append(
+                PayslipLine(
+                    component_code="BONUS_PRO_RATA",
+                    description="Annual bonus, pro rata to termination",
+                    units=Decimal(bonus.full_months),
+                    rate=bonus.amount.exact / bonus.full_months,
+                    amount=bonus.amount,
+                )
+            )
+    pro_rata_bonus = Money.of(ZERO) if bonus is None else bonus.amount
+
     if data.negative_leave_balance:
         # D-185, and it is the reason that decision exists: netting this off is
         # a BCEA s34 deduction and needs the employee's written consent.
@@ -498,6 +525,7 @@ def termination_payout(data: TerminationInput) -> TerminationResult:
             data.pro_rata_rule if ratio_was_read else None,
             data.pro_rata_minimum_service_months,
             data.severance_rule if data.dismissed_for_operational_requirements else None,
+            None if data.annual_bonus is None else data.annual_bonus.rule,
         )
         if source is not None
     ]
@@ -535,13 +563,15 @@ def termination_payout(data: TerminationInput) -> TerminationResult:
                 data.unreasonably_refused_alternative_employment
             ),
             negative_leave_balance=data.negative_leave_balance,
-        ),
+        )
+        | ({} if bonus is None else {f"bonus_{k}": v for k, v in bonus.trace.inputs.items()}),
         statutory_rows=rows_of(*provenance),
         outputs=as_text(
             notice_pay=(Money.of(ZERO) if notice is None else notice.amount).exact,
             leave_due_pay=leave_due.exact,
             pro_rata_leave_pay=pro_rata.exact,
             severance=(Money.of(ZERO) if severance is None else severance.amount).exact,
+            pro_rata_bonus=pro_rata_bonus.exact,
             total=total.exact,
             used_the_average=rates.used_the_average,
         ),
@@ -555,6 +585,7 @@ def termination_payout(data: TerminationInput) -> TerminationResult:
         leave_due_pay=leave_due,
         pro_rata_leave_pay=pro_rata,
         severance=Money.of(ZERO) if severance is None else severance.amount,
+        pro_rata_bonus=pro_rata_bonus,
         rates=rates,
         trace=trace,
     )

@@ -495,6 +495,109 @@ class YtdAccumulator(AuditedModel, TenantScopedModel):
         return f"YTD {self.source_code} for {self.employee_id}: {self.amount}"
 
 
+class AnnualBonusCycle(AuditedModel, TenantScopedModel):
+    """The statutory annual bonus as it accrues through its cycle (D-286).
+
+    Sheet 02's ``annual_bonus_cycle``: "Tracks the contract-cleaning statutory
+    annual bonus (4.333 weeks) as it accrues through the year, so a mid-year
+    termination pro-rata is a lookup rather than a reconstruction."
+
+    **A CACHE, like ``ytd_accumulator``** (invariant 3). ``full_months_worked``
+    and the accrued amount are recomputed from scratch by
+    ``payroll/bonus.py::accrue()`` — from the engagement, the remuneration
+    history and the rule set in force — and never adjusted in place. A row
+    whose status has moved past ``accruing`` is a paid record and is not
+    rebuilt.
+
+    **No row at all where the instrument gives no bonus.** The domestic sector
+    and the BCEA carry no payment month, and a row of nil would read as a bonus
+    that happened to be zero, which is a different fact.
+
+    Two columns beyond sheet 02, both invariant-driven and flagged in D-286:
+    ``accrued_amount_exact`` (invariant 6 — the unrounded figure stored beside
+    the rounded one, held together by a CHECK exactly as ``payslip_line`` is)
+    and ``accrued_as_at``, without which ``full_months_worked`` does not say
+    as at WHEN.
+    """
+
+    class Status(models.TextChoices):
+        ACCRUING = "accruing", "Accruing"
+        PAID = "paid", "Paid"
+        PRO_RATA_PAID = "pro_rata_paid", "Pro rata paid on termination"
+        FORFEITED = "forfeited", "Forfeited"
+
+    #: Statuses that are a payment, and so must name the run that paid them.
+    PAID_STATUSES = (Status.PAID, Status.PRO_RATA_PAID)
+
+    employee = models.ForeignKey(
+        "employees.Employee", on_delete=models.PROTECT, related_name="annual_bonus_cycles"
+    )
+    cycle_start = models.DateField(db_index=True)
+    cycle_end = models.DateField()
+    bonus_weeks = models.DecimalField(
+        max_digits=6, decimal_places=3, help_text="From termination_rule_set, as in force."
+    )
+    full_months_worked = models.SmallIntegerField(default=0)
+    accrued_amount_exact = models.DecimalField(max_digits=16, decimal_places=6, default=0)
+    accrued_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    accrued_as_at = models.DateField(
+        help_text="The date full_months_worked and the accrued amount were computed as at."
+    )
+    paid_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    paid_in_payroll_run = models.ForeignKey(
+        PayrollRun,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="annual_bonus_cycles_paid",
+    )
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.ACCRUING, db_index=True
+    )
+
+    class Meta:
+        db_table = "annual_bonus_cycle"
+        ordering = ["employee_id", "cycle_start"]
+        indexes = [models.Index(fields=["tenant", "status"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee", "cycle_start"], name="uniq_bonus_cycle_per_employee_start"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=["accruing", "paid", "pro_rata_paid", "forfeited"]),
+                name="bonus_cycle_status_is_known",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cycle_end__gte=models.F("cycle_start")),
+                name="bonus_cycle_ends_after_it_starts",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(full_months_worked__gte=0, full_months_worked__lte=12),
+                name="bonus_cycle_months_within_a_year",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(accrued_amount=Round(models.F("accrued_amount_exact"), 2)),
+                name="bonus_cycle_amount_is_the_exact_amount_rounded",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(paid_amount__gte=0),
+                name="bonus_cycle_paid_not_negative",
+            ),
+            # Both arms say what NULL means, explicitly (CLAUDE.md: every
+            # constraint over a nullable column is permissive by default).
+            models.CheckConstraint(
+                condition=models.Q(
+                    status__in=["accruing", "forfeited"], paid_in_payroll_run__isnull=True
+                )
+                | models.Q(status__in=["paid", "pro_rata_paid"], paid_in_payroll_run__isnull=False),
+                name="bonus_cycle_a_payment_names_its_run",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Bonus cycle {self.cycle_start} for {self.employee_id}: {self.accrued_amount}"
+
+
 class PayrollValidationIssue(AuditedModel, TenantScopedModel):
     """What a run must answer for before anyone is paid.
 
