@@ -3,12 +3,18 @@
 No regulator publishes a worked leave pay example, so the sections themselves
 are the golden source, transcribed here beside the test that holds the code to
 them. That is D-150's position, already restated for premium pay in
-``test_gross_golden.py``.
+``test_gross_statute.py``.
 
 Every quotation is from the Basic Conditions of Employment Act 75 of 1997 as
 published in Government Gazette 18491 of 5 December 1997, except the s35(5)
 determination, which is Government Notice 691 in Government Gazette 24889 of
 23 May 2003, effective 1 July 2003.
+
+**Marked ``statute``, not ``golden``** (D-283). These reproduce what a section's
+own words dictate, not a figure a regulator published, so they are not part of
+the golden set behind ``--golden-tests-passed`` — they run with every other test.
+Until 24 September 2026 they carried the ``golden`` mark and the file said
+"_golden", which made the flag's meaning depend on which files one counted.
 """
 
 from __future__ import annotations
@@ -25,7 +31,7 @@ from calculators.leave_pay import (
     leave_pay,
 )
 
-pytestmark = pytest.mark.golden
+pytestmark = pytest.mark.statute
 
 MARCH = datetime.date(2026, 3, 31)
 

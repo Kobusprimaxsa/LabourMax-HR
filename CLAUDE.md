@@ -410,6 +410,42 @@ python manage.py importverification <file.xlsx> --current-through 2027-02-28 --d
 # import before re-exporting over a file: --force only ever loses ticks never imported
 ```
 
+**The golden set is ONE command, and `--golden-tests-passed` means it passed** (D-283).
+
+```powershell
+pytest -m golden -rxX    # the whole golden set, and nothing else
+```
+
+A pass reads `N passed, 2 xfailed` with **no `failed` and no `XPASS`**. The two xfails are
+O-43 (SARS's weekly and fortnightly examples convert the monthly medical credit ÷ 4 and ÷ 2;
+the statutory-rates method spreads twelve months over 52 and 26) and are printed every run
+on purpose. `golden` means a figure a regulator PUBLISHED — a SARS or DEL worked example, a
+published computed figure, or a published rate — reproduced exactly where the method is the
+same and within the labelled 2% sanity bound where SARS worked it on the deduction tables
+(D-212). A section's own arithmetic, transcribed where nothing is published, is `statute`
+and is NOT golden: `test_gross_statute.py`, `test_leave_pay_statute.py` and
+`test_termination_statute.py` were `_golden` until D-283 and still run on every commit.
+`statutory/tests/test_golden_figures.py` holds every golden literal to
+`reference/ref-2026.03.01.json`, so the set cannot pass on figures the version does not
+load. `statutory/tests/test_golden_command.py` lists the modules the command selects
+(`GOLDEN_MODULES`) and fails when a file adds the mark without being listed — ask then
+whether it reproduces something PUBLISHED. The command string lives in
+`statutory.verification.GOLDEN_COMMAND` and both commands print it in `--help`.
+
+| Module | Reproduces |
+|---|---|
+| `calculators/tests/test_paye_golden.py` | G01 rev 16 §4 (2027): six band bases, three thresholds, medical credit; G20 rev 0 (2026): annual equivalent, pro rata, the 7-month and bonus examples |
+| `calculators/tests/test_paye_golden_2027.py` | G01 rev 16 §6 pp5–6: weekly, fortnightly, monthly, annual tables examples; G21 rev 1 pp9–10, 30–34: 7 months, three part-periods, overtime, advance, backdated, commission, bonus, production bonus |
+| `calculators/tests/test_uif.py` (2 tests) | SARS "UIF ceiling earnings", 3 Aug 2021: R177,12 |
+| `calculators/tests/test_sdl.py` (1 test) | SDL Act s3(1)(a)(ii) / SDL-GEN-01-G01 §6: the 1% rate — no worked figure exists |
+| `statutory/tests/test_golden_figures.py` | the literals above against the shipped fixture |
+
+**No DEL worked example exists for anything this build computes except COIDA capping.**
+The Department's Basic Guides state rules and work no figures; the worked overtime and
+leave examples on the open web are secondary (labourguide.co.za, payroll vendors) and are
+not golden. The golden set is global, not per version: the flag records that the command
+passed on the commit the verifier ran it from.
+
 **Never load them with a shell glob.** Alphabetical order puts the rule set fixtures before
 the file that creates the sectors they reference, and the loader refuses them (D-75). `--all`
 uses `FIXTURE_ORDER` in `statutory/loader.py`, which is dependency order.
@@ -1355,7 +1391,8 @@ be guessed at (O-40).
   open web contradict each other, so nothing citable was found and nothing was loaded. O-04
   inherits two items rather than the whole question: the EFT specification the payment
   partner supplies, or each bank's own published account format
-- The golden tests, which are what finally allows `golden_tests_passed`
+- ~~The golden tests~~ **defined as one command (D-283)**: `pytest -m golden`. What is left
+  is for a person to run it and pass `--golden-tests-passed` — see "The golden set" above
 
 Chosen ahead of P1 because nothing in the payroll engine can be tested against a SARS worked
 example until the reference tables exist, and a wrong UIF ceiling blocks a pilot employer in a
@@ -1419,7 +1456,7 @@ and (a) is the wage for that DAY, so four hours on a public holiday is two days'
 four hours at double time. **s16(2) floors a short Sunday** at the ordinary daily wage. The
 first version of this calculator priced both per hour, read as correct, and only the Act's own
 text caught it — `public_holiday_worked_multiplier` sits beside three columns that genuinely
-are per hour. Every section is transcribed verbatim in `calculators/tests/test_gross_golden.py`
+are per hour. Every section is transcribed verbatim in `calculators/tests/test_gross_statute.py`
 beside the test holding the code to it, because no regulator publishes a worked premium example
 (D-150's position, restated for pay).
 

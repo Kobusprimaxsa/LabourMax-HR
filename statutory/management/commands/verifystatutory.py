@@ -22,6 +22,7 @@ from django.utils import timezone
 from core.models import AppUser
 from statutory import checks
 from statutory.models import ReferenceDataVersion
+from statutory.verification import GOLDEN_COMMAND
 
 
 class Command(BaseCommand):
@@ -57,7 +58,11 @@ class Command(BaseCommand):
         parser.add_argument(
             "--golden-tests-passed",
             action="store_true",
-            help="The published SARS and DEL worked examples reproduce exactly.",
+            help=(
+                f"`{GOLDEN_COMMAND}` passed on the commit this is run from: the published "
+                "SARS and DEL worked examples reproduce, on the figures this version loads "
+                "(D-283). Run it first; set this only if it reports no failures."
+            ),
         )
         parser.add_argument(
             "--allow-self-verification",

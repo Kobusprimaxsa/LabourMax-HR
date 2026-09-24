@@ -140,6 +140,11 @@ jobs:
       - name: Tenant isolation - must never fail
         run: pytest -m isolation -v
 
+      # The command --golden-tests-passed records (D-283), run on its own so a
+      # verifier can point at this step. The 2 xfails are O-43 and are expected.
+      - name: Golden set - what --golden-tests-passed asserts
+        run: pytest -m golden -rxX
+
       - name: Full test suite
         run: pytest
 

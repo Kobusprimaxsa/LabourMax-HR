@@ -25,7 +25,7 @@ from calculators.gross import (
     PremiumRates,
     gross_pay,
 )
-from calculators.tests.test_gross_golden import (
+from calculators.tests.test_gross_statute import (
     BCEA_RATES,
     DAILY,
     HOLIDAY,

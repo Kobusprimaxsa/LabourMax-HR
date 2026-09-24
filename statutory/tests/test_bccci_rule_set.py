@@ -95,7 +95,7 @@ def test_area_b_prices_public_holidays_and_sundays_exactly_as_the_bcea_does(load
     So this asserts the MULTIPLIERS Area B resolves to are the same ones Area A
     resolves to, which is what makes "write no new pricing" true rather than
     hopeful. The comparison rules themselves are already golden-tested against
-    the Act in ``calculators/tests/test_gross_golden.py``.
+    the Act in ``calculators/tests/test_gross_statute.py``.
     """
     sector, made = loaded
 

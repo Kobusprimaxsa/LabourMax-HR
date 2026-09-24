@@ -12,7 +12,7 @@ from calculators.termination import (
     TerminationRefusedError,
     termination_payout,
 )
-from calculators.tests.test_termination_golden import (
+from calculators.tests.test_termination_statute import (
     FOUR_WEEKS_NOTICE,
     SEVERANCE,
     WEEKLY,

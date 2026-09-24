@@ -16,6 +16,12 @@ two days' wages and not two hours'; and s16(2) puts a daily-wage floor under a
 short Sunday. A multiplier column named ``public_holiday_worked_multiplier``
 invites exactly the wrong reading, which is why the section is transcribed here
 beside the test that holds the code to it.
+
+**Marked ``statute``, not ``golden``** (D-283). These reproduce what a section's
+own words dictate, not a figure a regulator published, so they are not part of
+the golden set behind ``--golden-tests-passed`` — they run with every other test.
+Until 24 September 2026 they carried the ``golden`` mark and the file said
+"_golden", which made the flag's meaning depend on which files one counted.
 """
 
 from __future__ import annotations
@@ -35,7 +41,7 @@ from calculators.gross import (
     gross_pay,
 )
 
-pytestmark = pytest.mark.golden
+pytestmark = pytest.mark.statute
 
 MARCH = datetime.date(2026, 3, 31)
 SUNDAY = datetime.date(2026, 3, 1)

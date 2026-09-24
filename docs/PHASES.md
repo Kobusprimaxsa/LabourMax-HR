@@ -200,7 +200,13 @@ The most important phase in the build. Can overlap P1.
       successor's, so it is a standing defect in the instrument and not a 2026 slip —
       March 2026 notice now REFUSES for four-weeks-to-six-months where it used to borrow
       SD1's four weeks. Nothing in March 2026 falls back to SD1 any more.
-- [ ] Golden tests reproducing the published SARS and DEL worked examples
+- [x] Golden tests reproducing the published SARS and DEL worked examples — **the golden set
+      is one command, `pytest -m golden -rxX`** (D-283). A pass is no `failed` and no `XPASS`;
+      the 2 xfails are O-43 and print every run. `--golden-tests-passed` on `verifystatutory`
+      and `importverification` records that THIS command passed, and both `--help` texts say
+      so. `statute`-marked files transcribe a section where nothing is published and are not
+      part of it. `statutory/tests/test_golden_figures.py` holds every golden literal to
+      `ref-2026.03.01.json`. Setting the flag is still Kobus's, with the verification pass
 
 `source_url` is deliberately optional rather than mandatory as this plan originally
 specified. Not every gazette is online, older determinations are not, and a required
@@ -606,7 +612,11 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       `in_force_on()` or read `data_current_through`, and the gate is where they are read.
       Issues are derived and rewritten; a resolution is keyed on the PROBLEM, not the row,
       so it survives re-validation — with a named person and a mandatory reason on it
-- [ ] Golden-file tests against every published SARS and DEL worked example
+- [x] Golden-file tests against every published SARS and DEL worked example that could be
+      found and read (D-283): SARS G01 rev 16 §4 and §6, G20 rev 0, G21 rev 1, the UIF R177,12
+      notice, the SDL rate. Two G01 examples do NOT reproduce and are strict xfails naming O-43
+      (medical credit on weekly and fortnightly pay). DEL publishes no worked example for
+      premium pay, leave pay or termination — those are `statute` tests (D-150)
 - [ ] Property-based invariants: balance equals ledger, net never negative, UIF never over ceiling
 
 **Done when:** SARS worked examples reproduce exactly and a finalised payslip is

@@ -47,6 +47,7 @@ from django.db import transaction
 from core.models import AppUser
 from statutory import verification
 from statutory.models import ReferenceDataVersion, ReferenceFigureCheck
+from statutory.verification import GOLDEN_COMMAND
 
 try:  # pragma: no cover
     from openpyxl import load_workbook
@@ -126,8 +127,9 @@ class Command(BaseCommand):
         parser.add_argument(
             "--golden-tests-passed",
             action="store_true",
-            help="The published worked examples reproduce. Without it a version is "
-            "recorded verified but stays invisible to in_force_on().",
+            help=f"`{GOLDEN_COMMAND}` passed on the commit this is run from: the "
+            "published worked examples reproduce on the figures loaded (D-283). Without "
+            "it a version is recorded verified but stays invisible to in_force_on().",
         )
         parser.add_argument(
             "--dry-run",

@@ -14,7 +14,7 @@ from calculators.leave_pay import (
     leave_pay,
 )
 from calculators.remuneration import RemunerationRefusedError
-from calculators.tests.test_leave_pay_golden import (
+from calculators.tests.test_leave_pay_statute import (
     DAILY,
     DAYS_PER_WEEK,
     THIRTEEN_WEEKS,

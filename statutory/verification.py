@@ -401,6 +401,13 @@ RECORDED_AS = {
     "QUERY": ReferenceFigureCheck.Outcome.QUERIED,
 }
 
+#: The ONE command whose pass ``--golden-tests-passed`` records (D-283). Both
+#: commands' help text names it from here, and
+#: ``statutory/tests/test_golden_command.py`` proves the marker it selects exists
+#: and selects the published-example tests and nothing else, so the flag is a
+#: claim about a named run rather than about whatever somebody meant by "golden".
+GOLDEN_COMMAND = "pytest -m golden"
+
 #: The inverse, for pre-filling a cell from a recorded check. Derived rather
 #: than written out, so the two cannot disagree.
 CHECKED_TEXT = {outcome: mark for mark, outcome in RECORDED_AS.items()}
