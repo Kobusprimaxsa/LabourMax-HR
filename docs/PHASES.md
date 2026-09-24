@@ -576,8 +576,11 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       Sheet 02's names, its missing columns, its net-pay CHECKs and its totals lock; the
       year-to-date cache in sheet 02's one-row shape. A test reads sheet 02 and fails on any
       column the models lack outside four named deviations
-- [ ] **Chunk 8b — `calculate()` for a regular run.** Refusals are per-employee blocking
-      issues (D-292); an O-40 day refuses (D-291)
+- [x] **Chunk 8b — `calculate()` for a regular run** (D-293, D-294). `payroll/assembly.py`
+      prices each employee from the rows as at the period; refusals are per-employee blocking
+      issues re-derived by validation (D-292); an O-40 day refuses (D-291); a draft's traces go
+      with it on recalculation. Proven end to end on the shipped reference data, draft to
+      year-to-date. Open: O-46 (two declared facts with no column), O-47 (weekly UIF ceiling)
 - [ ] **Chunk 8c — s34 deductions, the termination payslip and `termination_payout`**
 - [ ] **Chunk 8d — the December bonus run** (`run_type = bonus`)
 - [ ] `pay_period` generation and lifecycle — ASSEMBLY (chunk 8), UNBLOCKED 24 Sep 2026 (D-288)

@@ -85,6 +85,13 @@ DJANGO_SCAFFOLDING = {"apps.py", "admin.py", "models.py", "__init__.py"}
 # plausibly also be a rate, so it is named for the calendar and nothing else — a
 # twelve-month THRESHOLD (the SDL look-forward, a leave cycle) is a statutory figure
 # and belongs in a row, not here.
+#
+# "26" and "52" (payroll/assembly.py) are the fortnightly and weekly pay periods
+# in a tax year — SARS's own "Total pay periods in tax year" in the annual
+# equivalent formula, 52 in its worked example (PAYE-GEN-01-G21 §7.2). The same
+# class as "12": how many of a period fit in a year, identical under every
+# gazette. Named for the calendar; a statutory WEEK count (s35(4)'s thirteen,
+# s41's one per year) is a figure in a row and never belongs here.
 PERMITTED_DECIMAL_CONSTANTS = {
     "0",
     "0.000001",
@@ -97,6 +104,8 @@ PERMITTED_DECIMAL_CONSTANTS = {
     "1.00",
     "1.000",
     "12",
+    "26",
+    "52",
     "60",
     "100",
     "100.00",

@@ -21,17 +21,16 @@ the year-to-date cache from what was just finalised. All inside one transaction,
 because a run that is half-finalised is a state nothing in this system knows how
 to read.
 
-**What this module does NOT do is calculate.** ``calculate()`` moves the run
-through its states and calls an assembly that turns one employee into one
-payslip — and that assembly is the next chunk. The lifecycle, the gate,
-finalisation and reversal are all real and all tested; the arithmetic that fills
-a payslip in is not here yet, which is why ``calculate()`` refuses rather than
-producing empty payslips that would look like a successful run.
+**Calculation is ``payroll/assembly.py``'s, driven from here** (chunk 8b).
+``calculate()`` replaces every unfinalised payslip with one priced from the rows
+as they now stand; an employee the assembly refuses gets no payslip and a
+blocking issue instead (D-292), and the run still calculates everybody else.
 """
 
 from __future__ import annotations
 
 import dataclasses
+from decimal import Decimal
 
 from django.db import models, transaction
 from django.utils import timezone
@@ -166,21 +165,128 @@ def payslip_number(run: PayrollRun, employee, *, suffix: str = "") -> str:
     return f"{period.period_end:%Y%m}-{period.pay_group_id}-{run.run_number}-{who}{suffix}"[:30]
 
 
-def calculate(run: PayrollRun) -> None:
-    """Turn the run's employees into payslips. NOT BUILT — the next chunk.
+def calculate(run: PayrollRun, *, calculated_by=None) -> PayrollRun:
+    """Price every employee the run owes a payslip, and move it to ``calculated``.
 
-    Refuses rather than moving the run to ``calculated`` with nothing in it. A
-    run that reports itself calculated and holds no payslips is a run somebody
-    approves, and the validation gate's ``no_payslips`` check would then be the
-    only thing between that and a closed period with nobody paid. One guard deep
-    is not deep enough for this.
+    From ``draft``, ``calculated`` (a recalculation) or ``failed``. Every
+    unfinalised payslip on the run is REPLACED, never patched: its lines and
+    traces go with it (D-294) and are rebuilt from the rows as they now stand,
+    so a recalculation after a corrected attendance day can never leave half of
+    an old figure behind.
+
+    An employee ``payroll/assembly.py`` refuses gets no payslip, and the
+    validation gate reports why as a blocking issue on them (D-292) — this
+    function does not stop for them. A failure of the calculation ITSELF moves
+    the run to ``failed`` and is raised; nothing it half-wrote survives.
     """
-    raise NotImplementedError(
-        "Assembling a payslip — reading each employee's attendance, leave, remuneration "
-        "and tax profile, resolving the statutory rows for the period and calling the "
-        "calculators — is the next chunk. The run's lifecycle, its validation gate, "
-        "finalisation and reversal are built and tested; the arithmetic that fills a "
-        "payslip in is not."
+    from payroll import assembly
+
+    if run.status == Status.CALCULATED:
+        transition(run, Status.CALCULATING)
+    elif run.status in (Status.DRAFT, Status.FAILED):
+        transition(run, Status.CALCULATING)
+    else:
+        raise PayrollRunError(
+            f"A {run.status} run is not calculated. Only a draft, a calculated run being "
+            f"recalculated, or a failed run may be."
+        )
+
+    try:
+        with transaction.atomic(), tenant_context_of(run):
+            run.payslips.filter(is_finalised=False).delete()
+            written = []
+            for employee in assembly.employees_in(run):
+                try:
+                    draft = assembly.build(run, employee)
+                except assembly.CannotPrice:
+                    continue  # reported by validation.check_employees_not_priced
+                written.append(_write(run, draft))
+            _total(run, written, calculated_by=calculated_by)
+    except Exception:
+        transition(run, Status.FAILED)
+        raise
+
+    return transition(run, Status.CALCULATED)
+
+
+def _write(run: PayrollRun, draft) -> Payslip:
+    """One priced draft, as rows: the payslip, its lines, its traces."""
+    from payroll.trace import record
+
+    payslip = Payslip.objects.create(
+        tenant=run.tenant,
+        payroll_run=run,
+        employee=draft.employee,
+        pay_period=run.pay_period,
+        engagement=draft.engagement,
+        payslip_number=payslip_number(run, draft.employee),
+        bank_account=draft.bank_account,
+        is_termination_payslip=False,
+        **draft.header,
+    )
+    for order, line in enumerate(draft.lines, 1):
+        component = line.component
+        payslip.lines.create(
+            tenant=run.tenant,
+            payroll_component=component,
+            component_type=component.component_type,
+            component_code=component.code,
+            sars_source_code=component.sars_source_code,
+            source_code=component.sars_source_code.code if component.sars_source_code else "",
+            description=line.description[:150],
+            line_order=order * 10,
+            units=line.units,
+            unit_type=line.unit_type,
+            rate=None if line.rate is None else line.rate.quantize(Decimal("0.000001")),
+            multiplier=line.multiplier,
+            amount=line.amount.rounded,
+            amount_unrounded=line.amount.exact,
+            is_taxable=component.is_taxable,
+            is_uif_base=component.is_uif_base,
+            is_sdl_base=component.is_sdl_base,
+            calculation_note=line.note[:255],
+        )
+    for sequence, trace in enumerate(draft.traces, 1):
+        record(draft.employee, trace, payslip=payslip, sequence=sequence)
+    return payslip
+
+
+def _total(run: PayrollRun, payslips, *, calculated_by) -> None:
+    """Sheet 02's run totals, summed from the payslips just written."""
+
+    def total(field):
+        return sum((getattr(p, field) for p in payslips), Decimal("0"))
+
+    run.employee_count = len(payslips)
+    run.total_gross = total("gross_remuneration")
+    run.total_paye = total("paye")
+    run.total_uif_employee = total("uif_employee")
+    run.total_uif_employer = total("uif_employer")
+    run.total_sdl = total("sdl_employer")
+    run.total_other_deductions = total("total_deductions") - run.total_paye - run.total_uif_employee
+    run.total_net_pay = total("net_pay")
+    # Gross + UIF employer + SDL + COIDA provision. The COIDA provision needs the
+    # employer's assessment tariff, which is P8's return; it is not added here.
+    run.total_employer_cost = run.total_gross + run.total_uif_employer + run.total_sdl
+    run.calculated_at = timezone.now()
+    run.calculated_by_user = calculated_by
+    run.engine_version = ENGINE_VERSION
+    run.save(
+        update_fields=[
+            "employee_count",
+            "total_gross",
+            "total_paye",
+            "total_uif_employee",
+            "total_uif_employer",
+            "total_sdl",
+            "total_other_deductions",
+            "total_net_pay",
+            "total_employer_cost",
+            "calculated_at",
+            "calculated_by_user",
+            "engine_version",
+            "updated_at",
+        ]
     )
 
 

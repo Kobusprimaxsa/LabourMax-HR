@@ -533,6 +533,7 @@ def gross_inputs(draw):
         period_rate=draw(money("0", "40000")),
         working_days_in_period=draw(st.sampled_from([ZERO, Decimal("5"), Decimal("21.67")])),
         above_bcea_earnings_threshold=draw(st.booleans()),
+        further_unpaid_days=draw(st.sampled_from([ZERO, ZERO, Decimal("0.5"), Decimal("3")])),
     )
 
 
@@ -627,6 +628,7 @@ def replay_gross(trace: CalculationTrace, store: RowStore):
             period_rate=Decimal(inputs["period_rate"]),
             working_days_in_period=Decimal(inputs["working_days_in_period"]),
             above_bcea_earnings_threshold=B(inputs["above_bcea_earnings_threshold"]),
+            further_unpaid_days=Decimal(inputs["further_unpaid_days"]),
         )
     ).trace
 

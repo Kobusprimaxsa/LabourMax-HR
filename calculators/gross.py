@@ -212,6 +212,11 @@ class GrossInput:
     #: BCEA s6(3). A declared boolean (D-110): the employer states which side of
     #: the line the person is on, and the threshold stays reference data.
     above_bcea_earnings_threshold: bool = False
+    #: Unpaid working days a salary is pro-rated for that are NOT ``absent_unpaid``
+    #: attendance rows: the unpaid portion of approved leave (a half day is 0.5),
+    #: and the working days of the period before the engagement began or after
+    #: it ended. The caller counts them; this module only pro-rates (D-293).
+    further_unpaid_days: Decimal = ZERO
 
 
 @dataclasses.dataclass(frozen=True)
@@ -373,7 +378,10 @@ def _public_holiday_entitlement(pay: DayPay, data: GrossInput) -> Decimal:
 def _salaried_basic(data: GrossInput) -> tuple[Decimal, Decimal]:
     """The salary, less a pro-rata share for each unpaid day. Returns the
     fraction of the period earned and the unpaid day count."""
-    unpaid = Decimal(sum(1 for pay in data.days if pay.day.day_type == DayType.ABSENT_UNPAID))
+    unpaid = (
+        Decimal(sum(1 for pay in data.days if pay.day.day_type == DayType.ABSENT_UNPAID))
+        + data.further_unpaid_days
+    )
     if not unpaid:
         return ONE, ZERO
     if data.working_days_in_period <= ZERO:
@@ -534,6 +542,7 @@ def gross_pay(data: GrossInput) -> GrossResult:
             period_rate=data.period_rate,
             working_days_in_period=data.working_days_in_period,
             above_bcea_earnings_threshold=data.above_bcea_earnings_threshold,
+            further_unpaid_days=data.further_unpaid_days,
             overtime_multiplier=rates.overtime_multiplier,
             sunday_multiplier_ordinary=rates.sunday_multiplier_ordinary,
             sunday_multiplier_non_ordinary=rates.sunday_multiplier_non_ordinary,

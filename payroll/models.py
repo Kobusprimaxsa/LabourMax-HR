@@ -152,7 +152,10 @@ class PayrollCalculationTrace(AuditedModel, TenantScopedModel):
 
     payslip = models.ForeignKey(
         "payroll.Payslip",
-        on_delete=models.PROTECT,
+        # CASCADE, and the trigger decides whether it may: a DRAFT payslip's
+        # evidence goes with the draft when a run is recalculated; a FINALISED
+        # payslip cannot be deleted at all, so its traces never go (D-294).
+        on_delete=models.CASCADE,
         null=True,
         blank=True,
         related_name="calculation_traces",

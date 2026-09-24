@@ -150,15 +150,15 @@ def test_a_run_cannot_be_opened_over_a_closed_period(household, tax_year):
 # ---------------------------------------------------------------- calculating
 
 
-def test_calculating_refuses_by_name_rather_than_producing_nothing(household, tax_year):
-    """A run that reported itself calculated while holding no payslips is a run
-    somebody approves. One guard deep is not deep enough for that."""
+def test_a_run_with_nobody_on_it_calculates_to_nothing_and_cannot_be_approved(
+    household, tax_year, approver
+):
+    """A run that reports itself calculated while holding no payslips is a run
+    somebody approves — so the gate, not calculate(), is what refuses it."""
     run = a_run(household, a_period(household, tax_year))
 
-    with pytest.raises(NotImplementedError) as raised:
-        runs.calculate(run)
-
-    assert "next chunk" in str(raised.value)
+    with pytest.raises(runs.ApprovalRefusedError, match="no_payslips"):
+        runs.approve(runs.calculate(run), approved_by=approver)
 
 
 # ------------------------------------------------------------------ the gate

@@ -1605,6 +1605,18 @@ date it 1 March to end-February, which coincides with the tax year but is a diff
 instrument. **Loaded: the R668 000 ceiling only.** Notice 3910's R1 621 and R560 are minimum
 ASSESSMENTS — floors on the premium, which is P8's — and are in a notes string, not a row.
 
+**P7 chunk 8b — a regular run calculates** (24 September 2026, D-293, D-294).
+`payroll/assembly.py::build()` reads the rows in force for the period and calls gross, leave
+pay, PAYE, UIF and SDL; it WRITES NOTHING, so the same function prices a payslip in
+`runs.calculate()` and explains, in validation, why an employee has none. A refusal is a
+`CannotPrice` with a stable code, and the blocking issue is `not_priced:<code>`, re-derived on
+every validation, so fixing the data clears it. A salary is pro-rated for unpaid leave and for
+working days outside the engagement (`GrossInput.further_unpaid_days`). **A draft payslip's
+traces are deleted with it; a finalised payslip's never are** (D-294, `payroll/0007`). Two
+declared facts are passed as FALSE because nothing captures them (O-46), and a weekly run
+above a pro-rated UIF ceiling refuses (O-47). Tests run on the shipped reference data through
+the real loader.
+
 **P7 chunk 8a — the payroll tables are sheet 02's** (24 September 2026, D-289 to D-292).
 Kobus chose the workbook's names, so `payslip.gross_earnings` is `total_earnings`,
 `payslip_line.amount_exact` is `amount_unrounded`, `sequence` is `line_order`, the trace's

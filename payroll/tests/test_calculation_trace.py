@@ -183,15 +183,44 @@ def test_a_trace_cannot_be_updated(employee):
     assert "append-only" in str(raised.value).lower(), str(raised.value)
 
 
-def test_a_trace_cannot_be_deleted(employee):
+def test_a_trace_belonging_to_no_payslip_cannot_be_deleted(employee):
+    """A what-if or a COIDA trace has no payslip to follow, so it is append-only
+    for ever (D-294)."""
     row = record(employee, a_uif_result().trace)
 
-    with pytest.raises(DatabaseError), transaction.atomic():
+    with pytest.raises(DatabaseError, match="never deleted"), transaction.atomic():
         with tenant_context(employee.tenant_id):
             PayrollCalculationTrace.objects.filter(pk=row.pk).delete()
 
     with tenant_context(employee.tenant_id):
         assert PayrollCalculationTrace.objects.filter(pk=row.pk).exists()
+
+
+def test_a_draft_payslips_traces_go_with_it_when_a_run_is_recalculated(household, tax_year):
+    """D-294: recalculating replaces a draft payslip, and its evidence is as
+    disposable as the draft it evidences."""
+    from payroll.models import Payslip
+    from payroll.tests.conftest import a_payslip, a_period, a_run
+
+    payslip = a_payslip(household, a_run(household, a_period(household, tax_year)))
+    row = record(household["employee"], a_uif_result().trace, payslip=payslip)
+
+    with tenant_context(household["tenant"].pk):
+        Payslip.objects.filter(pk=payslip.pk).delete()
+        assert not PayrollCalculationTrace.objects.filter(pk=row.pk).exists()
+
+
+def test_a_finalised_payslips_traces_can_never_be_deleted(household, tax_year):
+    """PROVE EVERY GUARD FAILS: the trace behind a finalised payslip is the
+    evidence invariant 5 exists for."""
+    from payroll.tests.conftest import a_payslip, a_period, a_run
+
+    payslip = a_payslip(household, a_run(household, a_period(household, tax_year)), finalised=True)
+    row = record(household["employee"], a_uif_result().trace, payslip=payslip)
+
+    with pytest.raises(DatabaseError, match="finalised payslip"), transaction.atomic():
+        with tenant_context(household["tenant"].pk):
+            PayrollCalculationTrace.objects.filter(pk=row.pk).delete()
 
 
 def test_a_trace_must_name_its_calculator(employee):

@@ -230,21 +230,107 @@ def check_payslip_totals_match_their_lines(run) -> list[Finding]:
     """
     found = []
     for payslip in run.payslips.all():
-        lines = payslip.lines.aggregate(total=Sum("amount"))["total"] or Decimal("0")
-        stated = payslip.total_earnings - payslip.total_deductions
-        if lines != stated:
+
+        def summed(component_type, payslip=payslip):
+            return payslip.lines.filter(component_type=component_type).aggregate(
+                total=Sum("amount")
+            )["total"] or Decimal("0")
+
+        earned, deducted = summed("earning"), summed("deduction")
+        contributed = summed("employer_contribution")
+        if (
+            earned != payslip.total_earnings
+            or deducted != payslip.total_deductions
+            or contributed != payslip.total_employer_contributions
+        ):
             found.append(
                 Finding(
                     "totals_do_not_match_lines",
                     BLOCKING,
-                    f"This payslip states {stated} (gross {payslip.total_earnings} less "
-                    f"deductions {payslip.total_deductions}) and its lines add up to "
-                    f"{lines}. A payslip whose total is not its own lines is one nobody "
-                    f"can explain to the employee holding it.",
+                    f"This payslip states earnings {payslip.total_earnings}, deductions "
+                    f"{payslip.total_deductions} and employer contributions "
+                    f"{payslip.total_employer_contributions}; its lines add up to {earned}, "
+                    f"{deducted} and {contributed}. A payslip whose totals are not its own "
+                    f"lines is one nobody can explain to the employee holding it.",
                     employee=payslip.employee,
                 )
             )
     return found
+
+
+def check_employees_not_priced(run) -> list[Finding]:
+    """Everybody the run owes a payslip and has not got one, and WHY (D-292).
+
+    Derived like every other issue: the assembly is asked again, and its
+    refusal is the message. So fixing the data and re-validating clears the
+    issue, and nothing has to remember a refusal between two calls.
+    """
+    from payroll import assembly
+
+    if run.status not in ("calculated", "approved"):
+        return []
+    paid = set(run.payslips.values_list("employee_id", flat=True))
+    found = []
+    for employee in assembly.employees_in(run):
+        if employee.pk in paid:
+            continue
+        try:
+            assembly.build(run, employee)
+        except assembly.CannotPrice as refusal:
+            found.append(
+                Finding(
+                    f"not_priced:{refusal.code}",
+                    BLOCKING,
+                    f"No payslip: {refusal}",
+                    employee=employee,
+                )
+            )
+        else:
+            found.append(
+                Finding(
+                    "not_priced:stale",
+                    BLOCKING,
+                    "No payslip, and nothing now stops one being priced. Recalculate the run.",
+                    employee=employee,
+                )
+            )
+    return found
+
+
+def check_payment_details(run) -> list[Finding]:
+    """Sheet 02's NO_BANK_ACCOUNT: an EFT payslip with no account to pay into."""
+    return [
+        Finding(
+            "no_bank_account",
+            WARNING,
+            "Paid by EFT and no bank account is in force for the period. Capture one, or "
+            "record that this employee is paid in cash.",
+            employee=payslip.employee,
+        )
+        for payslip in run.payslips.filter(payment_method="eft", bank_account__isnull=True)
+    ]
+
+
+def check_sdl_registration(run) -> list[Finding]:
+    """SDL is levied only where an SDL registration is captured (D-209). No row
+    reads as "not liable", which is right for a household and wrong for a
+    contract cleaner over R500 000 — so it is said, once per run."""
+    from employers.models import EmployerStatutoryRegistration
+
+    if EmployerStatutoryRegistration.objects.filter(
+        employer=run.employer,
+        registration_type=EmployerStatutoryRegistration.RegistrationType.SDL,
+    ).exists():
+        return []
+    return [
+        Finding(
+            "no_sdl_registration",
+            WARNING,
+            "No SDL registration is captured for this employer, so no levy was calculated. "
+            "That is right below R500 000 of annual payroll (SDL Act s4(b)); above it, "
+            "capture the registration and recalculate.",
+        )
+    ]
 
 
 def check_attendance_is_complete(run) -> list[Finding]:
@@ -311,6 +397,9 @@ CHECKS = (
     check_reference_data,
     check_the_run_has_payslips,
     check_payslip_totals_match_their_lines,
+    check_employees_not_priced,
+    check_payment_details,
+    check_sdl_registration,
     check_attendance_is_complete,
     check_overdrawn_leave,
 )

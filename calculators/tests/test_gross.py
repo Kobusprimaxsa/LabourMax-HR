@@ -480,3 +480,19 @@ def test_a_sunday_never_pays_less_than_the_statutory_minimum_for_the_day(sunday)
     if sunday < SHIFT:
         owed = max(owed, DAILY)
     assert result.gross.exact >= owed
+
+
+def test_further_unpaid_days_pro_rate_a_salary_like_an_unpaid_absence():
+    """D-293: a half day of unpaid leave and two working days before the
+    engagement began are 2.5 unpaid days out of the period's 21 — R5 000 less
+    2.5/21 of it, R4 404.761905. The caller counts them; the pro-rating is the
+    one ``_salaried_basic`` already applies to an ``absent_unpaid`` row."""
+    result = gross_pay(
+        salaried(
+            period_rate=Decimal("5000.00"),
+            working_days_in_period=Decimal("21"),
+            further_unpaid_days=Decimal("2.5"),
+        )
+    )
+    assert amount_of(result, "BASIC") == Decimal("4404.761905")
+    assert result.trace.inputs["further_unpaid_days"] == "2.5"
