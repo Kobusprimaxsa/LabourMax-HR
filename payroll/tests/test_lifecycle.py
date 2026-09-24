@@ -20,6 +20,15 @@ from payroll.tests.test_runs import a_clean_run, to_calculated
 
 pytestmark = pytest.mark.django_db
 
+
+@pytest.fixture(autouse=True)
+def somebody_is_owed_a_bonus(monkeypatch):
+    """These tests are about the PERIOD. Whether an employee is owed a bonus is
+    ``payroll/bonusrun.py``'s question (D-311), tested in test_bonus_run.py; the
+    household fixture is domestic and owed none, so it is answered here."""
+    monkeypatch.setattr("payroll.bonusrun.employees_owed", lambda period: ["someone"])
+
+
 PeriodStatus = PayPeriod.Status
 REPO = pathlib.Path(__file__).resolve().parents[2]
 
@@ -188,3 +197,14 @@ def test_the_scan_finds_a_status_written_directly():
     """PROVE EVERY GUARD FAILS: the scan sees the shape it exists for."""
     tree = ast.parse("period.status = 'closed'\npay_period.status = x\nrun.status = y\n")
     assert list(_status_writes(tree)) == [1, 2]
+
+
+def test_a_refused_bonus_run_leaves_the_period_as_it_was(household, tax_year, monkeypatch):
+    """The refusal comes before the period moves: an open period stays OPEN
+    when the bonus run is refused, rather than in progress under no run."""
+    monkeypatch.setattr("payroll.bonusrun.employees_owed", lambda period: [])
+    period = a_period(household, tax_year)
+
+    with pytest.raises(runs.PayrollRunError, match="Nobody on this pay group is owed a bonus"):
+        runs.open_run(period, run_type=PayrollRun.RunType.BONUS)
+    assert reread(period).status == PeriodStatus.OPEN

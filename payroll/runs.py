@@ -142,6 +142,9 @@ def open_run(
     for the same reason (D-305).
     """
     with tenant_context_of(period):
+        # Closed first, and nothing moves the period until every refusal has had
+        # its say: a refused bonus run must not leave the period in progress.
+        lifecycle.refuse_if_closed(period)
         clashing = [
             live
             for live in lifecycle.live_runs(period)

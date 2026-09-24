@@ -81,6 +81,15 @@ def live_runs(period: PayPeriod):
 
 def begin(period: PayPeriod) -> PayPeriod:
     """A run is being opened over the period. Refuses a closed one."""
+    refuse_if_closed(period)
+    if period.status == PeriodStatus.IN_PROGRESS:
+        return period
+    return transition(period, PeriodStatus.IN_PROGRESS)
+
+
+def refuse_if_closed(period: PayPeriod) -> None:
+    """Checked BEFORE anything else about a new run, so a closed period is
+    reported as closed rather than as whatever the next check would say."""
     with tenant_context_of(period):
         period.refresh_from_db(fields=["status", "closed_at", "reopened_count"])
     if period.status == PeriodStatus.CLOSED:
@@ -89,9 +98,6 @@ def begin(period: PayPeriod) -> PayPeriod:
             f"been handed; a correction is a reversal of the run that paid it, which "
             f"reopens the period and counts that it did (pay_period.reopened_count)."
         )
-    if period.status == PeriodStatus.IN_PROGRESS:
-        return period
-    return transition(period, PeriodStatus.IN_PROGRESS)
 
 
 def close(period: PayPeriod, *, when=None) -> PayPeriod:
