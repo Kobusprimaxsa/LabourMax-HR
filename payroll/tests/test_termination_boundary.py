@@ -112,7 +112,7 @@ def test_a_full_payout_persists_its_trace_through_the_usual_boundary(employee): 
     with tenant_context(employee.tenant_id):
         stored = PayrollCalculationTrace.objects.get(pk=row.pk)
 
-    assert stored.calculator == "termination.termination_payout"
+    assert stored.calculator_name == "termination.termination_payout"
     # Four weeks' notice at R3 000, ten days' leave at R600, four days' pro-rata,
     # and one completed year of severance at a week.
     assert stored.outputs["notice_pay"] == "12000.000000"
@@ -120,7 +120,7 @@ def test_a_full_payout_persists_its_trace_through_the_usual_boundary(employee): 
     assert stored.outputs["pro_rata_leave_pay"] == "2400.000000"
     assert stored.outputs["severance"] == "3000.000000"
     assert stored.outputs["total"] == "23400.000000"
-    assert sorted(stored.statutory_rows) == [
+    assert sorted(stored.reference_rows_used) == [
         ["leave_rule_set", 81],
         ["statutory_parameter", 51],
         ["termination_notice_band", 61],

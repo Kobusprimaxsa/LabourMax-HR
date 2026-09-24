@@ -47,7 +47,7 @@ def a_version(*, verified=True, current_through=datetime.date(2027, 2, 28), user
 
 
 def codes(issues) -> list[str]:
-    return [issue.code for issue in issues]
+    return [issue.issue_code for issue in issues]
 
 
 # --------------------------------------------------------------- the P2 gate
@@ -63,7 +63,7 @@ def test_unverified_reference_data_blocks_the_run(household, tax_year):
     issues = validation.validate(run)
 
     assert "reference_data_not_verified" in codes(issues)
-    issue = next(i for i in issues if i.code == "reference_data_not_verified")
+    issue = next(i for i in issues if i.issue_code == "reference_data_not_verified")
     assert issue.severity == PayrollValidationIssue.Severity.BLOCKING
     assert "SECOND person" in issue.message
     assert "verifystatutory" in issue.message
@@ -130,7 +130,7 @@ def test_no_reference_data_at_all_blocks_and_counts_what_is_loaded(household, ta
 
     issues = validation.validate(run)
 
-    message = next(i for i in issues if i.code == "reference_data_not_verified").message
+    message = next(i for i in issues if i.issue_code == "reference_data_not_verified").message
     assert "0 version(s) are loaded" in message
 
 
@@ -147,7 +147,9 @@ def test_a_period_beyond_what_the_data_is_confirmed_through_is_blocked(
     issues = validation.validate(run)
 
     assert "reference_data_stale" in codes(issues)
-    assert "28 March 2026" in next(i for i in issues if i.code == "reference_data_stale").message
+    assert (
+        "28 March 2026" in next(i for i in issues if i.issue_code == "reference_data_stale").message
+    )
 
 
 def test_a_period_ending_exactly_on_the_confirmed_date_is_not_stale(household, tax_year, approver):
@@ -179,20 +181,24 @@ def test_a_payslip_whose_total_is_not_its_lines_is_blocked(
     a_version(user=approver)
     run = a_run(household, a_period(household, tax_year))
     payslip = a_payslip(
-        household, run, gross_earnings=Decimal("5000.00"), total_deductions=Decimal("0.00")
+        household,
+        run,
+        total_earnings=Decimal("5000.00"),
+        total_deductions=Decimal("0.00"),
+        net_pay=Decimal("5000.00"),
     )
     a_line(
         household,
         payslip,
         basic_component,
-        amount_exact=Decimal("4000.000000"),
+        amount_unrounded=Decimal("4000.000000"),
         amount=Decimal("4000.00"),
     )
 
     issues = validation.validate(run)
 
     assert "totals_do_not_match_lines" in codes(issues)
-    issue = next(i for i in issues if i.code == "totals_do_not_match_lines")
+    issue = next(i for i in issues if i.issue_code == "totals_do_not_match_lines")
     assert issue.employee_id == household["employee"].pk
 
 
@@ -200,7 +206,11 @@ def test_a_payslip_that_adds_up_raises_nothing(household, tax_year, approver, ba
     a_version(user=approver)
     run = a_run(household, a_period(household, tax_year))
     payslip = a_payslip(
-        household, run, gross_earnings=Decimal("5000.00"), total_deductions=Decimal("0.00")
+        household,
+        run,
+        total_earnings=Decimal("5000.00"),
+        total_deductions=Decimal("0.00"),
+        net_pay=Decimal("5000.00"),
     )
     a_line(household, payslip, basic_component)
 
@@ -218,7 +228,11 @@ def test_the_attendance_completeness_hook_is_wired_up(
     a_version(user=approver)
     run = a_run(household, a_period(household, tax_year))
     payslip = a_payslip(
-        household, run, gross_earnings=Decimal("5000.00"), total_deductions=Decimal("0.00")
+        household,
+        run,
+        total_earnings=Decimal("5000.00"),
+        total_deductions=Decimal("0.00"),
+        net_pay=Decimal("5000.00"),
     )
     a_line(household, payslip, basic_component)
 
@@ -250,7 +264,11 @@ def test_a_problem_that_has_been_fixed_stops_being_reported(
 
     a_version(user=approver)
     payslip = a_payslip(
-        household, run, gross_earnings=Decimal("5000.00"), total_deductions=Decimal("0.00")
+        household,
+        run,
+        total_earnings=Decimal("5000.00"),
+        total_deductions=Decimal("0.00"),
+        net_pay=Decimal("5000.00"),
     )
     a_line(household, payslip, basic_component)
     validation.validate(run)
@@ -264,14 +282,14 @@ def test_a_resolved_issue_survives_revalidation_and_stops_blocking(household, ta
     record, so re-running the checks must not erase it."""
     run = a_run(household, a_period(household, tax_year))
     issues = validation.validate(run)
-    issue = next(i for i in issues if i.code == "reference_data_not_verified")
+    issue = next(i for i in issues if i.issue_code == "reference_data_not_verified")
 
     validation.resolve_issue(issue, resolved_by=approver, reason="Verified out of band, ref #77")
     validation.validate(run)
 
     with tenant_context(household["tenant"].pk):
         stored = PayrollValidationIssue.objects.get(pk=issue.pk)
-    assert stored.resolved_by_user_id == approver.pk
+    assert stored.acknowledged_by_user_id == approver.pk
     assert stored.resolution_reason == "Verified out of band, ref #77"
     assert issue.pk not in [i.pk for i in validation.blocking_issues(run)]
 
@@ -294,10 +312,10 @@ def test_the_database_refuses_a_half_resolved_issue(household, tax_year, approve
             PayrollValidationIssue.objects.create(
                 tenant=household["tenant"],
                 payroll_run=run,
-                code="made_up",
+                issue_code="made_up",
                 severity=PayrollValidationIssue.Severity.WARNING,
                 message="Something",
-                resolved_at=WHEN,
+                acknowledged_at=WHEN,
             )
 
     assert "validation_issue_resolution_is_named_and_reasoned" in str(raised.value)
@@ -311,7 +329,7 @@ def test_an_issue_must_say_what_is_wrong(household, tax_year):
             PayrollValidationIssue.objects.create(
                 tenant=household["tenant"],
                 payroll_run=run,
-                code="made_up",
+                issue_code="made_up",
                 severity=PayrollValidationIssue.Severity.WARNING,
                 message="",
             )
@@ -377,7 +395,7 @@ def test_a_later_verified_version_does_not_vouch_for_an_earlier_unverified_one(
         "the run reads PAYE from REF-2026.03.01, which nobody has verified; a verified "
         "BCCCI wage schedule does not vouch for it"
     )
-    message = next(i for i in issues if i.code == "reference_data_not_verified").message
+    message = next(i for i in issues if i.issue_code == "reference_data_not_verified").message
     assert "REF-2026.03.01" in message, "the refusal must name the version that is missing"
 
 
@@ -486,7 +504,7 @@ def test_a_machine_verified_version_does_not_satisfy_the_gate(household, tax_yea
     assert "reference_data_not_verified" in codes(issues), (
         "four machine-verified versions must block the run exactly as unverified ones do"
     )
-    message = next(i for i in issues if i.code == "reference_data_not_verified").message
+    message = next(i for i in issues if i.issue_code == "reference_data_not_verified").message
     for index in range(4):
         assert f"REF-MACHINE-{index:02d}" in message
     assert "REF-HUMAN-00" not in message, "a human-verified version is not the problem"

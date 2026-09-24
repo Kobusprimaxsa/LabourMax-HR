@@ -131,7 +131,7 @@ class PayrollCalculationTrace(AuditedModel, TenantScopedModel):
     about a database; the caller writes it here. That boundary is why the same
     calculation can be run in a test, in a payroll run, or replayed in a dispute.
 
-    ``statutory_rows`` holds ``[["statutory_parameter", 901], ...]`` — keys, not
+    ``reference_rows_used`` holds ``[["statutory_parameter", 901], ...]`` — keys, not
     citation text. A citation can be corrected later (two have been in this
     build); the key still opens the row the payslip was actually computed
     against.
@@ -161,9 +161,11 @@ class PayrollCalculationTrace(AuditedModel, TenantScopedModel):
     employee = models.ForeignKey(
         "employees.Employee", on_delete=models.PROTECT, related_name="calculation_traces"
     )
-    calculator = models.CharField(
+    calculator_name = models.CharField(
         max_length=60, db_index=True, help_text="e.g. 'uif.contribution'."
     )
+    #: Execution order within one payslip (sheet 02). 0 outside a payslip.
+    sequence = models.SmallIntegerField(default=0)
     calculated_for = models.DateField(
         db_index=True, help_text="The date the calculation is FOR, never the date it ran."
     )
@@ -171,28 +173,30 @@ class PayrollCalculationTrace(AuditedModel, TenantScopedModel):
     inputs = models.JSONField(
         help_text="Every input, as given. Strings, so it reads the same in 2029."
     )
-    statutory_rows = models.JSONField(
+    reference_rows_used = models.JSONField(
         default=list, help_text='[["table", row_id], ...] - keys, never citation text.'
     )
     outputs = models.JSONField(help_text="Every figure produced, unrounded.")
     warnings = models.JSONField(default=list, blank=True)
+    duration_ms = models.IntegerField(null=True, blank=True)
 
     class Meta:
         db_table = "payroll_calculation_trace"
         ordering = ["-calculated_for", "-id"]
         indexes = [
-            models.Index(fields=["tenant", "calculator", "calculated_for"]),
+            models.Index(fields=["tenant", "calculator_name", "calculated_for"]),
             models.Index(fields=["employee", "calculated_for"]),
+            models.Index(fields=["payslip", "sequence"]),
         ]
         constraints = [
             models.CheckConstraint(
-                condition=~models.Q(calculator=""),
+                condition=~models.Q(calculator_name=""),
                 name="calculation_trace_names_its_calculator",
             ),
         ]
 
     def __str__(self):
-        return f"{self.calculator} for {self.employee_id} on {self.calculated_for}"
+        return f"{self.calculator_name} for {self.employee_id} on {self.calculated_for}"
 
 
 class PayrollRun(AuditedModel, TenantScopedModel):
@@ -221,8 +225,25 @@ class PayrollRun(AuditedModel, TenantScopedModel):
         APPROVED = "approved", "Approved"
         FINALISED = "finalised", "Finalised"
         REVERSED = "reversed", "Reversed"
+        #: Sheet 02's. Reached only when calculation itself breaks — a refusal
+        #: about ONE employee is a blocking issue on that employee, and the run
+        #: still calculates everybody else (D-292).
+        FAILED = "failed", "Failed"
 
+    class RunType(models.TextChoices):
+        REGULAR = "regular", "Regular"
+        SUPPLEMENTARY = "supplementary", "Supplementary"
+        TERMINATION = "termination", "Termination"
+        BONUS = "bonus", "Bonus"
+        CORRECTION = "correction", "Correction"
+
+    employer = models.ForeignKey(
+        "employers.Employer", on_delete=models.PROTECT, related_name="payroll_runs"
+    )
     pay_period = models.ForeignKey(PayPeriod, on_delete=models.PROTECT, related_name="runs")
+    run_type = models.CharField(
+        max_length=20, choices=RunType.choices, default=RunType.REGULAR, db_index=True
+    )
     run_number = models.SmallIntegerField(
         default=1,
         help_text="1 for the ordinary run; 2+ for a correction run over the same period.",
@@ -231,7 +252,45 @@ class PayrollRun(AuditedModel, TenantScopedModel):
         max_length=20, choices=Status.choices, default=Status.DRAFT, db_index=True
     )
 
+    employee_count = models.IntegerField(default=0)
+    total_gross = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    total_paye = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    total_uif_employee = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    total_uif_employer = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    total_sdl = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    total_other_deductions = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    total_net_pay = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    total_employer_cost = models.DecimalField(
+        max_digits=16,
+        decimal_places=2,
+        default=0,
+        help_text="Gross + UIF employer + SDL + COIDA provision.",
+    )
+
+    reference_data_version = models.ForeignKey(
+        "statutory.ReferenceDataVersion",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="payroll_runs",
+        help_text="The statutory data version the run was calculated against.",
+    )
+    engine_version = models.CharField(
+        max_length=20,
+        help_text="calculators.base.ENGINE_VERSION when calculated — needed to reproduce a run.",
+    )
+
     calculated_at = models.DateTimeField(null=True, blank=True)
+    calculated_by_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="calculated_payroll_runs",
+    )
+    validation_summary = models.JSONField(
+        default=list, blank=True, help_text="Blocking errors and non-blocking warnings."
+    )
     approved_at = models.DateTimeField(null=True, blank=True)
     approved_by_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -262,8 +321,35 @@ class PayrollRun(AuditedModel, TenantScopedModel):
     class Meta:
         db_table = "payroll_run"
         ordering = ["pay_period_id", "run_number"]
-        indexes = [models.Index(fields=["tenant", "status"])]
+        indexes = [
+            models.Index(fields=["tenant", "status"]),
+            models.Index(fields=["employer", "-finalised_at"]),
+        ]
         constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    status__in=[
+                        "draft",
+                        "calculating",
+                        "calculated",
+                        "approved",
+                        "finalised",
+                        "reversed",
+                        "failed",
+                    ]
+                ),
+                name="payroll_run_status_is_known",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    run_type__in=["regular", "supplementary", "termination", "bonus", "correction"]
+                ),
+                name="payroll_run_type_is_known",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(engine_version=""),
+                name="payroll_run_names_its_engine_version",
+            ),
             models.UniqueConstraint(
                 fields=["pay_period", "run_number"], name="uniq_run_number_per_period"
             ),
@@ -317,10 +403,19 @@ class Payslip(AuditedModel, TenantScopedModel):
     differ by a cent often enough that an employee notices.
     """
 
+    class PaymentMethod(models.TextChoices):
+        EFT = "eft", "EFT"
+        CASH = "cash", "Cash"
+
     payroll_run = models.ForeignKey(PayrollRun, on_delete=models.PROTECT, related_name="payslips")
     employee = models.ForeignKey(
         "employees.Employee", on_delete=models.PROTECT, related_name="payslips"
     )
+    pay_period = models.ForeignKey(PayPeriod, on_delete=models.PROTECT, related_name="payslips")
+    engagement = models.ForeignKey(
+        "employees.EmployeeEngagement", on_delete=models.PROTECT, related_name="payslips"
+    )
+    payslip_number = models.CharField(max_length=30)
 
     #: Invariant 7. Written at finalisation and never read through the FK after.
     employee_snapshot = models.JSONField(
@@ -329,10 +424,39 @@ class Payslip(AuditedModel, TenantScopedModel):
         help_text="Name, number, position, rate and bank reference as at finalisation.",
     )
 
-    gross_earnings = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    pay_basis = models.CharField(max_length=20)
+    rate_used = models.DecimalField(max_digits=14, decimal_places=6)
+    ordinary_hours = models.DecimalField(max_digits=9, decimal_places=3, default=0)
+    overtime_hours = models.DecimalField(max_digits=9, decimal_places=3, default=0)
+    days_worked = models.DecimalField(max_digits=7, decimal_places=3, default=0)
+
+    gross_remuneration = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    taxable_remuneration = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    uif_remuneration = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0, help_text="Base after the ceiling is applied."
+    )
+    sdl_remuneration = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    paye = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    uif_employee = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    uif_employer = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    sdl_employer = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+
+    total_earnings = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     total_deductions = models.DecimalField(max_digits=14, decimal_places=2, default=0)
-    employer_contributions = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    total_employer_contributions = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     net_pay = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+
+    payment_method = models.CharField(
+        max_length=20, choices=PaymentMethod.choices, default=PaymentMethod.EFT
+    )
+    bank_account = models.ForeignKey(
+        "employees.EmployeeBankAccount",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="payslips",
+    )
+    is_termination_payslip = models.BooleanField(default=False)
 
     is_finalised = models.BooleanField(default=False, db_index=True)
     finalised_at = models.DateTimeField(null=True, blank=True)
@@ -350,10 +474,36 @@ class Payslip(AuditedModel, TenantScopedModel):
         indexes = [
             models.Index(fields=["tenant", "is_finalised"]),
             models.Index(fields=["employee", "-finalised_at"]),
+            models.Index(fields=["employee", "pay_period"]),
+            models.Index(fields=["tenant", "pay_period"]),
         ]
         constraints = [
             models.UniqueConstraint(
                 fields=["payroll_run", "employee"], name="uniq_payslip_per_employee_per_run"
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "payslip_number"], name="uniq_payslip_number_per_tenant"
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(payslip_number=""), name="payslip_has_a_number"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    net_pay=models.F("total_earnings") - models.F("total_deductions")
+                ),
+                name="payslip_net_is_earnings_less_deductions",
+            ),
+            # Sheet 03's "net_pay >= 0", EXCEPT on a reversal, whose lines are the
+            # negation of the original's and whose net is therefore negative by
+            # construction (invariant 4). A negative net on an ordinary payslip is
+            # a blocking validation issue before it is ever a stored row.
+            models.CheckConstraint(
+                condition=models.Q(is_reversal=True) | models.Q(net_pay__gte=0),
+                name="payslip_net_not_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(payment_method__in=["eft", "cash"]),
+                name="payslip_payment_method_is_known",
             ),
             # Both ways over the nullable timestamp, because a CHECK that
             # evaluates to NULL counts as satisfied (D-170).
@@ -386,7 +536,7 @@ class PayslipLine(AuditedModel, TenantScopedModel):
     frozen text answers "what did this line say", and only the second survives a
     correction to the catalogue.
 
-    ``amount`` is ``amount_exact`` rounded to two places, ROUND_HALF_UP, and a
+    ``amount`` is ``amount_unrounded`` rounded to two places, ROUND_HALF_UP, and a
     CHECK proves it rather than trusting the writer — invariant 6 made
     structural. PostgreSQL's ``round()`` on numeric rounds half away from zero,
     which is what ``ROUND_HALF_UP`` means in Python's decimal module, so the two
@@ -402,29 +552,63 @@ class PayslipLine(AuditedModel, TenantScopedModel):
         "employers.PayrollComponent", on_delete=models.PROTECT, related_name="payslip_lines"
     )
 
+    class ComponentType(models.TextChoices):
+        EARNING = "earning", "Earning"
+        DEDUCTION = "deduction", "Deduction"
+        EMPLOYER_CONTRIBUTION = "employer_contribution", "Employer contribution"
+        INFORMATIONAL = "informational", "Informational"
+
+    class UnitType(models.TextChoices):
+        HOURS = "hours", "Hours"
+        DAYS = "days", "Days"
+        MONTHS = "months", "Months"
+        NONE = "none", "None"
+
+    line_order = models.SmallIntegerField(default=0, help_text="Display order on the document.")
+    component_type = models.CharField(max_length=30, choices=ComponentType.choices, db_index=True)
     #: Frozen copies. See the class docstring — these are what a reprint shows.
     component_code = models.CharField(max_length=40)
+    sars_source_code = models.ForeignKey(
+        "statutory.SarsSourceCode",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="payslip_lines",
+    )
     source_code = models.CharField(
         max_length=10, blank=True, help_text="The SARS code as it stood, for the IRP5."
     )
-    description = models.CharField(max_length=160)
-
-    sequence = models.SmallIntegerField(default=0, help_text="Display order on the document.")
+    description = models.CharField(max_length=150)
 
     units = models.DecimalField(
-        max_digits=12, decimal_places=4, default=0, help_text="Hours, days or periods."
+        max_digits=12, decimal_places=4, null=True, blank=True, help_text="Hours or days."
     )
-    rate = models.DecimalField(max_digits=14, decimal_places=6, default=0)
-    #: Invariant 6: the unrounded figure is stored alongside the rounded one.
-    amount_exact = models.DecimalField(max_digits=16, decimal_places=6)
-    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    unit_type = models.CharField(max_length=10, choices=UnitType.choices, blank=True)
+    rate = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
+    multiplier = models.DecimalField(max_digits=8, decimal_places=4, null=True, blank=True)
+    amount = models.DecimalField(
+        max_digits=14, decimal_places=2, help_text="Rounded HALF_UP to 2dp at this level only."
+    )
+    amount_unrounded = models.DecimalField(
+        max_digits=18, decimal_places=6, help_text="Retained so rounding can be reconciled."
+    )
+
+    #: The component's base flags AS THEY STOOD when the line was written —
+    #: frozen, like the codes beside them (invariant 7).
+    is_taxable = models.BooleanField(default=True)
+    is_uif_base = models.BooleanField(default=True)
+    is_sdl_base = models.BooleanField(default=True)
+    calculation_note = models.CharField(
+        max_length=255, blank=True, help_text="Plain-English explanation for the drill-down."
+    )
 
     class Meta:
         db_table = "payslip_line"
-        ordering = ["payslip_id", "sequence", "id"]
+        ordering = ["payslip_id", "line_order", "id"]
         indexes = [
             models.Index(fields=["tenant", "component_code"]),
-            models.Index(fields=["payslip", "sequence"]),
+            models.Index(fields=["payslip", "line_order"]),
+            models.Index(fields=["tenant", "payroll_component"]),
         ]
         constraints = [
             models.CheckConstraint(
@@ -433,9 +617,24 @@ class PayslipLine(AuditedModel, TenantScopedModel):
             ),
             models.CheckConstraint(
                 condition=models.Q(
-                    amount=Round(models.F("amount_exact"), 2),
+                    amount=Round(models.F("amount_unrounded"), 2),
                 ),
                 name="payslip_line_amount_is_the_exact_figure_rounded",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    component_type__in=[
+                        "earning",
+                        "deduction",
+                        "employer_contribution",
+                        "informational",
+                    ]
+                ),
+                name="payslip_line_component_type_is_known",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(unit_type__in=["", "hours", "days", "months", "none"]),
+                name="payslip_line_unit_type_is_known",
             ),
         ]
 
@@ -444,20 +643,18 @@ class PayslipLine(AuditedModel, TenantScopedModel):
 
 
 class YtdAccumulator(AuditedModel, TenantScopedModel):
-    """Year-to-date totals per employee per tax year per SARS source code.
+    """Year-to-date totals for one employee, one tax year, one employer — sheet
+    02's shape (D-290, superseding D-231's one-row-per-source-code layout).
 
-    **A CACHE and nothing more** (invariant 3). Every figure here is derivable
-    by summing the employee's FINALISED payslip lines for the tax year, and
-    ``payroll/ytd.py`` rebuilds it from exactly that — from scratch, never
-    incrementally. P5 settled why (D-153): an incrementally maintained cache
-    that has drifted cannot be told apart from a correct one, so there is no
-    incremental path to drift.
+    **A CACHE and nothing more** (invariant 3), and D-231's real point survives
+    the reshape: every figure is derivable from the employee's FINALISED
+    payslips for the tax year, ``payroll/ytd.py`` rebuilds the row from exactly
+    that, from scratch, and never increments it (D-153).
 
-    Keyed on the SOURCE CODE rather than the component, because what a
-    year-to-date figure is FOR is the IRP5 and the EMP201, and both are stated
-    in source codes. Two components sharing a code (BASIC, SUNDAY_2_0 and
-    PH_WORKED are all 3601) belong on one line there, and keying on the
-    component would split them.
+    The named totals are what the EMP201 and the payslip's YTD column read; the
+    per-code figures the IRP5 needs are ``ytd_by_source_code`` —
+    ``{"3601": "45000.00", ...}``, strings so a Decimal never passes through a
+    float on its way into JSON. Three components share 3601 and land on one key.
     """
 
     employee = models.ForeignKey(
@@ -466,33 +663,50 @@ class YtdAccumulator(AuditedModel, TenantScopedModel):
     tax_year = models.ForeignKey(
         "statutory.TaxYear", on_delete=models.PROTECT, related_name="ytd_accumulators"
     )
-    source_code = models.CharField(max_length=10, db_index=True)
-
-    amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
-    units = models.DecimalField(max_digits=12, decimal_places=4, default=0)
-    payslip_count = models.IntegerField(default=0)
-
-    rebuilt_at = models.DateTimeField(
-        help_text="When this row was last recomputed from finalised payslips."
+    employer = models.ForeignKey(
+        "employers.Employer", on_delete=models.PROTECT, related_name="ytd_accumulators"
     )
+
+    periods_processed = models.SmallIntegerField(default=0)
+    ytd_gross = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    ytd_taxable = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    ytd_paye = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    ytd_uif_employee = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    ytd_uif_employer = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    ytd_sdl = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    ytd_uif_remuneration = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    ytd_coida_remuneration = models.DecimalField(
+        max_digits=16, decimal_places=2, default=0, help_text="Capped at the COIDA ceiling."
+    )
+    ytd_by_source_code = models.JSONField(
+        default=dict, blank=True, help_text="{'3601': '45000.00', ...} — the IRP5 payload."
+    )
+    last_payroll_run = models.ForeignKey(
+        PayrollRun,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ytd_accumulators",
+    )
+    recalculated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "ytd_accumulator"
-        ordering = ["employee_id", "tax_year_id", "source_code"]
+        ordering = ["employee_id", "tax_year_id"]
         indexes = [models.Index(fields=["tenant", "tax_year"])]
         constraints = [
             models.UniqueConstraint(
-                fields=["employee", "tax_year", "source_code"],
-                name="uniq_ytd_per_employee_year_code",
+                fields=["employee", "tax_year", "employer"],
+                name="uniq_ytd_per_employee_year_employer",
             ),
             models.CheckConstraint(
-                condition=models.Q(payslip_count__gte=0),
-                name="ytd_payslip_count_not_negative",
+                condition=models.Q(periods_processed__gte=0),
+                name="ytd_periods_processed_not_negative",
             ),
         ]
 
     def __str__(self):
-        return f"YTD {self.source_code} for {self.employee_id}: {self.amount}"
+        return f"YTD {self.tax_year_id} for {self.employee_id}: {self.ytd_gross}"
 
 
 class AnnualBonusCycle(AuditedModel, TenantScopedModel):
@@ -619,8 +833,11 @@ class PayrollValidationIssue(AuditedModel, TenantScopedModel):
     """
 
     class Severity(models.TextChoices):
-        BLOCKING = "blocking", "Blocking"
+        #: Sheet 02's "error". Named BLOCKING in code because that is what it
+        #: does: an unacknowledged one stops approval.
+        BLOCKING = "error", "Error — blocks approval"
         WARNING = "warning", "Warning"
+        INFO = "info", "Information"
 
     payroll_run = models.ForeignKey(
         "payroll.PayrollRun", on_delete=models.CASCADE, related_name="validation_issues"
@@ -634,32 +851,33 @@ class PayrollValidationIssue(AuditedModel, TenantScopedModel):
         help_text="Null for an issue about the run or the period rather than a person.",
     )
 
-    code = models.CharField(
+    issue_code = models.CharField(
         max_length=60, db_index=True, help_text="A stable identifier, e.g. 'reference_data'."
     )
     severity = models.CharField(max_length=20, choices=Severity.choices, db_index=True)
     message = models.TextField(help_text="What is wrong, in the terms the employer must act on.")
+    detail = models.JSONField(default=dict, blank=True)
 
-    resolved_at = models.DateTimeField(null=True, blank=True)
-    resolved_by_user = models.ForeignKey(
+    acknowledged_at = models.DateTimeField(null=True, blank=True)
+    acknowledged_by_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name="resolved_payroll_issues",
+        related_name="acknowledged_payroll_issues",
     )
     resolution_reason = models.TextField(blank=True)
 
     class Meta:
         db_table = "payroll_validation_issue"
-        ordering = ["payroll_run_id", "severity", "employee_id", "code"]
+        ordering = ["payroll_run_id", "severity", "employee_id", "issue_code"]
         indexes = [
             models.Index(fields=["tenant", "severity"]),
-            models.Index(fields=["payroll_run", "resolved_at"]),
+            models.Index(fields=["payroll_run", "acknowledged_at"]),
         ]
         constraints = [
             models.CheckConstraint(
-                condition=~models.Q(code=""), name="validation_issue_has_a_code"
+                condition=~models.Q(issue_code=""), name="validation_issue_has_a_code"
             ),
             models.CheckConstraint(
                 condition=~models.Q(message=""), name="validation_issue_says_what_is_wrong"
@@ -669,13 +887,13 @@ class PayrollValidationIssue(AuditedModel, TenantScopedModel):
             # columns, because a CHECK that evaluates to NULL counts as satisfied.
             models.CheckConstraint(
                 condition=models.Q(
-                    resolved_at__isnull=True,
-                    resolved_by_user__isnull=True,
+                    acknowledged_at__isnull=True,
+                    acknowledged_by_user__isnull=True,
                     resolution_reason="",
                 )
                 | models.Q(
-                    resolved_at__isnull=False,
-                    resolved_by_user__isnull=False,
+                    acknowledged_at__isnull=False,
+                    acknowledged_by_user__isnull=False,
                 )
                 & ~models.Q(resolution_reason=""),
                 name="validation_issue_resolution_is_named_and_reasoned",
@@ -683,4 +901,4 @@ class PayrollValidationIssue(AuditedModel, TenantScopedModel):
         ]
 
     def __str__(self):
-        return f"[{self.severity}] {self.code} on run {self.payroll_run_id}"
+        return f"[{self.severity}] {self.issue_code} on run {self.payroll_run_id}"

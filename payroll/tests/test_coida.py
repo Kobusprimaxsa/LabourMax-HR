@@ -30,16 +30,12 @@ END = datetime.date(2027, 2, 28)
 
 
 @pytest.fixture
-def ceiling(db):
+def ceiling(household):
     """Notice 3910 of 2026, GG 54577: "The amount of R668 000 per employee per
-    annum … effective from 1st March 2026". Created here the way the household
-    fixture creates the minimum age — tests do not load the fixture files."""
-    return StatutoryParameter.objects.create(
-        parameter_code=coida.CEILING_PARAMETER,
-        value_numeric=Decimal("668000.000000"),
-        unit=StatutoryParameter.Unit.ZAR,
-        effective_from=START,
-        source_reference="Compensation Fund maximum amount of earnings, 2026/2027",
+    annum … effective from 1st March 2026". The household fixture loads it,
+    because the year-to-date cache caps through the same row (D-290)."""
+    return StatutoryParameter.objects.get(
+        parameter_code=coida.CEILING_PARAMETER, effective_from=START
     )
 
 
@@ -67,7 +63,7 @@ def paid(household, tax_year, component, amount, *, number, payment, finalised=T
         payment=payment,
     )
     payslip = a_payslip(household, a_run(household, period), finalised=finalised)
-    a_line(household, payslip, component, amount_exact=Decimal(amount))
+    a_line(household, payslip, component, amount_unrounded=Decimal(amount))
     return payslip
 
 
@@ -150,10 +146,17 @@ def test_the_loaded_ceiling_caps_the_year_once(household, tax_year, basic_compon
 def test_no_loaded_ceiling_refuses_rather_than_declaring_uncapped(
     household, tax_year, basic_component
 ):
-    paid(household, tax_year, basic_component, "5000", number=1, payment=MARCH_PAY)
+    """The household fixture loads the 2026 ceiling (effective 1 March 2026), so
+    the refusal is proved on the 2025 season, for which nothing is loaded."""
+    paid(household, tax_year, basic_component, "5000", number=1, payment=datetime.date(2025, 6, 27))
 
     with pytest.raises(StatutoryValueMissingError, match="COIDA_ANNUAL_CEILING"):
-        earnings(household)
+        coida.employee_earnings(
+            household["employee"],
+            period_start=datetime.date(2025, 3, 1),
+            period_end=datetime.date(2026, 2, 28),
+            calculated_for=datetime.date(2026, 2, 28),
+        )
 
 
 def test_the_accumulation_pins_the_tenant_itself(household, tax_year, basic_component, ceiling):
@@ -180,7 +183,9 @@ def test_keeping_the_trace_writes_one_row(household, tax_year, basic_component, 
     earnings(household, keep_trace=True)
 
     with tenant_context(household["tenant"].pk):
-        (trace,) = PayrollCalculationTrace.objects.filter(calculator="coida.assessment_earnings")
+        (trace,) = PayrollCalculationTrace.objects.filter(
+            calculator_name="coida.assessment_earnings"
+        )
     assert trace.outputs["declared"] == "5000.000000"
     assert trace.inputs["line_001"] == "3601|5000.000000|True"
 

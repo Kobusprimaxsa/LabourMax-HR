@@ -198,6 +198,6 @@ def test_a_paye_trace_is_written_through_the_same_boundary_as_uif_and_sdl(employ
 
     with tenant_context(employee.tenant_id):
         stored = PayrollCalculationTrace.objects.get(pk=row.pk)
-    assert stored.calculator == "paye.employees_tax"
+    assert stored.calculator_name == "paye.employees_tax"
     assert stored.outputs["annual_equivalent"] == "240000.000000"
-    assert stored.statutory_rows == [["paye_rebate", 711], ["paye_tax_bracket", 701]]
+    assert stored.reference_rows_used == [["paye_rebate", 711], ["paye_tax_bracket", 701]]

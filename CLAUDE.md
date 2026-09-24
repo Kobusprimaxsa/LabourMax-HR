@@ -1605,6 +1605,19 @@ date it 1 March to end-February, which coincides with the tax year but is a diff
 instrument. **Loaded: the R668 000 ceiling only.** Notice 3910's R1 621 and R560 are minimum
 ASSESSMENTS — floors on the premium, which is P8's — and are in a notes string, not a row.
 
+**P7 chunk 8a — the payroll tables are sheet 02's** (24 September 2026, D-289 to D-292).
+Kobus chose the workbook's names, so `payslip.gross_earnings` is `total_earnings`,
+`payslip_line.amount_exact` is `amount_unrounded`, `sequence` is `line_order`, the trace's
+`calculator`/`statutory_rows` are `calculator_name`/`reference_rows_used`, and the validation
+issue's `code`/`resolved_*` are `issue_code`/`acknowledged_*` — every one a RENAME in
+`payroll/0006`. `ytd_accumulator` is one row per employee-year-employer with named totals and
+`ytd_by_source_code` (D-290, superseding D-231's layout, not its rebuild-from-scratch rule).
+**O-28 is a standing test now**: `payroll/tests/test_sheet_02_reconciliation.py` reads the
+spec workbook and fails on a missing column outside four named deviations. For the assembly
+(8b): **an O-40 day refuses** (D-291), and **a refusal about one employee is a blocking issue
+on that employee** while the run calculates everyone else (D-292). `calculators.base.
+ENGINE_VERSION` is stamped on every run — bump it with any change to a calculator's arithmetic.
+
 **P7 — the annual bonus cycle** (24 September 2026, D-286). `calculators/bonus.py` is ONE
 formula for SD1 3(3)(a) and (b) and BCCCI 4.5: each FULL calendar month in the cycle earns a
 twelfth of the rule's weeks at that month's weekly wage. The cycle is the twelve months ending

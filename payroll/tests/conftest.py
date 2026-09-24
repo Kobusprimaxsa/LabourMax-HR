@@ -13,6 +13,7 @@ from decimal import Decimal
 import pytest
 from django.db import transaction
 
+from calculators.base import ENGINE_VERSION
 from core.managers import platform_context, tenant_context
 from core.models import Tenant
 from employees.engagements import MINIMUM_AGE_PARAMETER, engage
@@ -80,7 +81,22 @@ def household(db) -> dict:
             derived_monthly_rate=Decimal("5000.000000"),
             effective_from=datetime.date(2026, 3, 1),
         )
-    return {"tenant": tenant, "employer": employer, "employee": employee, "pay_group": pay_group}
+    # The COIDA ceiling, because the year-to-date cache caps its COIDA figure
+    # through payroll/coida.py (D-285, D-290). Notice 3910 of 2026, GG 54577.
+    StatutoryParameter.objects.create(
+        parameter_code="COIDA_ANNUAL_CEILING",
+        value_numeric=Decimal("668000.000000"),
+        unit=StatutoryParameter.Unit.ZAR,
+        effective_from=datetime.date(2026, 3, 1),
+        source_reference="Compensation Fund maximum amount of earnings, 2026/2027",
+    )
+    return {
+        "tenant": tenant,
+        "employer": employer,
+        "employee": employee,
+        "pay_group": pay_group,
+        "engagement": engagement,
+    }
 
 
 @pytest.fixture
@@ -124,9 +140,11 @@ def a_run(household, period, *, number=1, status=PayrollRun.Status.DRAFT) -> Pay
     with tenant_context(household["tenant"].pk):
         return PayrollRun.objects.create(
             tenant=household["tenant"],
+            employer=household["employer"],
             pay_period=period,
             run_number=number,
             status=status,
+            engine_version=ENGINE_VERSION,
         )
 
 
@@ -135,7 +153,13 @@ def a_payslip(household, run, *, finalised=False, **overrides) -> Payslip:
         "tenant": household["tenant"],
         "payroll_run": run,
         "employee": household["employee"],
-        "gross_earnings": Decimal("5000.00"),
+        "pay_period": run.pay_period,
+        "engagement": household["engagement"],
+        "payslip_number": f"PS-{run.pk}-{household['employee'].pk}",
+        "pay_basis": "monthly",
+        "rate_used": Decimal("5000.000000"),
+        "gross_remuneration": Decimal("5000.00"),
+        "total_earnings": Decimal("5000.00"),
         "total_deductions": Decimal("50.00"),
         "net_pay": Decimal("4950.00"),
     }
@@ -150,7 +174,7 @@ def a_payslip(household, run, *, finalised=False, **overrides) -> Payslip:
 
 
 def a_line(household, payslip, component, **overrides) -> PayslipLine:
-    exact = overrides.pop("amount_exact", Decimal("5000.000000"))
+    exact = overrides.pop("amount_unrounded", Decimal("5000.000000"))
     values = {
         "tenant": household["tenant"],
         "payslip": payslip,
@@ -160,7 +184,8 @@ def a_line(household, payslip, component, **overrides) -> PayslipLine:
         "description": "Basic wage",
         "units": Decimal("1.0000"),
         "rate": Decimal("5000.000000"),
-        "amount_exact": exact,
+        "component_type": "earning",
+        "amount_unrounded": exact,
         "amount": exact.quantize(Decimal("0.01")),
     }
     values.update(overrides)

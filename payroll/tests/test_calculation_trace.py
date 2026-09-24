@@ -96,11 +96,11 @@ def test_what_the_calculator_returned_is_what_is_stored(employee):
 
     with tenant_context(employee.tenant_id):
         stored = PayrollCalculationTrace.objects.get(pk=row.pk)
-    assert stored.calculator == "uif.contribution"
+    assert stored.calculator_name == "uif.contribution"
     assert stored.calculated_for == MARCH
     assert stored.inputs["remuneration"] == "10000.00"
     assert stored.outputs["employee"] == "100.000000", "unrounded, per invariant 6"
-    assert stored.statutory_rows == [
+    assert stored.reference_rows_used == [
         ["statutory_parameter", 901],
         ["statutory_parameter", 902],
         ["statutory_parameter", 903],
@@ -114,9 +114,9 @@ def test_the_keys_stored_can_be_resolved_back_to_rows(employee):
 
     with tenant_context(employee.tenant_id):
         stored = PayrollCalculationTrace.objects.get(pk=row.pk)
-    tables = {table for table, _ in stored.statutory_rows}
+    tables = {table for table, _ in stored.reference_rows_used}
     assert tables == {"statutory_parameter"}
-    assert all(isinstance(key, int) for _, key in stored.statutory_rows)
+    assert all(isinstance(key, int) for _, key in stored.reference_rows_used)
 
 
 def test_a_zero_is_traced_exactly_like_any_other_figure(employee):
@@ -162,7 +162,7 @@ def test_two_calculators_for_one_employee_leave_two_traces(employee):
     with tenant_context(employee.tenant_id):
         names = set(
             PayrollCalculationTrace.objects.filter(employee=employee).values_list(
-                "calculator", flat=True
+                "calculator_name", flat=True
             )
         )
     assert names == {"uif.contribution", "sdl.levy"}
@@ -178,7 +178,7 @@ def test_a_trace_cannot_be_updated(employee):
 
     with pytest.raises(DatabaseError) as raised, transaction.atomic():
         with tenant_context(employee.tenant_id):
-            PayrollCalculationTrace.objects.filter(pk=row.pk).update(calculator="uif.tampered")
+            PayrollCalculationTrace.objects.filter(pk=row.pk).update(calculator_name="uif.tampered")
 
     assert "append-only" in str(raised.value).lower(), str(raised.value)
 
@@ -200,7 +200,7 @@ def test_a_trace_must_name_its_calculator(employee):
             PayrollCalculationTrace.objects.create(
                 tenant=employee.tenant,
                 employee=employee,
-                calculator="",
+                calculator_name="",
                 calculated_for=MARCH,
                 inputs={},
                 outputs={},

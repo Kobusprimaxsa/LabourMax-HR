@@ -40,7 +40,11 @@ def a_clean_run(household, tax_year, approver, basic_component, *, period=None):
     period = period or a_period(household, tax_year)
     run = a_run(household, period)
     payslip = a_payslip(
-        household, run, gross_earnings=Decimal("5000.00"), total_deductions=Decimal("0.00")
+        household,
+        run,
+        total_earnings=Decimal("5000.00"),
+        total_deductions=Decimal("0.00"),
+        net_pay=Decimal("5000.00"),
     )
     a_line(household, payslip, basic_component)
     return run
@@ -168,7 +172,7 @@ def test_approval_is_refused_while_a_blocking_issue_stands(household, tax_year, 
         runs.approve(run, approved_by=approver)
 
     assert "reference_data_not_verified" in str(raised.value)
-    assert [i.code for i in raised.value.issues]
+    assert [i.issue_code for i in raised.value.issues]
     with tenant_context(household["tenant"].pk):
         assert PayrollRun.objects.get(pk=run.pk).status == Status.CALCULATED
 
@@ -195,7 +199,9 @@ def test_approval_revalidates_rather_than_trusting_an_earlier_pass(
     assert validation.blocking_issues(run) == []
 
     with tenant_context(household["tenant"].pk):
-        Payslip.objects.filter(payroll_run=run).update(gross_earnings=Decimal("9999.00"))
+        Payslip.objects.filter(payroll_run=run).update(
+            total_earnings=Decimal("9999.00"), net_pay=Decimal("9999.00")
+        )
 
     with pytest.raises(runs.ApprovalRefusedError, match="totals_do_not_match_lines"):
         runs.approve(run, approved_by=approver)
@@ -340,9 +346,9 @@ def test_a_reversal_mirrors_every_payslip_and_leaves_the_original_alone(
     assert stored_run.status == Status.REVERSED
     assert reversal.status == Status.FINALISED
     assert reversal.reverses_run_id == run.pk
-    assert original_slip.gross_earnings == Decimal("5000.00"), "untouched"
+    assert original_slip.total_earnings == Decimal("5000.00"), "untouched"
     assert mirror.is_reversal and mirror.reverses_payslip_id == original_slip.pk
-    assert mirror.gross_earnings == Decimal("-5000.00")
+    assert mirror.total_earnings == Decimal("-5000.00")
     assert [line.amount for line in mirror_lines] == [Decimal("-5000.00")]
     assert mirror_lines[0].description.startswith("Reversal:")
 

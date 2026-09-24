@@ -38,7 +38,9 @@ def test_an_unfinalised_payslip_is_edited_freely(household, tax_year):
     payslip = a_payslip(household, a_run(household, a_period(household, tax_year)))
 
     with tenant_context(household["tenant"].pk):
-        Payslip.objects.filter(pk=payslip.pk).update(net_pay=Decimal("4000.00"))
+        Payslip.objects.filter(pk=payslip.pk).update(
+            total_deductions=Decimal("1000.00"), net_pay=Decimal("4000.00")
+        )
         assert Payslip.objects.get(pk=payslip.pk).net_pay == Decimal("4000.00")
 
 
@@ -108,7 +110,7 @@ def test_a_line_whose_amount_is_not_its_exact_figure_rounded_is_refused(
             household,
             payslip,
             basic_component,
-            amount_exact=Decimal("100.005000"),
+            amount_unrounded=Decimal("100.005000"),
             amount=Decimal("100.00"),
         )
 
@@ -136,7 +138,7 @@ def test_half_up_away_from_zero_is_what_the_database_agrees_to(
         household,
         payslip,
         basic_component,
-        amount_exact=Decimal(exact),
+        amount_unrounded=Decimal(exact),
         amount=Decimal(rounded),
     )
 
@@ -255,7 +257,7 @@ def test_a_reversal_pointing_at_the_original_is_accepted(household, tax_year):
         later,
         is_reversal=True,
         reverses_payslip=original,
-        gross_earnings=Decimal("-5000.00"),
+        total_earnings=Decimal("-5000.00"),
         total_deductions=Decimal("-50.00"),
         net_pay=Decimal("-4950.00"),
     )
@@ -314,7 +316,7 @@ def test_the_calculation_trace_now_points_at_a_real_payslip(household, tax_year)
             tenant=household["tenant"],
             employee=household["employee"],
             payslip=payslip,
-            calculator="gross.gross_pay",
+            calculator_name="gross.gross_pay",
             calculated_for=datetime.date(2026, 3, 31),
             inputs={},
             outputs={},

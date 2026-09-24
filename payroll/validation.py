@@ -231,13 +231,13 @@ def check_payslip_totals_match_their_lines(run) -> list[Finding]:
     found = []
     for payslip in run.payslips.all():
         lines = payslip.lines.aggregate(total=Sum("amount"))["total"] or Decimal("0")
-        stated = payslip.gross_earnings - payslip.total_deductions
+        stated = payslip.total_earnings - payslip.total_deductions
         if lines != stated:
             found.append(
                 Finding(
                     "totals_do_not_match_lines",
                     BLOCKING,
-                    f"This payslip states {stated} (gross {payslip.gross_earnings} less "
+                    f"This payslip states {stated} (gross {payslip.total_earnings} less "
                     f"deductions {payslip.total_deductions}) and its lines add up to "
                     f"{lines}. A payslip whose total is not its own lines is one nobody "
                     f"can explain to the employee holding it.",
@@ -333,7 +333,7 @@ def validate(run) -> list[PayrollValidationIssue]:
         for check in CHECKS:
             found.extend(check(run))
 
-        run.validation_issues.filter(resolved_at__isnull=True).delete()
+        run.validation_issues.filter(acknowledged_at__isnull=True).delete()
 
         # A resolution is against a PROBLEM, not against a row. The problem is
         # identified by (code, employee) on this run — so a finding somebody has
@@ -341,16 +341,16 @@ def validate(run) -> list[PayrollValidationIssue]:
         # point of being able to resolve one. Keying on the row id instead would
         # make every resolution last exactly until the next validation.
         already_resolved = set(
-            run.validation_issues.filter(resolved_at__isnull=False).values_list(
-                "code", "employee_id"
+            run.validation_issues.filter(acknowledged_at__isnull=False).values_list(
+                "issue_code", "employee_id"
             )
         )
-        return [
+        issues = [
             PayrollValidationIssue.objects.create(
                 tenant=run.tenant,
                 payroll_run=run,
                 employee=finding.employee,
-                code=finding.code,
+                issue_code=finding.code,
                 severity=finding.severity,
                 message=finding.message,
             )
@@ -358,6 +358,20 @@ def validate(run) -> list[PayrollValidationIssue]:
             if (finding.code, finding.employee.pk if finding.employee else None)
             not in already_resolved
         ]
+        # Sheet 02's ``validation_summary``: what the last validation found, on
+        # the run itself, so a list screen needs no second query. A copy of the
+        # issue rows, never the source of truth for approval.
+        run.validation_summary = [
+            {
+                "issue_code": issue.issue_code,
+                "severity": issue.severity,
+                "employee_id": issue.employee_id,
+                "message": issue.message,
+            }
+            for issue in issues
+        ]
+        run.save(update_fields=["validation_summary", "updated_at"])
+        return issues
 
 
 def blocking_issues(run) -> list[PayrollValidationIssue]:
@@ -369,8 +383,8 @@ def blocking_issues(run) -> list[PayrollValidationIssue]:
     """
     with tenant_context_of(run):
         return list(
-            run.validation_issues.filter(severity=BLOCKING, resolved_at__isnull=True).order_by(
-                "code", "employee_id"
+            run.validation_issues.filter(severity=BLOCKING, acknowledged_at__isnull=True).order_by(
+                "issue_code", "employee_id"
             )
         )
 
@@ -392,8 +406,8 @@ def resolve_issue(issue, *, resolved_by, reason: str) -> PayrollValidationIssue:
     from django.utils import timezone
 
     with tenant_context_of(issue):
-        issue.resolved_at = timezone.now()
-        issue.resolved_by_user = resolved_by
+        issue.acknowledged_at = timezone.now()
+        issue.acknowledged_by_user = resolved_by
         issue.resolution_reason = reason
-        issue.save(update_fields=["resolved_at", "resolved_by_user", "resolution_reason"])
+        issue.save(update_fields=["acknowledged_at", "acknowledged_by_user", "resolution_reason"])
     return issue

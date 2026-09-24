@@ -37,18 +37,42 @@ from django.db import models, transaction
 from django.utils import timezone
 
 from attendance.models import AttendanceDay
+from calculators.base import ENGINE_VERSION
 from core.managers import tenant_context_of
 from payroll import validation, ytd
 from payroll.models import PayPeriod, PayrollRun, Payslip
 
 Status = PayrollRun.Status
 
+#: The payslip figures a reversal carries negated. Everything numeric on the
+#: header, so the reversal nets the original to zero column by column.
+NEGATED_ON_REVERSAL = (
+    "ordinary_hours",
+    "overtime_hours",
+    "days_worked",
+    "gross_remuneration",
+    "taxable_remuneration",
+    "uif_remuneration",
+    "sdl_remuneration",
+    "paye",
+    "uif_employee",
+    "uif_employer",
+    "sdl_employer",
+    "total_earnings",
+    "total_deductions",
+    "total_employer_contributions",
+    "net_pay",
+)
+
 #: Where a run may go from where it is. A state with no entry here is terminal.
 #: Written as data rather than as a chain of ifs so that the whole machine can be
 #: read, and asserted, in one place.
 LEGAL_TRANSITIONS: dict[str, set[str]] = {
     Status.DRAFT: {Status.CALCULATING},
-    Status.CALCULATING: {Status.CALCULATED, Status.DRAFT},
+    Status.CALCULATING: {Status.CALCULATED, Status.DRAFT, Status.FAILED},
+    # A calculation that broke — not one that refused an employee, which is a
+    # blocking issue on that employee (D-292) — may be tried again.
+    Status.FAILED: {Status.CALCULATING},
     Status.CALCULATED: {Status.APPROVED, Status.CALCULATING},
     Status.APPROVED: {Status.FINALISED, Status.CALCULATED},
     Status.FINALISED: {Status.REVERSED},
@@ -103,7 +127,9 @@ def transition(run: PayrollRun, to_status: str, **fields) -> PayrollRun:
 
 
 @transaction.atomic
-def open_run(period: PayPeriod, *, opened_by=None) -> PayrollRun:
+def open_run(
+    period: PayPeriod, *, opened_by=None, run_type: str = PayrollRun.RunType.REGULAR
+) -> PayrollRun:
     """Start a run over a period. A second run over the same period is a
     CORRECTION run and numbers itself accordingly."""
     with tenant_context_of(period):
@@ -122,10 +148,22 @@ def open_run(period: PayPeriod, *, opened_by=None) -> PayrollRun:
             )
         return PayrollRun.objects.create(
             tenant=period.tenant,
+            employer=period.pay_group.employer,
             pay_period=period,
             run_number=(last.run_number + 1) if last else 1,
+            run_type=run_type,
             status=Status.DRAFT,
+            engine_version=ENGINE_VERSION,
         )
+
+
+def payslip_number(run: PayrollRun, employee, *, suffix: str = "") -> str:
+    """Sheet 02's ``payslip_number``, unique per tenant: the period's month,
+    the pay group, the run and the employee. Readable on a printed page and at
+    most 30 characters. A reversal appends ``-R`` to the number it reverses."""
+    period = run.pay_period
+    who = employee.employee_number or str(employee.pk)
+    return f"{period.period_end:%Y%m}-{period.pay_group_id}-{run.run_number}-{who}{suffix}"[:30]
 
 
 def calculate(run: PayrollRun) -> None:
@@ -160,7 +198,7 @@ def approve(run: PayrollRun, *, approved_by) -> PayrollRun:
         raise ApprovalRefusedError(
             f"{len(blocking)} blocking issue(s) stand on this run and it cannot be "
             f"approved:\n"
-            + "\n".join(f"  - [{issue.code}] {issue.message}" for issue in blocking)
+            + "\n".join(f"  - [{issue.issue_code}] {issue.message}" for issue in blocking)
             + "\nEach must be fixed, or resolved by a named person with a reason.",
             blocking,
         )
@@ -286,9 +324,12 @@ def reverse(run: PayrollRun, *, reversed_by, reason: str) -> PayrollRun:
     with tenant_context_of(run):
         reversal = PayrollRun.objects.create(
             tenant=run.tenant,
+            employer=run.employer,
             pay_period=run.pay_period,
             run_number=run.run_number + 1,
+            run_type=PayrollRun.RunType.CORRECTION,
             status=Status.DRAFT,
+            engine_version=ENGINE_VERSION,
             reverses_run=run,
             notes=reason,
         )
@@ -298,26 +339,41 @@ def reverse(run: PayrollRun, *, reversed_by, reason: str) -> PayrollRun:
                 tenant=run.tenant,
                 payroll_run=reversal,
                 employee=original.employee,
+                pay_period=original.pay_period,
+                engagement=original.engagement,
+                payslip_number=f"{original.payslip_number[:28]}-R",
                 employee_snapshot=original.employee_snapshot,
-                gross_earnings=-original.gross_earnings,
-                total_deductions=-original.total_deductions,
-                employer_contributions=-original.employer_contributions,
-                net_pay=-original.net_pay,
+                pay_basis=original.pay_basis,
+                rate_used=original.rate_used,
+                payment_method=original.payment_method,
+                bank_account=original.bank_account,
+                is_termination_payslip=original.is_termination_payslip,
                 is_reversal=True,
                 reverses_payslip=original,
+                # Every figure negated, so netting the two is how a correction
+                # reaches the year-to-date and the IRP5.
+                **{name: -getattr(original, name) for name in NEGATED_ON_REVERSAL},
             )
             for line in original.lines.all():
                 mirror.lines.create(
                     tenant=run.tenant,
                     payroll_component=line.payroll_component,
+                    component_type=line.component_type,
                     component_code=line.component_code,
+                    sars_source_code=line.sars_source_code,
                     source_code=line.source_code,
-                    description=f"Reversal: {line.description}",
-                    sequence=line.sequence,
-                    units=-line.units,
+                    description=f"Reversal: {line.description}"[:150],
+                    line_order=line.line_order,
+                    units=None if line.units is None else -line.units,
+                    unit_type=line.unit_type,
                     rate=line.rate,
-                    amount_exact=-line.amount_exact,
+                    multiplier=line.multiplier,
+                    amount_unrounded=-line.amount_unrounded,
                     amount=-line.amount,
+                    is_taxable=line.is_taxable,
+                    is_uif_base=line.is_uif_base,
+                    is_sdl_base=line.is_sdl_base,
+                    calculation_note=line.calculation_note,
                 )
             mirror.is_finalised = True
             mirror.finalised_at = when

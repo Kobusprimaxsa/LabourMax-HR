@@ -39,6 +39,11 @@ CENTS = Decimal("0.01")
 
 ZERO = Decimal("0")
 
+#: Stamped on every payroll run (sheet 02: "Calculator code version - required
+#: to reproduce a historic run"). Bump it in the same commit as any change to a
+#: calculator's arithmetic, so a 2026 run can be told apart from a 2029 re-run.
+ENGINE_VERSION = "P7.8"
+
 
 class Sourced(typing.Protocol):
     """Anything carrying the key of the reference row it came from.

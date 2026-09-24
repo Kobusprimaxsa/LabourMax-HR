@@ -178,7 +178,7 @@ def test_a_leave_pay_trace_is_written_through_the_same_boundary_as_the_others(em
 
     with tenant_context(employee.tenant_id):
         stored = PayrollCalculationTrace.objects.get(pk=row.pk)
-    assert stored.calculator == "leave_pay.leave_pay"
-    assert stored.statutory_rows == [["statutory_parameter", 901]]
+    assert stored.calculator_name == "leave_pay.leave_pay"
+    assert stored.reference_rows_used == [["statutory_parameter", 901]]
     assert stored.outputs["average_weekly"] == "3000.000000"
     assert stored.outputs["amount"] == "3000.000000"

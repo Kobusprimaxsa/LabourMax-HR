@@ -78,7 +78,9 @@ def _lines(employee, period_start, period_end):
             payslip__payroll_run__pay_period__payment_date__lte=period_end,
         )
         .select_related("payroll_component")
-        .order_by("payslip__payroll_run__pay_period__payment_date", "payslip_id", "sequence", "pk")
+        .order_by(
+            "payslip__payroll_run__pay_period__payment_date", "payslip_id", "line_order", "pk"
+        )
     )
 
 
@@ -97,7 +99,7 @@ def employee_earnings(
         earnings = tuple(
             CoidaEarning(
                 source_code=line.source_code,
-                amount=line.amount_exact,
+                amount=line.amount_unrounded,
                 is_coida_base=line.payroll_component.is_coida_base,
             )
             for line in _lines(employee, period_start, period_end)

@@ -572,6 +572,14 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       exceeds"; commission out, bonus in; the s4(1)(a) exemption declared, never computed
 - [x] SDL with the human-set exemption flag (D-209) — forward-looking s4(b), so liability is
       a boolean input and there is nowhere to hand it a payroll history
+- [x] **Chunk 8a — the payroll tables reconciled to sheet 02** (D-289, D-290; O-28 closed).
+      Sheet 02's names, its missing columns, its net-pay CHECKs and its totals lock; the
+      year-to-date cache in sheet 02's one-row shape. A test reads sheet 02 and fails on any
+      column the models lack outside four named deviations
+- [ ] **Chunk 8b — `calculate()` for a regular run.** Refusals are per-employee blocking
+      issues (D-292); an O-40 day refuses (D-291)
+- [ ] **Chunk 8c — s34 deductions, the termination payslip and `termination_payout`**
+- [ ] **Chunk 8d — the December bonus run** (`run_type = bonus`)
 - [ ] `pay_period` generation and lifecycle — ASSEMBLY (chunk 8), UNBLOCKED 24 Sep 2026 (D-288)
 - [x] `payroll_run` state machine: draft → calculating → calculated → approved → finalised
       — CHUNK 7 (D-233). `LEGAL_TRANSITIONS` is data and `transition()` is the one place a

@@ -184,7 +184,7 @@ def test_a_gross_pay_trace_is_written_through_the_same_boundary_as_the_others(em
 
     with tenant_context(employee.tenant_id):
         stored = PayrollCalculationTrace.objects.get(pk=row.pk)
-    assert stored.calculator == "gross.gross_pay"
-    assert stored.statutory_rows == [["working_time_rule_set", 601]]
+    assert stored.calculator_name == "gross.gross_pay"
+    assert stored.reference_rows_used == [["working_time_rule_set", 601]]
     assert stored.outputs["line_BASIC"] == "405.000000"
     assert stored.warnings and "states no allowance" in stored.warnings[0]
