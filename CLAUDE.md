@@ -1136,8 +1136,8 @@ is a prerequisite completed, not the outcome itself.
 `timesheet_summary`'s own display — UI work this codebase has not started. Consecutive
 sick days needing a leave application are P6 and are not stubbed.
 
-**P2 — Statutory Reference Data: structure complete, data loaded, awaiting
-verification** (13 September 2026). 351 tests green. All twenty tables exist with their
+**P2 — Statutory Reference Data: COMPLETE — verified 24 September 2026** (D-288; structure
+complete 13 September 2026). 351 tests green. All twenty tables exist with their
 constraints; `statutory/resolve.py` is the only place that answers "what applied on this date";
 the loader refuses any file with an uncited row and never updates an existing one;
 `loadstatutory` and `verifystatutory` are two commands because loading and verifying are two
@@ -1148,7 +1148,8 @@ somebody remembers.
 wage floors, the SARS 2027 tax year tables, the contribution parameters, public holidays for
 2026 and 2027, the maintenance calendar, the BCEA, domestic and contract cleaning rule sets, 19 SARS source codes with cited base flags, and 25 banks. It is loaded and reconciles, and it is **not
 verified** — `in_force_on()` cannot see it, so every payroll run is still blocked. That is
-correct and deliberate.
+correct and deliberate. *(Superseded 24 September 2026: every live version is now verified by a
+person with golden tests passed — see "P2 is verified" below, D-288.)*
 
 **`termination_notice_band` closed the notice band gap** (D-68, 14 September 2026).
 `termination_rule_set`'s three `notice_weeks_*` columns could express BCEA's six-month
@@ -1308,8 +1309,8 @@ the newest and stopped `payroll/validation.py` asking about REF-2026.03.01, wher
 PAYE, UIF and the NMW live. A June 2026 run went from refusing to passing because
 a provincial wage schedule was checked. The gate now refuses while ANY applicable
 non-superseded version is unverified and reads the SHORTEST `data_current_through`
-across them. **P7 is still blocked, correctly** — REF-2026.03.01 is unverified and
-the gate names it.
+across them. ~~**P7 is still blocked, correctly** — REF-2026.03.01 is unverified and
+the gate names it.~~ **Unblocked 24 September 2026** (D-288): nothing applicable is unverified.
 
 **The public holiday calendar was a day short in three places, and one proclaimed day
 was missing** (24 September 2026, D-280). s2(1) ADDS the Monday when a Schedule 1 day falls
@@ -1322,10 +1323,25 @@ s18(2)(a) unworked-holiday day on top of the Sunday premium for a cleaner who WO
 Sunday, now fixed; and which of s16 and s18 prices a day that is both is unread and refused to
 be guessed at (O-40).
 
-**What remains in P2:**
+**P2 is verified — 24 September 2026, by Kobus** (D-288). All 25 live reference versions are
+verified by a person, `golden_tests_passed`, and current through **28 February 2027**; the
+payroll gate names nothing for a June 2026 run. 781 figure checks are recorded in
+`reference_figure_check`, all 168 check groups marked. `pytest -m golden -rxX` passed first
+(49 passed, 2 xfailed — O-43) on commit e8530b6. **Two versions carry a SELF-verification**,
+recorded in their descriptions: `REF-2026.03.01-r4` (PAYE, UIF, NMW, COIDA ceiling) and
+`REF-2026.03.01-HOLIDAYS`, both loaded by Kobus and verified by him with
+`--allow-self-verification` — the second-person rule was overridden by name, not bypassed. A
+second reading of those two by somebody else before the pilot payroll (P11) is still worth
+having. **A payroll run ending after 28 February 2027 refuses** until the March 2027 data is
+loaded and verified — the staleness guard, working. `REF-2026.03.01-BANKS` has no cited
+figures and so no workbook row; it is verified through `verifystatutory` directly. A row
+deleted from the workbook is not caught as stale (O-45).
+
+**What remained in P2, as it stood before the pass closed:**
 
 - Kobus verifies every figure against its source document, then `verifystatutory`. **This
   is the only thing left in P2 that needs a person, and everything around it is built.**
+  **DONE 24 September 2026 (D-288).**
   `exportverification` writes **168 check groups over 739 figures across 19 source
   documents** to `reference/verification/Labourmax_verification.xlsx`, grouped so one
   lookup in the gazette answers one row rather than eight (D-258); `importverification`
@@ -1404,10 +1420,11 @@ gateway), so starting it means stopping to ask.
 **Statutory figures are never invented.** If a rate is needed and cannot be cited, say so and
 stop. That applies to filling in a fixture as much as to writing code.
 
-**P7 — Payroll Engine: chunk 1 built, assembly BLOCKED** (19 September 2026). The calculator
+**P7 — Payroll Engine: chunks 1 to 7 built, assembly (chunk 8) UNBLOCKED 24 September 2026**
+(D-288 — P2 is verified; chunk 1 built 19 September 2026). The calculator
 contract (D-207), `payroll_calculation_trace` (D-208), UIF (D-210) and SDL (D-209) are in.
-**No payroll run can start until P2 is verified**: REF-2026.03.01 reconciles but is unverified,
-so `in_force_on()` cannot see it, and periods, runs and payslips all read effective-dated rows.
+~~**No payroll run can start until P2 is verified**~~ — P2 is verified (D-288): `in_force_on()`
+now sees every live version, and periods, runs and payslips can read effective-dated rows.
 Calculators are unblocked by construction — a pure function takes its figures as inputs.
 UIF's base is `min(remuneration, ceiling)` (s6(2) excludes only the excess, so AT the ceiling
 contributes in full); SDL liability is a declared boolean because s4(b) is forward-looking, and
@@ -1547,7 +1564,7 @@ trace and the total is undiminished.
 **P7 chunk 6 — the payslip and year-to-date TABLES** (19 September 2026, D-228 to D-231).
 1 515 tests green. `payroll_run`, `payslip`, `payslip_line` and `ytd_accumulator` exist, all
 four tenant-scoped with `enable_rls()` and picked up by the generated isolation suite (twenty
-new cases). **The RUN is still blocked and is not built**: P2 verification gates COMPUTING a
+new cases). **The RUN is not built** (its P2 block lifted 24 September 2026, D-288): P2 verification gates COMPUTING a
 payslip, because unverified reference data is invisible to `in_force_on()` — it does not gate
 the tables, their constraints or their triggers, which is the same line P5 and P6 built along.
 Nothing generates a payslip, calculates one, or finalises a run.

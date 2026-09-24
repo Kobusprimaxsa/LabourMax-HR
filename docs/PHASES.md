@@ -112,7 +112,11 @@ The most important phase in the build. Can overlap P1.
       are public holidays and were not loaded. Plus 4 November 2026, the local government
       elections, proclaimed under s2A by Proclamation Notice 346 of 2026. Guarded by
       `checks.check_public_holiday_sundays()`, which reconciles each pair both ways
-- [ ] **Kobus verifies every figure against its source**, then `verifystatutory`. **The
+- [x] **Kobus verifies every figure against its source**, then `verifystatutory`. **DONE
+      24 September 2026 (D-288)**: all 25 live versions verified with golden tests passed,
+      current through 28 February 2027; 781 figure checks, all 168 groups marked;
+      `REF-2026.03.01-r4` and `-HOLIDAYS` self-verified by name with
+      `--allow-self-verification`. Was: **The
       only item in P2 still needing a person.** 148 check groups over 672 figures across 18
       source documents as at D-265; 156 groups over 688 figures after D-268; **168 groups
       over 739 figures across 19 source documents as at D-280**. The workbook and the
@@ -167,7 +171,7 @@ The most important phase in the build. Can overlap P1.
       `importverification` reads the ticks back and calls `verifystatutory`. A value edited
       in the spreadsheet REFUSES that version and names the row; the workbook can never
       write a figure.
-- [ ] **Kobus works the workbook. 129 check groups over 582 figures, 17 source
+- [x] **Kobus works the workbook** — done 24 September 2026 (D-288). As first scoped: 129 check groups over 582 figures, 17 source
       documents.** The largest are the Public Holidays Act (24 checks), the SARS code
       guide (21), the BCCCI Main Agreement (19) and the BCEA (18); nine documents are a
       single check each. 20 of 24 versions unverified — the four BCCCI ones lost their
@@ -568,7 +572,7 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       exceeds"; commission out, bonus in; the s4(1)(a) exemption declared, never computed
 - [x] SDL with the human-set exemption flag (D-209) — forward-looking s4(b), so liability is
       a boolean input and there is nowhere to hand it a payroll history
-- [ ] `pay_period` generation and lifecycle — ASSEMBLY, blocked on P2 verification
+- [ ] `pay_period` generation and lifecycle — ASSEMBLY (chunk 8), UNBLOCKED 24 Sep 2026 (D-288)
 - [x] `payroll_run` state machine: draft → calculating → calculated → approved → finalised
       — CHUNK 7 (D-233). `LEGAL_TRANSITIONS` is data and `transition()` is the one place a
       status moves. Finalisation freezes the snapshots, locks the attendance, closes the
