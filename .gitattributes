@@ -1,0 +1,15 @@
+# Every text file is stored and checked out with LF (24 Sep 2026). core.autocrlf
+# was true on the development machine and rewrote ~97 files to CRLF in the
+# working tree with no real change; this makes the repository say what it wants.
+* text=auto eol=lf
+
+# Binary, never touched.
+*.xlsx binary
+*.pdf binary
+*.png binary
+*.ico binary
+
+# The one file stored with CRLF before this line existed. It is an APPLIED
+# migration: renormalising it is a byte change to a migration for nothing, so
+# it is left exactly as committed.
+statutory/migrations/0001_initial.py -text
