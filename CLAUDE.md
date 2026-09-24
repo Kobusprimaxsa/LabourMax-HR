@@ -1621,6 +1621,12 @@ date it 1 March to end-February, which coincides with the tax year but is a diff
 instrument. **Loaded: the R668 000 ceiling only.** Notice 3910's R1 621 and R560 are minimum
 ASSESSMENTS — floors on the premium, which is P8's — and are in a notes string, not a row.
 
+**The pay period's lifecycle is `payroll/lifecycle.py`** (24 September 2026, D-305):
+open → in_progress → closed, reopened only by `runs.reverse()`. Nothing else writes a period's
+status — an AST scan in `payroll/tests/test_lifecycle.py` fails if anything does. A closed
+period refuses a run; `close()` refuses while a run is live; the LAST live run to finalise
+closes the period, so a bonus run may be live beside the regular one.
+
 **P7 chunk 8c — recurring lines on the regular payslip** (24 September 2026, D-301 to
 D-304). `calculators/recurring.py` prices each active `employee_recurring_component` in
 force on the period's last day; earnings join the PAYE/UIF/SDL bases on their own flags and

@@ -137,6 +137,12 @@ def a_period(household, tax_year, *, number=1, start=None, payment=None) -> PayP
 
 
 def a_run(household, period, *, number=1, status=PayrollRun.Status.DRAFT) -> PayrollRun:
+    """A run written directly, at any status. The period moves the way
+    ``runs.open_run()`` moves it (D-305), so a fixture run cannot leave its
+    period ``open`` under a run that later finalises."""
+    from payroll import lifecycle
+
+    lifecycle.begin(period)
     with tenant_context(household["tenant"].pk):
         return PayrollRun.objects.create(
             tenant=household["tenant"],
@@ -191,3 +197,12 @@ def a_line(household, payslip, component, **overrides) -> PayslipLine:
     values.update(overrides)
     with tenant_context(household["tenant"].pk):
         return PayslipLine.objects.create(**values)
+
+
+@pytest.fixture
+def approver(db):
+    from django.contrib.auth import get_user_model
+
+    return get_user_model().objects.create_user(
+        email="owner@example.com", password="x" * 14, first_name="Kobus", last_name="Owner"
+    )

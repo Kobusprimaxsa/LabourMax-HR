@@ -12,11 +12,10 @@ import datetime
 from decimal import Decimal
 
 import pytest
-from django.contrib.auth import get_user_model
 
 from attendance.models import AttendanceDay
 from core.managers import tenant_context
-from payroll import runs, validation, ytd
+from payroll import lifecycle, runs, validation, ytd
 from payroll.models import PayPeriod, PayrollRun, Payslip, YtdAccumulator
 from payroll.tests.conftest import a_line, a_payslip, a_period, a_run
 from payroll.tests.test_validation import a_version
@@ -24,13 +23,6 @@ from payroll.tests.test_validation import a_version
 pytestmark = pytest.mark.django_db
 
 Status = PayrollRun.Status
-
-
-@pytest.fixture
-def approver(db):
-    return get_user_model().objects.create_user(
-        email="owner@example.com", password="x" * 14, first_name="Kobus", last_name="Owner"
-    )
 
 
 def a_clean_run(household, tax_year, approver, basic_component, *, period=None):
@@ -120,30 +112,34 @@ def test_a_second_live_run_over_one_period_is_refused(household, tax_year):
         runs.open_run(period)
 
 
-def test_a_correction_run_follows_a_finalised_one(household, tax_year, approver, basic_component):
+def test_a_replacement_run_follows_a_reversal(household, tax_year, approver, basic_component):
+    """Finalising closes the period; reversing reopens it and the reversal is run
+    2; the replacement is an ordinary run 3 over the reopened period (D-305)."""
     period = a_period(household, tax_year)
     first = a_clean_run(household, tax_year, approver, basic_component, period=period)
     to_calculated(first)
     runs.approve(first, approved_by=approver)
     runs.finalise(first, finalised_by=approver)
+    runs.reverse(first, reversed_by=approver, reason="Wrong rate captured")
+
+    replacement = runs.open_run(period)
+
+    assert replacement.run_number == 3
     with tenant_context(household["tenant"].pk):
         period.refresh_from_db()
-        period.status = PayPeriod.Status.REOPENED
-        period.save(update_fields=["status"])
-
-    second = runs.open_run(period)
-
-    assert second.run_number == 2
+    assert (period.status, period.reopened_count) == (PayPeriod.Status.IN_PROGRESS, 1)
 
 
-def test_a_run_cannot_be_opened_over_a_closed_period(household, tax_year):
+def test_a_run_cannot_be_opened_over_a_closed_period(
+    household, tax_year, approver, basic_component
+):
     period = a_period(household, tax_year)
-    with tenant_context(household["tenant"].pk):
-        period.status = PayPeriod.Status.CLOSED
-        period.closed_at = datetime.datetime(2026, 3, 28, tzinfo=datetime.UTC)
-        period.save(update_fields=["status", "closed_at"])
+    run = a_clean_run(household, tax_year, approver, basic_component, period=period)
+    to_calculated(run)
+    runs.approve(run, approved_by=approver)
+    runs.finalise(run, finalised_by=approver)
 
-    with pytest.raises(runs.PayrollRunError, match="is closed"):
+    with pytest.raises(lifecycle.PeriodError, match="Period 1 is closed"):
         runs.open_run(period)
 
 

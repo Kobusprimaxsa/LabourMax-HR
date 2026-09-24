@@ -611,7 +611,10 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       `payslip_line.recurring_component_id` (D-302, D-303). Open: O-49 (part periods)
 - [ ] **Chunk 8c, part 2 — the termination payslip and `termination_payout`**
 - [ ] **Chunk 8d — the December bonus run** (`run_type = bonus`)
-- [ ] `pay_period` generation and lifecycle — ASSEMBLY (chunk 8), UNBLOCKED 24 Sep 2026 (D-288)
+- [x] `pay_period` generation and lifecycle (D-305). Generation is P3's (D-82 to D-85); the
+      lifecycle is `payroll/lifecycle.py`: open → in progress → closed, reopened only by a
+      reversal. A closed period refuses a new run; a period with a live run refuses to close;
+      the last live run to finalise closes it, so a bonus run can sit beside the regular run
 - [x] `payroll_run` state machine: draft → calculating → calculated → approved → finalised
       — CHUNK 7 (D-233). `LEGAL_TRANSITIONS` is data and `transition()` is the one place a
       status moves. Finalisation freezes the snapshots, locks the attendance, closes the

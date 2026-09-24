@@ -38,10 +38,11 @@ from django.utils import timezone
 from attendance.models import AttendanceDay
 from calculators.base import ENGINE_VERSION
 from core.managers import tenant_context_of
-from payroll import validation, ytd
+from payroll import lifecycle, validation, ytd
 from payroll.models import PayPeriod, PayrollRun, Payslip
 
 Status = PayrollRun.Status
+RunType = PayrollRun.RunType
 
 #: The payslip figures a reversal carries negated. Everything numeric on the
 #: header, so the reversal nets the original to zero column by column.
@@ -99,6 +100,9 @@ class FinalisationReport:
     payslips_finalised: int
     attendance_days_locked: int
     ytd_rows_rebuilt: int
+    #: False when another run over the period is still live (D-305) — the
+    #: December bonus run being checked while the regular run finalises.
+    period_closed: bool = True
 
 
 def transition(run: PayrollRun, to_status: str, **fields) -> PayrollRun:
@@ -129,22 +133,33 @@ def transition(run: PayrollRun, to_status: str, **fields) -> PayrollRun:
 def open_run(
     period: PayPeriod, *, opened_by=None, run_type: str = PayrollRun.RunType.REGULAR
 ) -> PayrollRun:
-    """Start a run over a period. A second run over the same period is a
-    CORRECTION run and numbers itself accordingly."""
+    """Start a run over a period. Runs over one period are numbered in order.
+
+    A closed period refuses (``lifecycle.begin()``). Two live runs that pay for
+    the same DAYS refuse — each would produce a payslip for the same employee for
+    the same days. A BONUS run pays for no days, so it may be live beside the
+    regular run over the December period, and a second live bonus run refuses
+    for the same reason (D-305).
+    """
     with tenant_context_of(period):
-        if period.status == PayPeriod.Status.CLOSED:
-            raise PayrollRunError(
-                f"Period {period.period_number} is closed. Reopening it is a deliberate, "
-                f"counted act (pay_period.reopened_count) and not something starting a run "
-                f"should do quietly."
-            )
-        last = period.runs.order_by("-run_number").first()
-        if last is not None and last.status not in (Status.FINALISED, Status.REVERSED):
+        clashing = [
+            live
+            for live in lifecycle.live_runs(period)
+            if (live.run_type == RunType.BONUS) == (run_type == RunType.BONUS)
+        ]
+        if clashing:
+            last = clashing[-1]
             raise PayrollRunError(
                 f"Run {last.run_number} over this period is still {last.status}. Two live "
-                f"runs over one period would each produce a payslip for the same employee "
-                f"for the same days."
+                + (
+                    "bonus runs over one period would each pay the same bonus."
+                    if run_type == RunType.BONUS
+                    else "runs over one period would each produce a payslip for the same "
+                    "employee for the same days."
+                )
             )
+        lifecycle.begin(period)
+        last = period.runs.order_by("-run_number").first()
         return PayrollRun.objects.create(
             tenant=period.tenant,
             employer=period.pay_group.employer,
@@ -347,9 +362,9 @@ def finalise(run: PayrollRun, *, finalised_by) -> FinalisationReport:
 
         transition(run, Status.FINALISED, finalised_at=when, finalised_by_user=finalised_by)
 
-        period.status = PayPeriod.Status.CLOSED
-        period.closed_at = when
-        period.save(update_fields=["status", "closed_at", "updated_at"])
+        # The LAST live run over the period closes it (D-305). A bonus run still
+        # being checked keeps it in progress.
+        period_closed = lifecycle.close_if_settled(period, when=when)
 
     rebuilt = 0
     for payslip in payslips:
@@ -359,6 +374,7 @@ def finalise(run: PayrollRun, *, finalised_by) -> FinalisationReport:
         payslips_finalised=len(payslips),
         attendance_days_locked=locked,
         ytd_rows_rebuilt=rebuilt,
+        period_closed=period_closed,
     )
 
 
@@ -501,6 +517,13 @@ def reverse(run: PayrollRun, *, reversed_by, reason: str) -> PayrollRun:
         transition(reversal, Status.CALCULATED)
         transition(reversal, Status.APPROVED, approved_at=when, approved_by_user=reversed_by)
         transition(reversal, Status.FINALISED, finalised_at=when, finalised_by_user=reversed_by)
+
+        # The replacement is an ordinary run over the REOPENED period. The
+        # reason is the reversal run's notes; the period counts the reopen.
+        period = run.pay_period
+        period.refresh_from_db()
+        if period.status == PayPeriod.Status.CLOSED:
+            lifecycle.reopen(period)
 
     for payslip in mirrored:
         ytd.rebuild(payslip.employee, run.pay_period.tax_year, as_at=when)
