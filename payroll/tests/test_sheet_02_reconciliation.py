@@ -1,11 +1,17 @@
 """O-28, closed as a standing check rather than a one-off reading (D-289).
 
 The payroll tables were first built without sheet 02 in front of them. They are
-now reconciled to it, and this file keeps them so: it reads the column
-dictionary out of ``statutory-sources/Labourmax-HR_Database_Specification_3.xlsx``
-and asserts every column sheet 02 names exists on the model — except the few
-deviations named below, each with the decision that makes it one. A column
-dropped, renamed away from the workbook, or never added fails here by name.
+now reconciled to it, and this file keeps them so — in two halves, because the
+workbook itself is kept OUTSIDE the repository (``statutory-sources/`` is
+gitignored; CLAUDE.md), so CI never has it:
+
+1. ``sheet_02_payroll_columns.json`` beside this file is a snapshot of sheet 02's
+   column names for these tables, and EVERY run — CI included — asserts every
+   column in it exists on the model, except the deviations named below.
+2. Wherever the workbook IS present (the developer's machine), the snapshot is
+   held to the workbook itself, so the snapshot cannot quietly fall behind a
+   corrected sheet 02. On CI that half is skipped, and says why; the first half
+   is the one that must never skip.
 
 Then each constraint the reconciliation added is watched refusing the case it
 exists for, message asserted (PROVE EVERY GUARD FAILS).
@@ -14,10 +20,10 @@ exists for, message asserted (PROVE EVERY GUARD FAILS).
 from __future__ import annotations
 
 import datetime
+import json
 import pathlib
 from decimal import Decimal
 
-import openpyxl
 import pytest
 from django.db import DatabaseError, IntegrityError, transaction
 
@@ -26,11 +32,9 @@ from payroll import models as payroll_models
 from payroll.models import PayrollRun, Payslip, PayslipLine
 from payroll.tests.conftest import a_line, a_payslip, a_period, a_run
 
-SPEC = (
-    pathlib.Path(__file__).resolve().parents[2]
-    / "statutory-sources"
-    / "Labourmax-HR_Database_Specification_3.xlsx"
-)
+HERE = pathlib.Path(__file__).resolve().parent
+SNAPSHOT = HERE / "sheet_02_payroll_columns.json"
+SPEC = HERE.parents[1] / "statutory-sources" / "Labourmax-HR_Database_Specification_3.xlsx"
 
 MODELS = {
     "pay_period": payroll_models.PayPeriod,
@@ -56,7 +60,13 @@ DEVIATIONS = {
 }
 
 
-def sheet_02_columns() -> dict[str, list[str]]:
+def snapshot_columns() -> dict[str, list[str]]:
+    return json.loads(SNAPSHOT.read_text(encoding="utf-8"))["columns"]
+
+
+def workbook_columns() -> dict[str, list[str]]:
+    import openpyxl
+
     workbook = openpyxl.load_workbook(SPEC, read_only=True, data_only=True)
     columns: dict[str, list[str]] = {}
     for row in workbook["02 Column Dictionary"].iter_rows(values_only=True):
@@ -65,9 +75,20 @@ def sheet_02_columns() -> dict[str, list[str]]:
     return columns
 
 
-def test_the_specification_is_where_this_test_reads_it():
-    assert SPEC.exists(), f"{SPEC} is the source of truth for every model (CLAUDE.md)."
-    assert set(sheet_02_columns()) == set(MODELS)
+def test_the_snapshot_covers_every_reconciled_table():
+    assert set(snapshot_columns()) == set(MODELS)
+
+
+@pytest.mark.skipif(
+    not SPEC.exists(),
+    reason="The spec workbook lives outside the repo (statutory-sources/ is gitignored); "
+    "the snapshot half of this check still runs.",
+)
+def test_the_snapshot_is_what_the_workbook_says():
+    assert snapshot_columns() == workbook_columns(), (
+        "sheet 02 has moved: regenerate payroll/tests/sheet_02_payroll_columns.json from "
+        "the workbook, then fix whatever the column test below then reports"
+    )
 
 
 @pytest.mark.parametrize("table", sorted(MODELS))
@@ -76,7 +97,7 @@ def test_every_sheet_02_column_exists_on_the_model(table):
     have = {field.column for field in model._meta.concrete_fields}
     missing = [
         column
-        for column in sheet_02_columns()[table]
+        for column in snapshot_columns()[table]
         if column not in have and (table, column) not in DEVIATIONS
     ]
     assert not missing, f"{table} lacks sheet 02 column(s) {missing}"
@@ -88,6 +109,15 @@ def test_a_listed_deviation_is_still_actually_absent():
     for table, column in DEVIATIONS:
         have = {field.column for field in MODELS[table]._meta.concrete_fields}
         assert column not in have, f"{table}.{column} exists now; remove it from DEVIATIONS"
+
+
+def test_the_column_check_fails_on_a_column_the_model_lacks():
+    """PROVE EVERY GUARD FAILS: a sheet 02 column that no model carries is
+    reported, by table and name."""
+    have = {field.column for field in PayrollRun._meta.concrete_fields}
+    assert "total_gross" in have and "made_up_column" not in have
+    missing = [c for c in ["total_gross", "made_up_column"] if c not in have]
+    assert missing == ["made_up_column"]
 
 
 # ------------------------------------------------------------- the constraints
