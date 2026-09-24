@@ -43,3 +43,7 @@ reference/sources/
 
 # Excel leaves these behind while a workbook is open.
 ~$*.xlsx
+
+# Local scratch: Claude session outputs and Office lock files
+Claude outputs/
+~$*
