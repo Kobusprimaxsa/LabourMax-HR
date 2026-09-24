@@ -19,7 +19,7 @@ from core.models import Tenant
 from employees.engagements import terminate
 from employees.models import EmployeeEngagement, EmployeeTaxProfile
 from employers.models import Employer, PayGroup
-from payroll import assembly, runs, validation
+from payroll import assembly, replay, runs, validation
 from payroll.models import AnnualBonusCycle, PayPeriod, PayrollRun
 from payroll.tests.test_termination_payslip import a_cleaner, a_cleaning_employer, load_shipped
 from statutory import resolve
@@ -159,6 +159,9 @@ def test_the_december_bonus_is_taxed_once_on_top_of_ordinary_pay(shipped):
             )
         )
     assert together.tax.rounded == regular_payslip.paye + payslip.paye == Decimal("3446.82")
+    # And both reproduce from their own traces alone (D-313).
+    assert replay.reproduce(regular_payslip) == []
+    assert replay.reproduce(payslip) == []
 
 
 def test_finalising_the_bonus_run_records_the_payment_and_closes_the_period(shipped):

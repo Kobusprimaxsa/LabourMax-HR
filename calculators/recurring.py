@@ -135,7 +135,8 @@ def recurring_lines(data: RecurringInput) -> RecurringResult:
         key = f"{line.component_code}_{line.line_id}"
         inputs[key] = (
             f"{line.kind.value}; amount={line.amount}; percentage_of_basic="
-            f"{line.percentage_of_basic}; cap_percent={line.cap_percent}; owed={line.owed}"
+            f"{line.percentage_of_basic}; cap_percent={line.cap_percent}; owed={line.owed}; "
+            f"accommodation={line.is_accommodation}"
         )
         notes: list[str] = []
 

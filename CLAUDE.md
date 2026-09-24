@@ -1621,6 +1621,15 @@ date it 1 March to end-February, which coincides with the tax year but is a diff
 instrument. **Loaded: the R668 000 ceiling only.** Notice 3910's R1 621 and R560 are minimum
 ASSESSMENTS — floors on the premium, which is P8's — and are in a notes string, not a row.
 
+**P7's "Done when", half proven** (24 September 2026, D-312 to D-314). `payroll/replay.py`
+reproduces a payslip from its stored traces ALONE — rows opened by the key the trace recorded,
+nothing else read — and `payroll/tests/test_end_to_end.py` runs a whole mixed month to finalised
+and reproduces every payslip. Traces are append-only by trigger, so the replay's guard tests
+alter IN-MEMORY copies and call `replay.compare()`. Net pay is `calculators/net.py` (D-312): a
+shortfall is refused naming every deduction, never clamped. `missing_attendance_days()` reads the
+rows in force, never `current_pay_group` (D-314). The other half — SARS examples reproducing
+EXACTLY — waits on O-43, so the "Done when" is not ticked.
+
 **P7 chunk 8d — the December bonus run** (24 September 2026, D-311). `payroll/bonusrun.py`,
 dispatched by `assembly.price()`/`employees_for()`. A gazetted bonus only; no bonus owed in the
 period means `open_run(run_type=bonus)` refuses. The bonus is taxed as the annual payment on top

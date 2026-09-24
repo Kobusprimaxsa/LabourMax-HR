@@ -696,6 +696,28 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
 **Done when:** SARS worked examples reproduce exactly and a finalised payslip is
 reproducible from its trace alone.
 
+**Status against it, 24 September 2026 — NOT ticked, because one half does not pass.**
+
+- [x] **A finalised payslip is reproducible from its trace alone.** `payroll/replay.py`
+      (D-313) re-runs every stored trace from its own inputs and the reference rows it
+      recorded BY KEY, reading no attendance, remuneration, profile or ledger.
+      `payroll/tests/test_end_to_end.py` runs one tenant's June 2026 — two employing
+      entities, SD7 monthly and BCCCI Area B hourly, with a medical credit, an
+      accommodation deduction, three days' annual leave, a mid-month leaver paid notice in
+      lieu and an uncaptured day — draft to finalised, and every payslip reproduces. The
+      year-to-date rebuild matches a ground truth summed in the test from the payslips and
+      lines; the uncaptured day blocks approval until captured; the closed period refuses a
+      second run; the reversal mirrors every line and leaves the originals untouched.
+      `payroll/tests/test_replay.py` watches an altered output, an altered input, an extra
+      recorded row, an unknown calculator and a payslip with no traces each being caught.
+      The bonus run's payslips reproduce too.
+- [ ] **SARS worked examples reproduce exactly — two do not.** `pytest -m golden -rxX` is
+      49 passed, 2 xfailed: SARS PAYE-GEN-01-G01 §6's weekly and fortnightly examples
+      convert the monthly medical credit ÷ 4 and ÷ 2, where the statutory-rates method
+      spreads twelve months over 52 and 26 (O-43). Every other published example reproduces
+      exactly, or within the labelled deduction-tables bound where SARS worked it on the
+      tables (D-212). This half closes when O-43 is decided, not before.
+
 ---
 
 ## P8 — Statutory Outputs & Banking · 4 weeks · 9 tables
