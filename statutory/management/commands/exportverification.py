@@ -76,9 +76,11 @@ QUERY_FILL = PatternFill("solid", fgColor="FBE2C7")
 MACHINE_FILL = PatternFill("solid", fgColor="DCE6F5")
 DOCUMENT_FILL = PatternFill("solid", fgColor="EDEDED")
 
-#: The workbook's own words for an outcome. ``importverification`` reads them
-#: back through IMPORTED_AS, which is the inverse of this.
-CHECKED_TEXT = {"checked": "Y", "queried": "QUERY"}
+#: The workbook's own words for an outcome, and what the dropdown offers. Both
+#: live in ``statutory/verification.py`` so this command and
+#: ``importverification`` read one list rather than two that agree today
+#: (D-282).
+CHECKED_TEXT = verification.CHECKED_TEXT
 
 
 class Command(BaseCommand):
@@ -108,8 +110,9 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         path = Path(options["path"])
+        deferred = 0
         if path.exists() and options["force"]:
-            self._refuse_to_discard_unimported_work(path)
+            deferred = self._refuse_to_discard_unimported_work(path)
         if path.exists() and not options["force"]:
             raise CommandError(
                 f"{path} already exists. Every tick that has been IMPORTED is safe — it "
@@ -161,6 +164,14 @@ class Command(BaseCommand):
         )
         self.stdout.write(f"  {len(versions)} reference versions, {len(machine)} machine-verified")
         self.stdout.write(f"  {done} figure(s) already checked, carried forward")
+        if deferred:
+            # Said out loud rather than quietly dropped (D-272's own lesson,
+            # D-282). These rows come back BLANK, which is what they meant.
+            self.stdout.write(
+                f"  {deferred} row(s) in the overwritten file carried a mark that records "
+                f"nothing - an 'N' from before the dropdown dropped it, which meant 'not "
+                f"yet'. They are blank again, which says the same thing."
+            )
 
     # ------------------------------------------------------------------ sheets
 
@@ -328,28 +339,41 @@ class Command(BaseCommand):
             return local, None
         return local, sourcepages.page_for(group.clause, local)
 
-    def _refuse_to_discard_unimported_work(self, path):
+    def _refuse_to_discard_unimported_work(self, path) -> int:
         """--force over a file holding ticks nobody has imported (D-272).
 
         ``--force`` is for a file whose work is already in the database, where
         the export simply pre-fills it again. Over un-imported ticks it is the
         destructive operation this whole design exists to make impossible
         (D-256): an evening of checking, gone, with no record that it happened.
+
+        **A mark is only work if the importer would record it** (D-282). This
+        used to refuse over ANY non-blank cell, which caught the one value that
+        carries no evidence at all: ``N``, offered by the dropdown and defined
+        by it as "not yet". Nothing was ever recorded for one, so nothing is
+        lost by overwriting it - but the file could not be refreshed until
+        somebody deleted it by hand. Returns how many such cells were passed
+        over, because a row that quietly stops being marked is the silence
+        D-272 was about.
         """
         try:
             book = load_workbook(path, data_only=True)
         except Exception:  # noqa: BLE001 - not a workbook we wrote; let the export proceed
-            return
+            return 0
         if "Checks" not in book.sheetnames:
-            return
+            return 0
 
         sheet = book["Checks"]
         checks = verification.latest_checks()
         stranded = []
+        deferred = 0
         for index in range(2, sheet.max_row + 1):
             key = sheet.cell(row=index, column=10).value
-            marked = (sheet.cell(row=index, column=11).value or "").strip()
-            if not key or not marked:
+            if not key:
+                continue
+            cell = sheet.cell(row=index, column=11).value
+            if verification.recorded_outcome(cell) is None:
+                deferred += 1 if str(cell or "").strip() else 0
                 continue
             group = verification.group_by_key(key)
             if group is None or not any(figure.key in checks for figure in group.figures):
@@ -365,6 +389,7 @@ class Command(BaseCommand):
                 f"disposable. If those rows really are meant to go, delete the file by "
                 f"hand: this command will not throw away work it cannot see recorded."
             )
+        return deferred
 
     def _check_sheet(self, sheet, groups, machine, checks, verifier=""):
         for column, (title, width) in enumerate(CHECK_HEADERS, start=1):
@@ -452,15 +477,19 @@ class Command(BaseCommand):
         if last < 2:
             return
 
+        # No N (D-282). It meant "not yet", which is what BLANK already means,
+        # and being the one mark the importer records nothing for it was also
+        # the one mark that made the file impossible to re-export.
         dropdown = DataValidation(
             type="list",
-            formula1='"Y,N,QUERY"',
+            formula1='"{}"'.format(",".join(verification.RECORDED_AS)),
             allow_blank=True,
             showErrorMessage=True,
-            errorTitle="Y, N or QUERY",
+            errorTitle="Y or QUERY",
             error=(
-                "Y: every figure on this row matches the document. N: not yet. "
-                "QUERY: one or more is wrong - say which in Note."
+                "Y: every figure on this row matches the document. "
+                "QUERY: one or more is wrong - say which in Note. "
+                "Leave it blank for not yet."
             ),
         )
         sheet.add_data_validation(dropdown)

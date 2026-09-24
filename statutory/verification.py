@@ -378,6 +378,44 @@ class Line:
         return (self.document, self.clause, self.effective_from, self.table, self.key)
 
 
+#: THE WORKBOOK'S WHOLE VOCABULARY FOR AN OUTCOME, in one place because both
+#: commands need it and a mark that one of them does not recognise is a trap
+#: (D-282). ``exportverification`` offers these in the Checked column's
+#: dropdown, decides from them whether ``--force`` would destroy real work, and
+#: pre-fills them from the database; ``importverification`` reads them back.
+#:
+#: It used to be two dicts in two command modules, each documented as the
+#: inverse of the other, and the dropdown offered a third value neither of them
+#: mentioned. ``N`` meant "not yet", the importer dropped it in silence - right,
+#: since not-yet is not evidence - and the export then counted it as a mark it
+#: had no record of and REFUSED to overwrite the file, naming "delete it by
+#: hand" as the only way out. So the one value meaning "I have not done this"
+#: was the only one that made the workbook un-refreshable. There is no N now:
+#: blank already means not yet, and the Note column says why.
+#:
+#: **A mark is work only if it is in here.** Anything else is a deferral, which
+#: costs nothing to discard because nothing was recorded and the row comes back
+#: blank on the next export.
+RECORDED_AS = {
+    "Y": ReferenceFigureCheck.Outcome.CHECKED,
+    "QUERY": ReferenceFigureCheck.Outcome.QUERIED,
+}
+
+#: The inverse, for pre-filling a cell from a recorded check. Derived rather
+#: than written out, so the two cannot disagree.
+CHECKED_TEXT = {outcome: mark for mark, outcome in RECORDED_AS.items()}
+
+
+def recorded_outcome(mark):
+    """What a Checked cell records, or None if it records nothing.
+
+    Case and whitespace are the caller's problem nowhere: a lower-case ``y``
+    used to be recorded by the import and counted as stranded by the export,
+    because one of them upper-cased and the other did not.
+    """
+    return RECORDED_AS.get(str(mark or "").strip().upper())
+
+
 #: The label the fingerprint is written under on the Summary sheet, and looked
 #: up by on import. A workbook without one predates D-272 and is refused.
 FINGERPRINT_LABEL = "Workbook fingerprint"

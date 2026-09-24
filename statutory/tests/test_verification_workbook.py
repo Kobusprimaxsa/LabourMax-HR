@@ -17,6 +17,7 @@ how a rate typed into Excel at 23:00 ends up on a payslip.
 from __future__ import annotations
 
 import datetime
+import io
 import json
 import pathlib
 
@@ -795,3 +796,127 @@ def test_a_dry_run_reports_what_it_would_record_not_what_the_database_holds(
 
     assert ReferenceDataVersion.objects.get(version_label=SICK).verified_at is None
     assert ReferenceFigureCheck.objects.count() == 0, "a dry run still writes nothing"
+
+
+# ------------------------------------- the Checked column's vocabulary (D-282)
+#
+# One list, in statutory/verification.py, read by the dropdown, by the --force
+# guard and by the importer. It used to be two dicts in two command modules
+# plus a third value the dropdown offered that neither mentioned — N, meaning
+# "not yet". The importer dropped it in silence, correctly, and the export then
+# refused to overwrite the file because it held a mark with no record behind
+# it, naming "delete it by hand" as the way out. The one value meaning "I have
+# not done this" was the only one that made the workbook un-refreshable.
+
+
+def mark_one(path, row, value, *, by="checker@example.com", when="2026-09-20"):
+    book = load_workbook(path)
+    sheet = book["Checks"]
+    sheet.cell(row=row, column=11, value=value)
+    sheet.cell(row=row, column=12, value=by)
+    sheet.cell(row=row, column=13, value=when)
+    book.save(path)
+    return path
+
+
+def test_the_dropdown_offers_exactly_what_the_importer_records(workbook):
+    """No N. The list is built from ``RECORDED_AS``, so a value can only be
+    offered if something reads it back."""
+    validations = load_workbook(workbook)["Checks"].data_validations.dataValidation
+    formulas = [v.formula1 for v in validations]
+
+    assert '"Y,QUERY"' in formulas
+    assert not any("N" in f.strip('"').split(",") for f in formulas), formulas
+
+
+def test_the_two_halves_of_the_vocabulary_are_one_list(loaded):
+    """``CHECKED_TEXT`` is derived from ``RECORDED_AS`` rather than written out
+    beside it, so they cannot drift — which is how N came to exist."""
+    assert verification.CHECKED_TEXT == {
+        outcome: mark for mark, outcome in verification.RECORDED_AS.items()
+    }
+    for mark in verification.RECORDED_AS:
+        assert verification.CHECKED_TEXT[verification.RECORDED_AS[mark]] == mark
+
+
+# ---------------------------------------------- watching the --force guard REFUSE
+
+
+def test_force_refuses_over_a_tick_nobody_imported(workbook):
+    """THE GUARD, unchanged and still the point (D-272). A Y in the file and
+    nothing in the database is an evening of checking that --force would
+    destroy."""
+    mark_one(workbook, 2, "Y")
+
+    with pytest.raises(CommandError) as raised:
+        call_command("exportverification", str(workbook), force=True, verbosity=0)
+
+    assert "would discard them" in str(raised.value)
+
+
+def test_force_refuses_over_an_unimported_query_too(workbook):
+    """A QUERY is recorded evidence — it is the whole value of one."""
+    mark_one(workbook, 2, "QUERY")
+
+    with pytest.raises(CommandError) as raised:
+        call_command("exportverification", str(workbook), force=True, verbosity=0)
+
+    assert "would discard them" in str(raised.value)
+
+
+# --------------------------------------------- watching it NOT fire over an N
+
+
+@pytest.mark.parametrize("mark", ["N", "n", " n "])
+def test_force_is_not_blocked_by_a_deferral(workbook, mark):
+    """Nothing was ever recorded for an N, so there is nothing to discard. The
+    lower-case cases are the second half of the same bug: the guard compared
+    raw text while the importer upper-cased, so the two disagreed about what a
+    cell said."""
+    mark_one(workbook, 2, mark)
+
+    call_command("exportverification", str(workbook), force=True, verbosity=0)
+
+    assert not str(figures(workbook).cell(row=2, column=11).value or "").strip(), (
+        "the row should come back blank, which is what 'not yet' means"
+    )
+
+
+def test_a_deferral_that_was_passed_over_is_reported(workbook):
+    """Said out loud, not quietly dropped — D-272's own lesson. A row that
+    stops being marked without a word is how somebody loses track of an
+    evening."""
+    mark_one(workbook, 2, "N")
+    out = io.StringIO()
+
+    call_command("exportverification", str(workbook), force=True, stdout=out, verbosity=1)
+
+    assert "1 row(s) in the overwritten file carried a mark that records nothing" in out.getvalue()
+
+
+def test_force_over_an_imported_workbook_says_nothing_about_deferrals(workbook, checker):
+    """Watched NOT firing. The ordinary case — everything ticked and imported —
+    must not grow a line about rows nobody deferred."""
+    mark_all(workbook)
+    call_command("importverification", str(workbook), current_through="2027-02-28", verbosity=0)
+    out = io.StringIO()
+
+    call_command("exportverification", str(workbook), force=True, stdout=out, verbosity=1)
+
+    assert "records nothing" not in out.getvalue()
+
+
+def test_an_n_from_an_older_workbook_still_imports_as_not_yet(workbook, checker):
+    """A file exported before the dropdown changed still has N cells in it.
+    They must go on meaning 'not yet' rather than becoming an error."""
+    mark_all(workbook)
+    mark_one(workbook, 2, "N")
+
+    call_command("importverification", str(workbook), current_through="2027-02-28", verbosity=0)
+
+    key = figures(workbook).cell(row=2, column=10).value
+    group = verification.group_by_key(key)
+    recorded = set(verification.latest_checks())
+    assert not any(figure.key in recorded for figure in group.figures), (
+        "an N must record nothing at all"
+    )

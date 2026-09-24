@@ -1296,8 +1296,12 @@ be guessed at (O-40).
   pre-ticked, and re-exporting is safe: every recorded tick is carried forward, so a new
   reference row no longer costs an evening of checking. As at 24 September 2026 the
   workbook and the database agree: **427 figure checks recorded, 10 versions verified,
-  84 of 168 groups marked** (81 Y, 2 QUERY, 1 N), none of them in force because the
-  golden tests do not exist yet.
+  83 of 168 groups marked** (81 Y, 2 QUERY), none of them in force because the golden
+  tests do not exist yet. **The Checked column offers Y and QUERY and nothing else**
+  (D-282) — blank means not yet, and the whole vocabulary is `RECORDED_AS` in
+  `statutory/verification.py`, read by the dropdown, by `--force`'s refusal and by the
+  importer. Three places each knowing part of it is how `N` came to be offered, recorded
+  by nobody, and counted by the export as work it would not overwrite.
 
   **DO NOT LOAD REFERENCE DATA WHILE A PASS IS IN FLIGHT** (D-281). The corpus
   fingerprint is taken over the check-group KEYS, so loading a fixture adds keys and

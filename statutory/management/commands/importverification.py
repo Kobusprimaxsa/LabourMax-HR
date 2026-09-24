@@ -53,13 +53,6 @@ try:  # pragma: no cover
 except ModuleNotFoundError as exc:  # pragma: no cover
     raise CommandError("openpyxl is required: pip install openpyxl") from exc
 
-#: The workbook's vocabulary for an outcome, and the inverse of
-#: ``exportverification.CHECKED_TEXT``. Anything else in the cell is "not yet".
-IMPORTED_AS = {
-    "Y": ReferenceFigureCheck.Outcome.CHECKED,
-    "QUERY": ReferenceFigureCheck.Outcome.QUERIED,
-}
-
 #: The CHECKS sheet's own layout, named where exportverification names it.
 VERSION_COLUMN = 4
 VALUE_COLUMN = 7  # the inline summary of every figure the group covers
@@ -417,9 +410,11 @@ class Command(BaseCommand):
         problems, sound = [], []
 
         for row in rows:
-            state = IMPORTED_AS.get(row["checked"])
+            state = verification.recorded_outcome(row["checked"])
             if state is None:
-                continue  # blank, N, or anything else: not yet done.
+                # Blank, or an N from a workbook exported before D-282
+                # dropped it from the dropdown: not yet done either way.
+                continue
 
             group = verification.group_by_key(row["key"])
             if group is None:
