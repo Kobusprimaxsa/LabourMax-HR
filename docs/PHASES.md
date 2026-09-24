@@ -115,10 +115,11 @@ The most important phase in the build. Can overlap P1.
 - [ ] **Kobus verifies every figure against its source**, then `verifystatutory`. **The
       only item in P2 still needing a person.** 148 check groups over 672 figures across 18
       source documents as at D-265; 156 groups over 688 figures after D-268; **168 groups
-      over 739 figures across 19 source documents as at D-280** — re-export before starting,
-      and **import the workbook on disk FIRST**: it holds 55 groups ticked and never
-      imported, which an export would destroy and which `exportverification` refuses to do
-      without `--force`. Exported to `reference/verification/Labourmax_verification.xlsx`
+      over 739 figures across 19 source documents as at D-280**. The workbook and the
+      database agree as at 24 September 2026: **84 of 168 groups marked, 427 figure
+      checks recorded, 10 versions verified** and none in force, the golden tests being
+      the thing still missing. Do not load reference data while a pass is in flight —
+      it makes every workbook on a desk stale (D-281) Exported to `reference/verification/Labourmax_verification.xlsx`
       and read back into the database as append-only evidence (D-256, D-258). A tick by a
       development identity does NOT count: it is accepted so the build can read reference
       data, reported by `checkstatutory` every run, and refused by the payroll gate on the

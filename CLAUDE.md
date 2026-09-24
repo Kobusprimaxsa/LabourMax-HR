@@ -1294,12 +1294,20 @@ be guessed at (O-40).
   reads the ticks back into `reference_figure_check`, which is append-only evidence in the
   database rather than a tick trapped in an unmergeable binary (D-256). Nothing is
   pre-ticked, and re-exporting is safe: every recorded tick is carried forward, so a new
-  reference row no longer costs an evening of checking. **IMPORT THE WORKBOOK ON DISK
-  BEFORE RE-EXPORTING.** As at 24 September 2026 it holds 84 marked rows and the database
-  holds 29 of them — 55 groups have been ticked and never imported, and an export would
-  destroy exactly those. `exportverification` refuses over the file for this reason and
-  `--force` is the only thing that overrides it (D-272); run `importverification` first.
-  D-280 added four public holiday groups, so the workbook is also one load behind.
+  reference row no longer costs an evening of checking. As at 24 September 2026 the
+  workbook and the database agree: **427 figure checks recorded, 10 versions verified,
+  84 of 168 groups marked** (81 Y, 2 QUERY, 1 N), none of them in force because the
+  golden tests do not exist yet.
+
+  **DO NOT LOAD REFERENCE DATA WHILE A PASS IS IN FLIGHT** (D-281). The corpus
+  fingerprint is taken over the check-group KEYS, so loading a fixture adds keys and
+  makes every workbook already on somebody's desk STALE — `importverification` then
+  refuses the whole file and the evening's ticks have nowhere to go. It happened here:
+  `REF-2026.03.01-HOLIDAYS` added four groups and stranded 55 ticks. The recovery is a
+  keyed merge, never retyping: the change is additive, so a fresh export plus each mark
+  copied across by `Group key` is exact. Copy only the four HUMAN columns — Checked,
+  Checked by, Date checked, Note — and leave the exported value cell alone, or the
+  import's drift guard (D-251) ends up comparing a copy against a copy.
 - **A verification tick that is not a person's never gets past the payroll gate** (D-262).
   `verifystatutory` accepts an identity ending in RFC 2606's reserved `.invalid` — the
   build has to be able to read reference data before the human pass finishes — and warns
