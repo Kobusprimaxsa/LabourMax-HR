@@ -616,7 +616,11 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       negative leave balance blocks approval for a human decision and is never netted off
       (D-185, D-309). Proven against a hand-computed SD1 leaver, net R12 620,81. Open: O-50
       (severance directive — severance REFUSES on the payslip), O-51 (notice pay's tax code)
-- [ ] **Chunk 8d — the December bonus run** (`run_type = bonus`)
+- [x] **Chunk 8d — the December bonus run** (D-311). `run_type = bonus` prices SD1 3(3) and
+      BCCCI 4.5 only; no gazetted bonus, no run. PAYE on the bonus is the annual payment on
+      top of the FINALISED regular payslip's ordinary pay, added once, and refuses if that
+      ordinary tax has moved. Proven: R1 107,00 + R2 339,82 = the one-calculation R3 446,82.
+      O-44 stays open — leavers are paid the pro-rata share on their termination payslip
 - [x] `pay_period` generation and lifecycle (D-305). Generation is P3's (D-82 to D-85); the
       lifecycle is `payroll/lifecycle.py`: open → in progress → closed, reopened only by a
       reversal. A closed period refuses a new run; a period with a live run refuses to close;

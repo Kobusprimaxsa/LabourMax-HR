@@ -1621,6 +1621,13 @@ date it 1 March to end-February, which coincides with the tax year but is a diff
 instrument. **Loaded: the R668 000 ceiling only.** Notice 3910's R1 621 and R560 are minimum
 ASSESSMENTS — floors on the premium, which is P8's — and are in a notes string, not a row.
 
+**P7 chunk 8d — the December bonus run** (24 September 2026, D-311). `payroll/bonusrun.py`,
+dispatched by `assembly.price()`/`employees_for()`. A gazetted bonus only; no bonus owed in the
+period means `open_run(run_type=bonus)` refuses. The bonus is taxed as the annual payment on top
+of the FINALISED regular payslip's ordinary pay, read from that payslip's own PAYE trace, and
+refuses if the ordinary tax has moved — open the bonus run before finalising the regular one
+(the last live run closes the period), calculate it after.
+
 **P7 chunk 8c, part 2 — the termination payslip** (24 September 2026, D-306 to D-310).
 `termination_payout` is sheet 02's table: `payroll/termination.py` PREPARES it from the rows as
 at the last day, a person REVIEWS it, and the leaver's final regular payslip pays it — refusing

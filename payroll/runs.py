@@ -158,6 +158,16 @@ def open_run(
                     "employee for the same days."
                 )
             )
+        if run_type == RunType.BONUS:
+            from payroll.bonusrun import employees_owed
+
+            if not employees_owed(period):
+                raise PayrollRunError(
+                    f"Nobody on this pay group is owed a bonus in period {period.period_number} "
+                    f"({period.period_start:%d %B} to {period.period_end:%d %B %Y}). A bonus is "
+                    f"gazetted (SD1 clause 3(3), BCCCI clause 4.5) or it is not paid here; an "
+                    f"employer's own bonus is never assumed, so there is no run to open."
+                )
         lifecycle.begin(period)
         last = period.runs.order_by("-run_number").first()
         return PayrollRun.objects.create(
@@ -210,9 +220,9 @@ def calculate(run: PayrollRun, *, calculated_by=None) -> PayrollRun:
         with transaction.atomic(), tenant_context_of(run):
             run.payslips.filter(is_finalised=False).delete()
             written = []
-            for employee in assembly.employees_in(run):
+            for employee in assembly.employees_for(run):
                 try:
-                    draft = assembly.build(run, employee)
+                    draft = assembly.price(run, employee)
                 except assembly.CannotPrice:
                     continue  # reported by validation.check_employees_not_priced
                 written.append(_write(run, draft))

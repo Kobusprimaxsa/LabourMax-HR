@@ -52,10 +52,14 @@ _ids = iter(range(300, 999))
 
 @pytest.fixture
 def shipped(db):
+    return load_shipped()
+
+
+def load_shipped():
     """Every shipped fixture, in dependency order, the way ``loadstatutory --all``
     loads them — the termination payout reads notice bands, the s40(c)
     qualifying period and the SD1 rule set, which the smaller payroll fixture
-    set does not carry."""
+    set does not carry. Verified the way D-288 verified them."""
     load_reference_directory()
     seed_system_components()
     seed_system_leave_types()
@@ -88,7 +92,7 @@ def a_cleaning_employer():
     return employer, group
 
 
-def a_cleaner(employer, group, *, hourly="40.00"):
+def a_cleaner(employer, group, *, hourly="40.00", start=ENGAGED):
     """R40 an hour, nine hours a day, five days a week: R1 800 a week, R360 a day."""
     n = next(_ids)
     body = f"8506155{n:03d}08"[:12]
@@ -103,7 +107,7 @@ def a_cleaner(employer, group, *, hourly="40.00"):
             email=f"sipho{n}@example.com",
             id_number=body[:-1] + str(luhn_check_digit(body[:-1])),
         )
-    engagement = engage(employee, start_date=ENGAGED, job_title="Cleaner")
+    engagement = engage(employee, start_date=start, job_title="Cleaner")
     rate = Decimal(hourly)
     with tenant_context(employer.tenant_id):
         EmployeeRemuneration.objects.create(
@@ -119,17 +123,17 @@ def a_cleaner(employer, group, *, hourly="40.00"):
             derived_hourly_rate=rate,
             derived_daily_rate=rate * 9,
             derived_monthly_rate=(rate * 45 * Decimal("4.333333")).quantize(Decimal("0.000001")),
-            effective_from=ENGAGED,
+            effective_from=start,
         )
         EmployeeTaxProfile.objects.create(
-            tenant=employer.tenant, employee=employee, tax_status="standard", effective_from=ENGAGED
+            tenant=employer.tenant, employee=employee, tax_status="standard", effective_from=start
         )
         schedule = WorkSchedule.objects.create(
             tenant=employer.tenant,
             employee=employee,
             days_per_week=Decimal("5"),
             ordinary_hours_per_week=Decimal("45"),
-            effective_from=ENGAGED,
+            effective_from=start,
         )
         for cycle_day in range(7):
             working = cycle_day < 5

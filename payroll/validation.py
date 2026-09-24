@@ -271,11 +271,11 @@ def check_employees_not_priced(run) -> list[Finding]:
         return []
     paid = set(run.payslips.values_list("employee_id", flat=True))
     found = []
-    for employee in assembly.employees_in(run):
+    for employee in assembly.employees_for(run):
         if employee.pk in paid:
             continue
         try:
-            assembly.build(run, employee)
+            assembly.price(run, employee)
         except assembly.CannotPrice as refusal:
             found.append(
                 Finding(
@@ -342,6 +342,8 @@ def check_attendance_is_complete(run) -> list[Finding]:
     and flagging every uncaptured day would be noise. P5's notes say "P7's
     validation gate will call this; it is not built here." This is that call.
     """
+    if run.run_type == "bonus":
+        return []  # a bonus pays for no days (D-311); the regular run answers this
     found = []
     for payslip in run.payslips.select_related("employee"):
         missing = missing_attendance_days(payslip.employee, run.pay_period)

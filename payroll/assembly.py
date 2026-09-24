@@ -182,8 +182,33 @@ def _in_force(queryset, day, start="effective_from", end="effective_to"):
 def employees_in(run: PayrollRun) -> list[Employee]:
     """Everybody the run owes a payslip: engaged at some point in the period,
     with a remuneration row on the run's pay group in force during it."""
-    period = run.pay_period
-    with tenant_context_of(run):
+    return employees_in_period(run.pay_period)
+
+
+def employees_for(run: PayrollRun) -> list[Employee]:
+    """Who a run prices: a bonus run, those whose bonus cycle ends in the period
+    (D-311); every other run, everybody engaged on the pay group."""
+    if run.run_type == PayrollRun.RunType.BONUS:
+        from payroll.bonusrun import employees_owed
+
+        return employees_owed(run.pay_period)
+    return employees_in(run)
+
+
+def price(run: PayrollRun, employee: Employee) -> Draft:
+    """One payslip for one employee on one run, whatever the run's type."""
+    if run.run_type == PayrollRun.RunType.BONUS:
+        from payroll import bonusrun
+
+        try:
+            return bonusrun.build(run, employee)
+        except resolve.StatutoryValueMissingError as missing:
+            raise CannotPrice("reference_data_missing", str(missing)) from missing
+    return build(run, employee)
+
+
+def employees_in_period(period) -> list[Employee]:
+    with tenant_context_of(period):
         ids = (
             EmployeeRemuneration.objects.filter(
                 pay_group=period.pay_group, effective_from__lte=period.period_end
@@ -667,54 +692,17 @@ def _build(run: PayrollRun, employee: Employee) -> Draft:
         in_period = (period.period_end - period.period_start).days + 1
         employed = (end - start).days + 1
         periods_worked = Decimal("1") if employed == in_period else Decimal(employed) / in_period
-        age = _age_on(employee.date_of_birth, year.end_date)
-        credit_row = resolve.medical_tax_credit(year)
         try:
             paye = employees_tax(
-                PayeInput(
+                paye_input(
+                    employee,
+                    profile,
+                    year,
                     calculated_for=end,
                     remuneration=taxable - annual_payment,
-                    allowable_deductions=ZERO,
                     annual_payment=annual_payment,
                     periods_in_year=periods_in_year,
                     periods_worked=periods_worked,
-                    brackets=tuple(
-                        TaxBracket(
-                            income_from=row.income_from,
-                            income_to=row.income_to,
-                            base_tax=row.base_tax,
-                            marginal_rate_percent=row.marginal_rate_pct,
-                            table=PayeTaxBracket._meta.db_table,
-                            row_id=row.pk,
-                        )
-                        for row in resolve.paye_brackets(year)
-                    ),
-                    rebates=tuple(
-                        StatutoryFigure(
-                            value=row.annual_amount,
-                            table=PayeRebate._meta.db_table,
-                            row_id=row.pk,
-                            description=row.get_rebate_type_display(),
-                        )
-                        for row in resolve.paye_rebates(year, age)
-                    ),
-                    medical_scheme_members=profile.medical_scheme_members or 0,
-                    medical_credit=(
-                        None
-                        if credit_row is None
-                        else MedicalCredit(
-                            main_member_monthly=credit_row.main_member_monthly,
-                            first_dependant_monthly=credit_row.first_dependant_monthly,
-                            additional_dependant_monthly=credit_row.additional_dependant_monthly,
-                            table=MedicalTaxCreditRate._meta.db_table,
-                            row_id=credit_row.pk,
-                        )
-                    ),
-                    tax_status=TaxStatus(profile.tax_status),
-                    directive_number=profile.directive_number or "",
-                    directive_percentage=profile.directive_percentage,
-                    directive_amount=profile.directive_amount,
-                    directive_valid_to=profile.directive_valid_to,
                 )
             )
         except PayeInputError as refused:
@@ -749,23 +737,7 @@ def _build(run: PayrollRun, employee: Employee) -> Draft:
         traces.append(uif.trace)
 
         # ------------------------------------------------------------- SDL
-        registration = _in_force(
-            EmployerStatutoryRegistration.objects.filter(
-                employer=employee.employer,
-                registration_type=EmployerStatutoryRegistration.RegistrationType.SDL,
-            ),
-            end,
-            start="registered_from",
-            end="registered_to",
-        )
-        if registration is None:
-            liable, reason = False, "No SDL registration is captured for this employer."
-        elif registration.is_exempt:
-            liable, reason = False, registration.exemption_reason or "Employer SDL-exempt."
-        elif profile.is_sdl_exempt:
-            liable, reason = False, "This employee's tax profile is SDL-exempt."
-        else:
-            liable, reason = True, ""
+        liable, reason = sdl_liability(employee, profile, end)
         sdl = levy(
             SdlInput(
                 calculated_for=end,
@@ -865,6 +837,92 @@ def _recurring_line(item, by_id) -> DraftLine:
         note=item.note,
         recurring_component=row,
     )
+
+
+def paye_input(
+    employee,
+    profile: EmployeeTaxProfile,
+    year,
+    *,
+    calculated_for: datetime.date,
+    remuneration: Decimal,
+    annual_payment: Decimal,
+    periods_in_year: Decimal,
+    periods_worked: Decimal,
+) -> PayeInput:
+    """The PAYE calculator's input: the year's brackets, the rebates for the
+    employee's age on the year's last day (G01 §4), the medical credit and the
+    profile's status and directive. Shared by the regular payslip and the bonus
+    run, so an annual payment is taxed against exactly the rows the ordinary pay
+    was (D-311)."""
+    age = _age_on(employee.date_of_birth, year.end_date)
+    credit_row = resolve.medical_tax_credit(year)
+    return PayeInput(
+        calculated_for=calculated_for,
+        remuneration=remuneration,
+        allowable_deductions=ZERO,
+        annual_payment=annual_payment,
+        periods_in_year=periods_in_year,
+        periods_worked=periods_worked,
+        brackets=tuple(
+            TaxBracket(
+                income_from=row.income_from,
+                income_to=row.income_to,
+                base_tax=row.base_tax,
+                marginal_rate_percent=row.marginal_rate_pct,
+                table=PayeTaxBracket._meta.db_table,
+                row_id=row.pk,
+            )
+            for row in resolve.paye_brackets(year)
+        ),
+        rebates=tuple(
+            StatutoryFigure(
+                value=row.annual_amount,
+                table=PayeRebate._meta.db_table,
+                row_id=row.pk,
+                description=row.get_rebate_type_display(),
+            )
+            for row in resolve.paye_rebates(year, age)
+        ),
+        medical_scheme_members=profile.medical_scheme_members or 0,
+        medical_credit=(
+            None
+            if credit_row is None
+            else MedicalCredit(
+                main_member_monthly=credit_row.main_member_monthly,
+                first_dependant_monthly=credit_row.first_dependant_monthly,
+                additional_dependant_monthly=credit_row.additional_dependant_monthly,
+                table=MedicalTaxCreditRate._meta.db_table,
+                row_id=credit_row.pk,
+            )
+        ),
+        tax_status=TaxStatus(profile.tax_status),
+        directive_number=profile.directive_number or "",
+        directive_percentage=profile.directive_percentage,
+        directive_amount=profile.directive_amount,
+        directive_valid_to=profile.directive_valid_to,
+    )
+
+
+def sdl_liability(employee, profile: EmployeeTaxProfile, day: datetime.date) -> tuple[bool, str]:
+    """D-209: liability is DECLARED - a registration captured, not exempt, and
+    the employee's profile not exempt. Returns (liable, reason if not)."""
+    registration = _in_force(
+        EmployerStatutoryRegistration.objects.filter(
+            employer=employee.employer,
+            registration_type=EmployerStatutoryRegistration.RegistrationType.SDL,
+        ),
+        day,
+        start="registered_from",
+        end="registered_to",
+    )
+    if registration is None:
+        return False, "No SDL registration is captured for this employer."
+    if registration.is_exempt:
+        return False, registration.exemption_reason or "Employer SDL-exempt."
+    if profile.is_sdl_exempt:
+        return False, "This employee's tax profile is SDL-exempt."
+    return True, ""
 
 
 def _age_on(born: datetime.date, day: datetime.date) -> int:
