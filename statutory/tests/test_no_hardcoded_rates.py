@@ -83,6 +83,9 @@ EXCLUDED_FILES = {"core/management/commands/seeddemo.py"}
 # Nothing whose VALUE could be a statutory figure belongs here. A quantum is a unit of
 # rounding; a rate is a number somebody gazetted.
 #
+# "0.0001" is the same rounding quantum at four places, for sheet 02's NUMERIC(14,4)
+# columns - termination_payout's weekly, daily and monthly wage used (D-308).
+#
 # "0.500" and "1.000" (leave/applications.py) are day_portion's own two states — a
 # half day and a whole day, sheet 02's own literal shape for the minimum increment on
 # a salaried basis. Nobody gazettes what fraction a half is; it is definitional, the
@@ -112,6 +115,7 @@ PERMITTED_DECIMAL_CONSTANTS = {
     "0.000001",
     "0.00",
     "0.0000",
+    "0.0001",
     "0.001",
     "0.01",
     "0.500",
