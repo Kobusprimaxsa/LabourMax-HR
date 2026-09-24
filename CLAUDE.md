@@ -1621,6 +1621,20 @@ date it 1 March to end-February, which coincides with the tax year but is a diff
 instrument. **Loaded: the R668 000 ceiling only.** Notice 3910's R1 621 and R560 are minimum
 ASSESSMENTS — floors on the premium, which is P8's — and are in a notes string, not a row.
 
+**P7 chunk 8c — recurring lines on the regular payslip** (24 September 2026, D-301 to
+D-304). `calculators/recurring.py` prices each active `employee_recurring_component` in
+force on the period's last day; earnings join the PAYE/UIF/SDL bases on their own flags and
+deductions come off after the statutory ones. **BCEA s34 states NO ceiling on deductions in
+total** — s34(2)(d)'s quarter is for loss or damage only — and two docstrings that said
+otherwise are corrected. What binds: consent re-checked at the period, SD7's accommodation
+ceiling (above it REFUSES), a line's own `total_deduction_cap_pct` (CLAMPS, with a note), and a
+negative net, which REFUSES the payslip. **A loan's balance is derived, not decremented**
+(D-303, departing from sheet 02's wording by Kobus's decision): `balance_outstanding` is the
+principal and nothing writes it again; `assembly.owed_on()` subtracts every FINALISED line
+through the new `payslip_line.recurring_component_id` (D-302). A deduction on a SARS code
+(pension, provident, medical) and an earning on a fringe-benefit code REFUSE, because each
+changes the tax in a way that is not built (D-304). Part periods are O-49.
+
 **P7 chunk 8b — a regular run calculates** (24 September 2026, D-293, D-294).
 `payroll/assembly.py::build()` reads the rows in force for the period and calls gross, leave
 pay, PAYE, UIF and SDL; it WRITES NOTHING, so the same function prices a payslip in

@@ -604,6 +604,18 @@ class PayslipLine(AuditedModel, TenantScopedModel):
     calculation_note = models.CharField(
         max_length=255, blank=True, help_text="Plain-English explanation for the drill-down."
     )
+    #: NOT in sheet 02 (D-302). The recurring line this payslip line priced, so a
+    #: loan's balance is DERIVED — principal less its finalised lines — rather than
+    #: a column decremented at finalisation that nothing could rebuild once it
+    #: drifted (invariant 3). Two advances of one component run at once (D-135),
+    #: so the component code alone cannot say which one a line paid down.
+    recurring_component = models.ForeignKey(
+        "employees.EmployeeRecurringComponent",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="payslip_lines",
+    )
 
     class Meta:
         db_table = "payslip_line"

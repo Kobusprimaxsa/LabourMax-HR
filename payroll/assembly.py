@@ -65,6 +65,14 @@ from calculators.paye import (
     TaxStatus,
     employees_tax,
 )
+from calculators.recurring import (
+    AccommodationCeiling,
+    LineKind,
+    RecurringInput,
+    RecurringLine,
+    RecurringRefusedError,
+    recurring_lines,
+)
 from calculators.remuneration import RemunerationRefusedError
 from calculators.sdl import SdlInput, levy
 from calculators.uif import UifInput, contribution
@@ -73,6 +81,7 @@ from employees.models import (
     Employee,
     EmployeeBankAccount,
     EmployeeEngagement,
+    EmployeeRecurringComponent,
     EmployeeRemuneration,
     EmployeeTaxProfile,
 )
@@ -86,6 +95,7 @@ from statutory.models import (
     MedicalTaxCreditRate,
     PayeRebate,
     PayeTaxBracket,
+    SarsSourceCode,
     StatutoryParameter,
     WorkingTimeRuleSet,
 )
@@ -127,6 +137,7 @@ class DraftLine:
     rate: Decimal | None = None
     multiplier: Decimal | None = None
     note: str = ""
+    recurring_component: EmployeeRecurringComponent | None = None
 
 
 @dataclasses.dataclass
@@ -299,6 +310,125 @@ def _further_unpaid_days(employee, period, engagement, remuneration, start, end)
     return unpaid
 
 
+# ------------------------------------------------------------- recurring lines
+
+ACCOMMODATION = "ACCOM_DED"
+PRICED_METHODS = {
+    PayrollComponent.CalculationMethod.FIXED,
+    PayrollComponent.CalculationMethod.PERCENTAGE_OF_BASE,
+}
+
+
+def owed_on(line: EmployeeRecurringComponent) -> Decimal | None:
+    """What is still owed on a loan line: the principal as captured, less every
+    FINALISED payslip line that priced it (D-303). Derived, never stored —
+    ``balance_outstanding`` is the principal and is never written after capture.
+    A reversing payslip's line is negative, so a reversal puts the money back."""
+    if line.balance_outstanding is None:
+        return None
+    recovered = sum(
+        (
+            row.amount
+            for row in PayslipLine.objects.filter(
+                recurring_component=line, payslip__is_finalised=True
+            )
+        ),
+        ZERO,
+    )
+    return line.balance_outstanding - recovered
+
+
+def _recurring_rows(employee, day) -> list[EmployeeRecurringComponent]:
+    """The active recurring lines in force on the period's last day, each
+    checked for what the calculator cannot see: consent, and whether this
+    build can price the line at all."""
+    rows = list(
+        EmployeeRecurringComponent.objects.filter(
+            employee=employee, is_active=True, effective_from__lte=day
+        )
+        .filter(Q(effective_to__isnull=True) | Q(effective_to__gt=day))
+        .select_related("payroll_component__sars_source_code", "written_consent_file")
+        .order_by("payroll_component__display_order", "pk")
+    )
+    for row in rows:
+        component = row.payroll_component
+        kind = component.component_type
+        if kind not in (component.ComponentType.EARNING, component.ComponentType.DEDUCTION):
+            raise CannotPrice(
+                "recurring_type_not_built",
+                f"A recurring {component.code} line is an {kind} component. Only recurring "
+                f"earnings and deductions are priced; deactivate the line or remove it.",
+            )
+        if component.calculation_method not in PRICED_METHODS:
+            raise CannotPrice(
+                "recurring_method_not_built",
+                f"A recurring {component.code} line uses the {component.calculation_method} "
+                f"method. Recurring lines are priced as a fixed amount or a percentage of "
+                f"basic, and nothing else is built.",
+            )
+        source = component.sars_source_code
+        if kind == component.ComponentType.DEDUCTION:
+            consent = row.written_consent_file
+            if consent is None or consent.deleted_at is not None:
+                raise CannotPrice(
+                    "deduction_without_consent",
+                    f"The recurring {component.code} deduction has no written consent on "
+                    f"file. BCEA s34(1) permits a deduction without it only where a law, "
+                    f"collective agreement, court order or arbitration award requires it.",
+                )
+            if source is not None:
+                raise CannotPrice(
+                    "deduction_affects_tax",
+                    f"{component.code} is reported under SARS code {source.code}, which "
+                    f"changes the employee's tax (a pension, provident or medical scheme "
+                    f"contribution). That treatment is not built, and the line cannot be "
+                    f"deducted as though it were not there.",
+                )
+        elif source is not None and source.code_group == SarsSourceCode.Group.FRINGE_BENEFIT:
+            raise CannotPrice(
+                "fringe_benefit_not_built",
+                f"{component.code} is a fringe benefit (SARS code {source.code}): taxable but "
+                f"not paid in cash. Fringe benefits are not built, and as a recurring "
+                f"earning it would be paid out as money.",
+            )
+    return rows
+
+
+def _price_recurring(rows, basic: Decimal, rules: WorkingTimeRuleSet, end: datetime.date):
+    try:
+        return recurring_lines(
+            RecurringInput(
+                calculated_for=end,
+                basic=basic,
+                lines=tuple(
+                    RecurringLine(
+                        line_id=row.pk,
+                        component_code=row.payroll_component.code,
+                        description=row.payroll_component.name,
+                        kind=LineKind(row.payroll_component.component_type),
+                        amount=row.amount,
+                        percentage_of_basic=row.percentage_of_basic,
+                        cap_percent=row.total_deduction_cap_pct,
+                        owed=owed_on(row),
+                        is_accommodation=(
+                            row.payroll_component.is_system
+                            and row.payroll_component.code == ACCOMMODATION
+                        ),
+                    )
+                    for row in rows
+                ),
+                accommodation_ceiling=AccommodationCeiling(
+                    capped=rules.accommodation_deduction_capped,
+                    max_percent=rules.accommodation_deduction_max_pct,
+                    table=WorkingTimeRuleSet._meta.db_table,
+                    row_id=rules.pk,
+                ),
+            )
+        )
+    except RecurringRefusedError as refused:
+        raise CannotPrice("recurring_refused", str(refused)) from refused
+
+
 # ---------------------------------------------------------------------- build
 
 
@@ -451,6 +581,21 @@ def _build(run: PayrollRun, employee: Employee) -> Draft:
                     )
                 )
 
+        # ------------------------------------------------- recurring lines
+        # Earnings join BEFORE the tax, UIF and SDL bases are summed, each on
+        # its component's own flags; deductions come off after the statutory
+        # ones (D-301).
+        recurring_rows = _recurring_rows(employee, end)
+        by_id = {row.pk: row for row in recurring_rows}
+        recurring = None
+        if recurring_rows:
+            basic = sum(
+                (line.amount.exact for line in lines if line.component.code == "BASIC"), ZERO
+            )
+            recurring = _price_recurring(recurring_rows, basic, rules, end)
+            traces.append(recurring.trace)
+            lines.extend(_recurring_line(item, by_id) for item in recurring.earnings)
+
         earnings = list(lines)
 
         def base(flag: str) -> Decimal:
@@ -591,14 +736,24 @@ def _build(run: PayrollRun, employee: Employee) -> Draft:
                     DraftLine(component=_component(code), description=description, amount=amount)
                 )
 
-        deductions = paye.tax.rounded + uif.employee.rounded
+        other = [_recurring_line(item, by_id) for item in recurring.deductions] if recurring else []
+        lines.extend(other)
+
+        deductions = (
+            paye.tax.rounded
+            + uif.employee.rounded
+            + sum((line.amount.rounded for line in other), ZERO)
+        )
         contributions = uif.employer.rounded + sdl.levy.rounded
         net = total_earnings - deductions
         if net < ZERO:
+            named = ", ".join(f"{line.component.code} {line.amount}" for line in other)
             raise CannotPrice(
                 "negative_net",
-                f"Deductions of {deductions} exceed earnings of {total_earnings}. A negative "
-                f"net is never stored (sheet 03).",
+                f"Deductions of {deductions} exceed earnings of {total_earnings}"
+                + (f" (including {named})" if named else "")
+                + ". A negative net is never stored (sheet 03); reduce or suspend a "
+                "deduction for this period.",
             )
 
         bank = _in_force(
@@ -640,6 +795,18 @@ def _build(run: PayrollRun, employee: Employee) -> Draft:
                 ),
             },
         )
+
+
+def _recurring_line(item, by_id) -> DraftLine:
+    row = by_id[item.line_id]
+    return DraftLine(
+        component=row.payroll_component,
+        description=item.description,
+        amount=item.amount,
+        rate=item.percentage,
+        note=item.note,
+        recurring_component=row,
+    )
 
 
 def _age_on(born: datetime.date, day: datetime.date) -> int:

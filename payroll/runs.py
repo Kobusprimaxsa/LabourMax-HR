@@ -245,6 +245,7 @@ def _write(run: PayrollRun, draft) -> Payslip:
             is_uif_base=component.is_uif_base,
             is_sdl_base=component.is_sdl_base,
             calculation_note=line.note[:255],
+            recurring_component=line.recurring_component,
         )
     for sequence, trace in enumerate(draft.traces, 1):
         record(draft.employee, trace, payslip=payslip, sequence=sequence)
@@ -480,6 +481,9 @@ def reverse(run: PayrollRun, *, reversed_by, reason: str) -> PayrollRun:
                     is_uif_base=line.is_uif_base,
                     is_sdl_base=line.is_sdl_base,
                     calculation_note=line.calculation_note,
+                    # D-303: the negated line pays the loan BACK, which it can do
+                    # only while it still names the recurring row it came from.
+                    recurring_component=line.recurring_component,
                 )
             mirror.is_finalised = True
             mirror.finalised_at = when

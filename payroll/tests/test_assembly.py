@@ -46,12 +46,17 @@ JUNE = (datetime.date(2026, 6, 1), datetime.date(2026, 6, 30))
 _ids = iter(range(200, 999))
 
 
-@pytest.fixture
-def reference(db):
+def load_shipped_reference() -> TaxYear:
+    """The shipped reference data through the real loader, and the catalogue."""
     for name in LOADED:
         load_reference_data(json.loads((REFERENCE / name).read_text(encoding="utf-8")))
     seed_system_components()
     return TaxYear.objects.get(label="2026/2027")
+
+
+@pytest.fixture
+def reference(db):
+    return load_shipped_reference()
 
 
 def an_employer(sector_code, name="Employer"):

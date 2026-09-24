@@ -602,7 +602,14 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       issues re-derived by validation (D-292); an O-40 day refuses (D-291); a draft's traces go
       with it on recalculation. Proven end to end on the shipped reference data, draft to
       year-to-date. Open: O-46 (two declared facts with no column), O-47 (weekly UIF ceiling)
-- [ ] **Chunk 8c — s34 deductions, the termination payslip and `termination_payout`**
+- [x] **Chunk 8c, part 1 — recurring earnings and deductions on the regular payslip**
+      (D-301 to D-304). `calculators/recurring.py` prices each line; earnings join the PAYE/UIF/SDL
+      bases on their own flags, deductions come off after the statutory ones. BCEA s34 as
+      written: consent re-checked, no total cap (the Act states none), SD7's accommodation
+      ceiling refuses, a line's own ceiling clamps, a negative net refuses the payslip. A
+      loan's balance is derived from its finalised lines through a new
+      `payslip_line.recurring_component_id` (D-302, D-303). Open: O-49 (part periods)
+- [ ] **Chunk 8c, part 2 — the termination payslip and `termination_payout`**
 - [ ] **Chunk 8d — the December bonus run** (`run_type = bonus`)
 - [ ] `pay_period` generation and lifecycle — ASSEMBLY (chunk 8), UNBLOCKED 24 Sep 2026 (D-288)
 - [x] `payroll_run` state machine: draft → calculating → calculated → approved → finalised
@@ -667,7 +674,9 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       invariant 6 through every calculator, and EVERY TRACE REPLAYS ITS OWN OUTPUTS — which
       found five trace defects, gross recording no days at all among them. Balance equals
       ledger is P6's. Net never negative is half here (PAYE + UIF never exceed gross)
-- [ ] Net never negative across EVERY deduction and the s34 cap — needs chunk 8's assembly
+- [x] Net never negative across EVERY deduction — chunk 8c: the assembly refuses a payslip
+      whose recurring deductions would take net below zero (D-301). There is no general s34
+      cap to test: the Act states none
 
 **Done when:** SARS worked examples reproduce exactly and a finalised payslip is
 reproducible from its trace alone.

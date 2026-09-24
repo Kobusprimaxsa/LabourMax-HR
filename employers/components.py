@@ -327,8 +327,8 @@ SYSTEM_COMPONENTS: tuple[SystemComponent, ...] = (
         reason=(
             "Recovery of money already advanced and already taxed when it was paid. "
             "No source code, and taxing it again would be taxing the same rand twice. "
-            "BCEA s34 caps what may be deducted in total, and that cap is checked "
-            "against the payslip rather than against this row."
+            "BCEA s34(1) requires the employee's written consent; s34 states no ceiling "
+            "on deductions in total (D-301), and the run refuses a negative net."
         ),
     ),
     # ------------------------------------------------------ employer contributions

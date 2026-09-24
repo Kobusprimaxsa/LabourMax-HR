@@ -1655,21 +1655,27 @@ class EmployeeRecurringComponent(AuditedModel, TenantScopedModel):
     one line is an ambiguity rather than a contradiction, so it belongs where the
     message can explain itself.
 
-    **``balance_outstanding`` is the loan half and it is a running figure, not a
-    ledger.** It is decremented as each run finalises. It is a cache in the sense of
-    invariant 3 — rebuildable from the payslip lines that paid it down — and the
-    ledger is those lines, not this column. Never "fix" a loan by editing it.
+    **``balance_outstanding`` is the PRINCIPAL, and nothing writes it after
+    capture** (D-303). Sheet 02 says it is "decremented as each run finalises";
+    that would make it a stored balance, which invariant 3 forbids. What is still
+    owed is DERIVED — this figure less every finalised ``payslip_line`` pointing
+    at this row (``payroll/assembly.py::owed_on()``) — so a reversing payslip
+    puts the money back by construction and there is no cache to drift.
 
     **BCEA s34 is why ``written_consent_file_id`` exists.** An employer may not
     deduct from wages without the employee's written consent except where a statute
     or court order says so, and "he agreed" is what every one of these disputes
     turns out to have been. The consent is a file on record, and ``clean()``
-    requires it for a deduction that is not statutory. The section also caps what
-    may be deducted, which is ``total_deduction_cap_pct`` — a *per-component* limit,
-    such as the ten percent an accommodation deduction may not exceed. The
-    across-all-components s34 limit is a payroll-run check and not this row's job:
-    no single row can see the total, which is exactly how an employer ends up with
-    four individually legal deductions that together take three quarters of a wage.
+    requires it for a deduction that is not statutory; the payroll run checks it
+    again as at the period (D-301).
+
+    **s34 states no ceiling on deductions in total** (D-301, correcting this
+    docstring). Its one percentage, s34(2)(d)'s quarter of remuneration, governs
+    a deduction to recover loss or damage and nothing else. The limits that DO
+    bind a payslip are the accommodation ceiling in the instrument in force
+    (SD7's ten percent, re-checked at payroll), ``total_deduction_cap_pct`` — a
+    ceiling the employer sets on this ONE line, which the run holds the deduction
+    to — and net pay, which a run refuses to take below zero.
     """
 
     employee = models.ForeignKey(
@@ -1691,7 +1697,7 @@ class EmployeeRecurringComponent(AuditedModel, TenantScopedModel):
         decimal_places=2,
         null=True,
         blank=True,
-        help_text="Loans and advances. Decremented as each run finalises.",
+        help_text="Loans and advances: the principal. What is owed is derived (D-303).",
     )
     total_deduction_cap_pct = models.DecimalField(
         max_digits=5,
