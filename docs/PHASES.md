@@ -526,7 +526,9 @@ wrong the first time.
 - **Family responsibility ELIGIBILITY is PROVISIONAL for domestic workers** (D-189, O-06): SD7 cl
   21(1) is verified against the 2002 gazette only. If SD7 departs from s27(1) as it departs on the
   quantum, the code unlawfully refuses a domestic worker who works three days a week.
-- **Part-day overdraw** — see `unpaid_hours` above: whole days only.
+- **Part-day overdraw** — see `unpaid_hours` above: whole days only. Reviewed 24 Sep 2026 and
+  deliberately NOT closed (D-287): it costs timing, not entitlement, and closing it is a schema
+  change against D-188. The hours-basis version is specified there if Kobus wants it.
 - **SD7 clause 21(1) is verified against the 2002 gazette, not a current consolidation**
   (D-194). No consolidated SD7 could be read; confirming no amendment since is queued for
   O-06. SD1 clause 22(1) is verified against the 1 March 2026 consolidation.
