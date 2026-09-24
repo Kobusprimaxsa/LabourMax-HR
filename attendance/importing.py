@@ -425,6 +425,9 @@ def _run_rows(
                 source=AttendanceDay.Source.IMPORT,
                 comment=values.get("comment") or "",
                 import_batch=batch,
+                # Checked above, by name, before this call: passing it through is
+                # the importer's decision reaching the one write path (D-297).
+                allow_replacing_approved=allow_replacing_approved,
             )
         except (ValidationError, AttendanceCaptureRefusedError) as error:
             transaction.savepoint_rollback(savepoint)

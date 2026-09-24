@@ -105,10 +105,14 @@ def apply_session_variables(tenant_id: int | None, platform_access: bool = False
     the write. The write then fails with "new row violates row-level security
     policy", which names the policy and says nothing about the missing context.
 
-    A request does not hit this, because ``ATOMIC_REQUESTS`` holds one transaction
-    open for its duration. Neither does a test, because pytest-django wraps each
-    one — which is why a whole green suite can sit on top of a command that fails
-    on its first real run. It did, in P3, on ``seedcomponents``.
+    **A request hit it too, and this docstring said it could not** (D-295).
+    ``ATOMIC_REQUESTS`` wraps the VIEW, not the middleware that pinned the tenant,
+    so the pin committed on its own and every tenant table read as empty in a
+    real request. ``TenantContextMiddleware`` now opens the transaction itself,
+    around the view. A test never hits any of this, because pytest-django wraps
+    each one — which is why a whole green suite can sit on top of a command, or a
+    request path, that fails on its first real run. It did, in P3, on
+    ``seedcomponents``, and in P5 on the first view.
 
     So: anything that writes inside ``tenant_context()`` or ``platform_context()``
     outside a request opens a transaction first, and opens it FIRST — the

@@ -4,8 +4,17 @@ from __future__ import annotations
 
 import uuid
 
+from django.db import transaction
+from django.db.models import Q
+from django.utils import timezone
+
 from core.audit import audit_actor
-from core.managers import _current_tenant_id, apply_session_variables, set_current_tenant_id
+from core.managers import (
+    _current_tenant_id,
+    apply_session_variables,
+    set_current_tenant_id,
+    tenant_context,
+)
 
 
 class TenantContextMiddleware:
@@ -16,6 +25,22 @@ class TenantContextMiddleware:
     row-level security policies (layer 2), which catch raw SQL, bypassed
     managers and management commands.
 
+    **The pin is set INSIDE a transaction that spans the view** (D-295). It used
+    to be set here in autocommit and relied on ``ATOMIC_REQUESTS`` — but
+    ``ATOMIC_REQUESTS`` wraps the VIEW, not the middleware, so the
+    transaction-local ``set_config`` committed on its own and was gone before
+    the view's transaction opened. Every tenant table then read as EMPTY in a
+    real request — the D-92 trap one layer up — while every test passed,
+    because pytest-django holds one transaction open around each test.
+    ``core/tests/test_request_context.py`` runs with ``transaction=True`` and
+    asks the database, from inside a view, what it has pinned.
+
+    **The session's tenant is checked against a LIVE membership on every
+    request** (D-295). The session value is server-side and set only at login,
+    but a membership revoked mid-session, or expired, must stop the next
+    request — so the tenant is pinned only for a user who still belongs to it,
+    and a session naming any other tenant is cleared and pins nothing.
+
     A request never gets platform access. Cross-tenant visibility is granted
     only inside ``core.managers.platform_context()``, which the superuser console
     enters explicitly, so an ordinary employer request has no code path that
@@ -24,16 +49,26 @@ class TenantContextMiddleware:
     Must run after AuthenticationMiddleware.
     """
 
+    SESSION_KEY = "active_tenant_id"
+
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        tenant_id = self._resolve(request)
+        tenant_id, membership = self._resolve(request)
+        request.tenant_id = tenant_id
+        request.membership = membership
         token = set_current_tenant_id(tenant_id)
         try:
-            apply_session_variables(tenant_id, platform_access=False)
-            request.tenant_id = tenant_id
-            return self.get_response(request)
+            if tenant_id is None:
+                apply_session_variables(None, platform_access=False)
+                return self.get_response(request)
+            # atomic FIRST, then the pin (D-92): the set_config is scoped to
+            # this transaction, and the view's own ATOMIC_REQUESTS block runs
+            # inside it as a savepoint, so the pin holds for all of it.
+            with transaction.atomic():
+                apply_session_variables(tenant_id, platform_access=False)
+                return self.get_response(request)
         finally:
             # Reset both, in case a pooled connection is reused. set_config's
             # transaction-local scope already covers the normal path; this is the
@@ -42,16 +77,40 @@ class TenantContextMiddleware:
             _current_tenant_id.reset(token)
 
     def _resolve(self, request):
-        """The active tenant for this session.
+        """The active tenant for this session, and the live membership that
+        entitles this user to it — or (None, None).
 
         A user may hold memberships in several tenants (decision D-04) — a
         bookkeeper serving multiple households. The chosen tenant is stored in
-        the session by the tenant picker at login.
+        the session at login (``core/views.py``).
         """
         user = getattr(request, "user", None)
         if user is None or not user.is_authenticated:
-            return None
-        return request.session.get("active_tenant_id")
+            return None, None
+        tenant_id = request.session.get(self.SESSION_KEY)
+        if tenant_id is None:
+            return None, None
+        membership = live_membership(user, tenant_id)
+        if membership is None:
+            request.session.pop(self.SESSION_KEY, None)
+            return None, None
+        return tenant_id, membership
+
+
+def live_membership(user, tenant_id):
+    """The user's live membership in one tenant, read INSIDE that tenant — the
+    table is under FORCE RLS, so an unpinned read would find nothing and look
+    exactly like "not a member" (CLAUDE.md's table)."""
+    from core.models import TenantMembership
+
+    now = timezone.now()
+    with transaction.atomic(), tenant_context(tenant_id):
+        return (
+            TenantMembership.objects.filter(user=user, is_active=True, revoked_at__isnull=True)
+            .filter(Q(access_expires_at__isnull=True) | Q(access_expires_at__gt=now))
+            .select_related("tenant")
+            .first()
+        )
 
 
 class AuditContextMiddleware:

@@ -31,6 +31,10 @@ class AttendanceCaptureRefusedError(Exception):
     """The day may not be written this way. Nothing was written."""
 
 
+class ApprovedDayError(AttendanceCaptureRefusedError):
+    """The day is APPROVED and the caller did not say to replace it (D-297)."""
+
+
 class LockedDayError(AttendanceCaptureRefusedError):
     """The day is locked by a finalised payroll run."""
 
@@ -136,6 +140,7 @@ def capture(
     comment: str = "",
     import_batch=None,
     hours_worked: Decimal | None = None,
+    allow_replacing_approved: bool = False,
 ) -> AttendanceDay:
     """Create or update the day for this employee and date. Atomic.
 
@@ -159,6 +164,20 @@ def capture(
     """
     with transaction.atomic(), tenant_context_of(employee):
         existing = AttendanceDay.objects.filter(employee=employee, work_date=work_date).first()
+        if (
+            existing is not None
+            and existing.status == AttendanceDay.Status.APPROVED
+            and not allow_replacing_approved
+        ):
+            # D-297. Approval is a human judgement over THESE values; writing new
+            # ones under it would leave an approval standing over figures nobody
+            # approved. The importer always refused this by its own flag; now
+            # the one write path does, for every caller.
+            raise ApprovedDayError(
+                f"{work_date:%d %B %Y} for {employee} was approved, so it is not changed "
+                f"quietly. Overwriting it on purpose withdraws the approval, and the new "
+                f"figures then need approving again."
+            )
         if existing is not None and existing.status == AttendanceDay.Status.LOCKED:
             raise LockedDayError(
                 f"{work_date:%d %B %Y} for {employee} is locked by payroll run "
@@ -233,6 +252,9 @@ def capture(
         if existing is not None:
             for key, value in fields.items():
                 setattr(existing, key, value)
+            if existing.status == AttendanceDay.Status.APPROVED:
+                # Replaced on purpose: the approval covered the OLD values.
+                existing.status = AttendanceDay.Status.CAPTURED
             existing.full_clean()
             existing.save()
             existing.capture_warnings = tuple(warnings)

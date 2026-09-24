@@ -356,3 +356,62 @@ def test_a_holiday_nobody_worked_does_not_warn(employee, rules, schedule, womens
     day = capture(employee, work_date=WOMENS_DAY_SUNDAY, day_type=DayType.REST_DAY)
 
     assert not any("s18(2)(b)" in warning for warning in day.capture_warnings)
+
+
+# ------------------------------------------------------- an approved day (D-297)
+
+
+def _approved_monday(employee):
+    day = capture(
+        employee,
+        work_date=MONDAY,
+        day_type=DayType.ORDINARY,
+        time_in=datetime.time(8, 0),
+        time_out=datetime.time(17, 0),
+        unpaid_break_minutes=60,
+    )
+    with tenant_context(employee.tenant_id):
+        AttendanceDay.objects.filter(pk=day.pk).update(status=AttendanceDay.Status.APPROVED)
+    return day
+
+
+def test_recapturing_an_approved_day_is_refused_by_name(employee, rules, schedule):
+    """D-297, found when the grid first drove capture() through a request: it
+    overwrote an APPROVED day's values and left it APPROVED, so an approval
+    stood over figures nobody had approved. The importer guarded against it
+    with its own flag; capture() itself did not."""
+    from attendance.capture import ApprovedDayError
+
+    _approved_monday(employee)
+
+    with pytest.raises(ApprovedDayError, match="approved"):
+        capture(
+            employee,
+            work_date=MONDAY,
+            day_type=DayType.ORDINARY,
+            time_in=datetime.time(8, 0),
+            time_out=datetime.time(19, 0),
+            unpaid_break_minutes=60,
+        )
+
+    with tenant_context(employee.tenant_id):
+        kept = AttendanceDay.objects.get(employee=employee, work_date=MONDAY)
+    assert kept.overtime_hours == Decimal("0.000"), "the approved values are untouched"
+
+
+def test_replacing_an_approved_day_on_purpose_withdraws_the_approval(employee, rules, schedule):
+    """The new values were not approved, so the day drops back to CAPTURED."""
+    _approved_monday(employee)
+
+    replaced = capture(
+        employee,
+        work_date=MONDAY,
+        day_type=DayType.ORDINARY,
+        time_in=datetime.time(8, 0),
+        time_out=datetime.time(19, 0),
+        unpaid_break_minutes=60,
+        allow_replacing_approved=True,
+    )
+
+    assert replaced.status == AttendanceDay.Status.CAPTURED
+    assert replaced.overtime_hours == Decimal("2.000")
