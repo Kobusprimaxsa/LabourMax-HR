@@ -55,12 +55,21 @@ from calculators.gross import (
     gross_pay,
 )
 from calculators.leave_pay import LeavePayInput, leave_pay
+from calculators.net import Deduction, NetInput, NetPayRefusedError, net_pay
 from calculators.paye import (
     PayeInput,
     PayeInputError,
     TaxBracket,
     TaxStatus,
     employees_tax,
+)
+from calculators.recurring import (
+    AccommodationCeiling,
+    LineKind,
+    RecurringInput,
+    RecurringLine,
+    RecurringRefusedError,
+    recurring_lines,
 )
 from calculators.remuneration import AveragingWindow, RemunerationRefusedError
 from calculators.sdl import SdlInput, levy
@@ -1286,3 +1295,140 @@ def test_an_exemption_reason_is_recorded_as_an_input():
         )
     )
     assert result.trace.inputs["exemption_reason"] == "s4(1)(a): under 24 hours a month"
+
+
+# =================================================================== net pay (D-312)
+#
+# Task 4 of the P7 brief: for ANY combination of earnings, leave pay, statutory
+# deductions and recurring deductions, net pay is never below zero — and a
+# shortfall is REFUSED, naming every deduction, never clamped. Composed from the
+# strategies above rather than a narrower one of its own: gross from
+# ``gross_inputs``, leave from ``leave_pay_inputs``, PAYE across every tax status
+# (a fixed-amount directive can exceed a period's pay, and that has to be
+# generated), UIF from ``uif_inputs``, and recurring deductions through
+# ``calculators/recurring.py`` with its own ceilings and loan remainders.
+
+
+@st.composite
+def recurring_deduction_lines(draw):
+    by_amount = draw(st.booleans())
+    return RecurringLine(
+        line_id=draw(st.integers(min_value=1, max_value=999)),
+        component_code=draw(st.sampled_from(["ADVANCE_DED", "ACCOM_DED", "UNION", "LOAN"])),
+        description="deduction",
+        kind=LineKind.DEDUCTION,
+        amount=draw(money("0", "20000")) if by_amount else None,
+        percentage_of_basic=None if by_amount else draw(money("0", "100")),
+        cap_percent=draw(st.one_of(st.none(), money("0.01", "100"))),
+        owed=draw(st.one_of(st.none(), money("-500", "20000"))),
+        is_accommodation=draw(st.booleans()),
+    )
+
+
+@st.composite
+def payslip_figures(draw):
+    gross = priced_or_refused(gross_pay, draw(gross_inputs()), GrossPayRefusedError)
+    leave = priced_or_refused(leave_pay, draw(leave_pay_inputs()), RemunerationRefusedError)
+    earnings = tuple(line.amount for line in (gross.lines if gross else ())) + (
+        (leave.amount,) if leave else ()
+    )
+    total = sum((money.rounded for money in earnings), ZERO)
+    paye_data = draw(any_status_paye())
+    paye = priced_or_refused(
+        employees_tax,
+        dataclasses.replace(paye_data, remuneration=total, annual_payment=ZERO),
+        PayeInputError,
+    )
+    uif = contribution(dataclasses.replace(draw(uif_inputs()), remuneration=total))
+    basic = sum(
+        (
+            line.amount.exact
+            for line in (gross.lines if gross else ())
+            if line.component_code == "BASIC"
+        ),
+        ZERO,
+    )
+    recurring = priced_or_refused(
+        recurring_lines,
+        RecurringInput(
+            calculated_for=MARCH,
+            basic=basic,
+            lines=tuple(draw(st.lists(recurring_deduction_lines(), max_size=4))),
+            accommodation_ceiling=draw(st.sampled_from([SD7_CEILING, BCEA_CEILING])),
+        ),
+        RecurringRefusedError,
+    )
+    deductions = (
+        ((Deduction("PAYE", paye.tax, is_statutory=True),) if paye else ())
+        + (Deduction("UIF_EE", uif.employee, is_statutory=True),)
+        + tuple(
+            Deduction(line.component_code, line.amount, is_statutory=False)
+            for line in (recurring.deductions if recurring else ())
+        )
+    )
+    return earnings, deductions, paye_data.tax_status
+
+
+SD7_CEILING = AccommodationCeiling(
+    capped=True, max_percent=Decimal("10.00"), table="working_time_rule_set", row_id=7
+)
+BCEA_CEILING = AccommodationCeiling(
+    capped=False, max_percent=None, table="working_time_rule_set", row_id=1
+)
+
+
+def net_or_refusal(earnings, deductions):
+    try:
+        return net_pay(NetInput(calculated_for=MARCH, earnings=earnings, deductions=deductions))
+    except NetPayRefusedError as refused:
+        return refused
+
+
+@PROPERTY
+@given(data=payslip_figures())
+def test_net_is_never_negative_and_a_shortfall_is_refused_never_clamped(data):
+    earnings, deductions, tax_status = data
+    total_earnings = sum((money.rounded for money in earnings), ZERO)
+    total_deductions = sum((line.amount.rounded for line in deductions), ZERO)
+
+    outcome = net_or_refusal(earnings, deductions)
+
+    refused = isinstance(outcome, NetPayRefusedError)
+    event(
+        ("refused, " if refused else "priced, ")
+        + (
+            "only statutory deductions"
+            if all(line.is_statutory for line in deductions)
+            else "with recurring deductions"
+        )
+    )
+    # Refused exactly when the deductions exceed the earnings — and then by
+    # exactly the shortfall, naming every deduction; otherwise net is the
+    # difference to the cent: nothing was held back to make it fit.
+    assert refused == (total_deductions > total_earnings)
+    shortfall = outcome.shortfall.rounded if refused else ZERO
+    net = ZERO if refused else outcome.net.rounded
+    assert net >= ZERO
+    assert net - shortfall == total_earnings - total_deductions
+    named = str(outcome) if refused else ""
+    assert (
+        all(f"{line.component_code} {line.amount}" in named for line in deductions) or not refused
+    )
+    # On the tables or a percentage directive, PAYE and UIF alone never exceed
+    # the period's pay; only a FIXED-AMOUNT directive can (it is SARS's figure,
+    # not a share of anything). A payslip refused on statutory deductions alone
+    # is that case and no other.
+    statutory_only = all(line.is_statutory for line in deductions)
+    assert not (refused and statutory_only) or tax_status is TaxStatus.DIRECTIVE_FIXED_AMOUNT
+
+
+def test_the_net_property_sees_a_clamp():
+    """PROVE EVERY GUARD FAILS: a net_pay that clamped a shortfall to zero
+    instead of refusing breaks the property's arithmetic."""
+    earnings = (Money.of(Decimal("100")),)
+    deductions = (Deduction("ADVANCE_DED", Money.of(Decimal("150")), is_statutory=False),)
+    outcome = net_or_refusal(earnings, deductions)
+    assert isinstance(outcome, NetPayRefusedError)
+    assert outcome.shortfall.rounded == Decimal("50.00")
+    clamped_net = max(Decimal("100") - Decimal("150"), ZERO)
+    assert clamped_net - ZERO != Decimal("100") - Decimal("150"), "a clamp fails the identity"

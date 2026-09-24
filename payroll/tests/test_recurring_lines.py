@@ -280,9 +280,11 @@ def test_deductions_that_take_net_below_zero_refuse_the_payslip(reference):
     assert run.employee_count == 0
     issue = refusal(run, employee)
     assert issue.issue_code == "not_priced:negative_net"
-    assert "Deductions of 6050.00 exceed earnings of 5000.00 (including ADVANCE_DED 6000.00)" in (
-        issue.message
+    assert (
+        "Deductions of 6050.00 exceed earnings of 5000.00 by 1050.00 "
+        "(PAYE 0.00, UIF_EE 50.00, ADVANCE_DED 6000.00)" in issue.message
     )
+    assert "no deduction is quietly held back" in issue.message
 
 
 def test_a_line_not_in_force_or_inactive_is_not_priced(reference):

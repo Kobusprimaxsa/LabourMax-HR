@@ -214,8 +214,9 @@ def test_a_domestic_workers_june_payslip(reference):
         "paye.employees_tax",
         "uif.contribution",
         "sdl.levy",
+        "net.net_pay",
     ]
-    assert [t.sequence for t in traces] == [1, 2, 3, 4]
+    assert [t.sequence for t in traces] == [1, 2, 3, 4, 5]
 
     issues = {i.issue_code for i in validation.validate(run)}
     assert "no_sdl_registration" in issues

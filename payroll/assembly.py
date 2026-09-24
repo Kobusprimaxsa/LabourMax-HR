@@ -57,6 +57,7 @@ from calculators.gross import (
     gross_pay,
 )
 from calculators.leave_pay import LeavePayInput, leave_pay
+from calculators.net import Deduction, NetInput, NetPayRefusedError, net_pay
 from calculators.paye import (
     MedicalCredit,
     PayeInput,
@@ -763,22 +764,29 @@ def _build(run: PayrollRun, employee: Employee) -> Draft:
         other = [_recurring_line(item, by_id) for item in recurring.deductions] if recurring else []
         lines.extend(other)
 
-        deductions = (
-            paye.tax.rounded
-            + uif.employee.rounded
-            + sum((line.amount.rounded for line in other), ZERO)
-        )
-        contributions = uif.employer.rounded + sdl.levy.rounded
-        net = total_earnings - deductions
-        if net < ZERO:
-            named = ", ".join(f"{line.component.code} {line.amount}" for line in other)
-            raise CannotPrice(
-                "negative_net",
-                f"Deductions of {deductions} exceed earnings of {total_earnings}"
-                + (f" (including {named})" if named else "")
-                + ". A negative net is never stored (sheet 03); reduce or suspend a "
-                "deduction for this period.",
+        # D-312: a negative net refuses the payslip, naming every deduction; no
+        # deduction is quietly held back to make it fit.
+        try:
+            netted = net_pay(
+                NetInput(
+                    calculated_for=end,
+                    earnings=tuple(line.amount for line in earnings),
+                    deductions=(
+                        Deduction("PAYE", paye.tax, is_statutory=True),
+                        Deduction("UIF_EE", uif.employee, is_statutory=True),
+                        *(
+                            Deduction(line.component.code, line.amount, is_statutory=False)
+                            for line in other
+                        ),
+                    ),
+                )
             )
+        except NetPayRefusedError as refused:
+            raise CannotPrice("negative_net", str(refused)) from refused
+        traces.append(netted.trace)
+        deductions = netted.total_deductions.rounded
+        contributions = uif.employer.rounded + sdl.levy.rounded
+        net = netted.net.rounded
 
         bank = _in_force(
             EmployeeBankAccount.objects.filter(employee=employee),

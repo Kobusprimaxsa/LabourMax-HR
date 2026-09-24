@@ -687,9 +687,11 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       invariant 6 through every calculator, and EVERY TRACE REPLAYS ITS OWN OUTPUTS — which
       found five trace defects, gross recording no days at all among them. Balance equals
       ledger is P6's. Net never negative is half here (PAYE + UIF never exceed gross)
-- [x] Net never negative across EVERY deduction — chunk 8c: the assembly refuses a payslip
-      whose recurring deductions would take net below zero (D-301). There is no general s34
-      cap to test: the Act states none
+- [x] Net never negative across EVERY deduction (D-312). `calculators/net.py` refuses a
+      shortfall naming every deduction and never clamps; a Hypothesis property over gross,
+      leave pay, PAYE in every status, UIF and recurring deductions holds at 2 000 examples.
+      Statutory deductions alone exceed pay only under a fixed-amount directive — refused
+      too. There is no general s34 cap to test: the Act states none (D-301)
 
 **Done when:** SARS worked examples reproduce exactly and a finalised payslip is
 reproducible from its trace alone.
