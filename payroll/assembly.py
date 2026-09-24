@@ -88,7 +88,7 @@ from employees.models import (
 from employers.models import EmployerStatutoryRegistration, PayGroup, PayrollComponent
 from leave.cycles import _sector_area_of
 from leave.models import LeaveApplication, LeaveApplicationDay
-from payroll.models import PayrollRun, PayslipLine
+from payroll.models import PayrollRun, PayslipLine, TerminationPayout
 from payroll.periods import _cadence, working_days_between
 from statutory import resolve
 from statutory.models import (
@@ -108,6 +108,18 @@ PERIODS_IN_YEAR = {
     PayGroup.PayFrequency.WEEKLY: Decimal("52"),
 }
 SALARIED = {PayBasis.WEEKLY, PayBasis.FORTNIGHTLY, PayBasis.MONTHLY}
+
+#: SARS's "Annual payment (Subject to PAYE)". A line reported under it is added
+#: to the annual equivalent ONCE rather than annualised with the period's pay
+#: (G01; D-212) — the bonus, and leave paid out on termination (G06 p7, D-306).
+ANNUAL_PAYMENT_CODE = "3605"
+
+#: What a termination line's units count.
+TERMINATION_UNIT = {
+    "NOTICE_PAY": PayslipLine.UnitType.NONE,  # weeks or working days; the rate says which
+    "SEVERANCE": PayslipLine.UnitType.NONE,  # weeks
+    "BONUS_PRO_RATA": PayslipLine.UnitType.MONTHS,
+}
 
 UIF_CEILING = "UIF_MONTHLY_CEILING"
 UIF_EMPLOYEE_RATE = "UIF_EMPLOYEE_RATE_PCT"
@@ -151,6 +163,8 @@ class Draft:
     lines: list[DraftLine]
     traces: list[CalculationTrace]
     header: dict
+    #: The reviewed payout this payslip pays, for a leaver's final period.
+    termination_payout: TerminationPayout | None = None
 
 
 # ----------------------------------------------------------------- who is paid
@@ -459,6 +473,16 @@ def _build(run: PayrollRun, employee: Employee) -> Draft:
         start = max(period.period_start, engagement.start_date)
         end = min(period.period_end, engagement.termination_date or period.period_end)
 
+        # A leaver's final period: the reviewed payout is paid with it (D-308).
+        payout = termination = None
+        if engagement.termination_date is not None and engagement.termination_date <= end:
+            from payroll import termination as payouts
+
+            try:
+                payout, termination = payouts.for_payslip(engagement)
+            except payouts.PayoutRefusedError as refused:
+                raise CannotPrice(refused.code, str(refused)) from refused
+
         remuneration = _in_force(
             EmployeeRemuneration.objects.filter(employee=employee, pay_group=period.pay_group),
             end,
@@ -596,6 +620,26 @@ def _build(run: PayrollRun, employee: Employee) -> Draft:
             traces.append(recurring.trace)
             lines.extend(_recurring_line(item, by_id) for item in recurring.earnings)
 
+        # ------------------------------------------------- termination payout
+        if termination is not None:
+            traces.append(termination.trace)
+            for line in termination.lines:
+                lines.append(
+                    DraftLine(
+                        component=_component(line.component_code),
+                        description=line.description,
+                        amount=line.amount,
+                        units=line.units,
+                        unit_type=TERMINATION_UNIT.get(
+                            line.component_code,
+                            PayslipLine.UnitType.DAYS
+                            if line.rate == termination.rates.per_day()
+                            else PayslipLine.UnitType.HOURS,
+                        ),
+                        rate=line.rate,
+                    )
+                )
+
         earnings = list(lines)
 
         def base(flag: str) -> Decimal:
@@ -606,6 +650,14 @@ def _build(run: PayrollRun, employee: Employee) -> Draft:
 
         total_earnings = sum((line.amount.rounded for line in earnings), ZERO)
         taxable = base("is_taxable")
+        annual_payment = sum(
+            (
+                line.amount.rounded
+                for line in earnings
+                if line.component.is_taxable and _source_code(line.component) == ANNUAL_PAYMENT_CODE
+            ),
+            ZERO,
+        )
         uif_base = base("is_uif_base")
         sdl_base = base("is_sdl_base")
 
@@ -621,9 +673,9 @@ def _build(run: PayrollRun, employee: Employee) -> Draft:
             paye = employees_tax(
                 PayeInput(
                     calculated_for=end,
-                    remuneration=taxable,
+                    remuneration=taxable - annual_payment,
                     allowable_deductions=ZERO,
-                    annual_payment=ZERO,
+                    annual_payment=annual_payment,
                     periods_in_year=periods_in_year,
                     periods_worked=periods_worked,
                     brackets=tuple(
@@ -770,7 +822,9 @@ def _build(run: PayrollRun, employee: Employee) -> Draft:
             bank_account=bank,
             lines=lines,
             traces=traces,
+            termination_payout=payout,
             header={
+                "is_termination_payslip": payout is not None,
                 "pay_basis": basis.value,
                 "rate_used": remuneration.rate_amount,
                 "ordinary_hours": sum((p.hours.ordinary_hours for p in days), ZERO),
@@ -795,6 +849,10 @@ def _build(run: PayrollRun, employee: Employee) -> Draft:
                 ),
             },
         )
+
+
+def _source_code(component: PayrollComponent) -> str:
+    return component.sars_source_code.code if component.sars_source_code_id else ""
 
 
 def _recurring_line(item, by_id) -> DraftLine:

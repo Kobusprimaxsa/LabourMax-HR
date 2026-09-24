@@ -391,6 +391,42 @@ def check_overdrawn_leave(run) -> list[Finding]:
     return found
 
 
+def check_overdrawn_leave_at_termination(run) -> list[Finding]:
+    """D-185 where it bites (D-309): a leaver's overdrawn leave on the FINAL payslip.
+
+    ``check_overdrawn_leave`` reads OPEN cycles, and a leaver's are closed the
+    day service ends (D-172), so it never sees the one employee for whom this
+    is the last chance to decide. This reads the ended engagement's own cycles
+    through ``leave/negative_balances.py::at_termination()``.
+
+    BLOCKING, where the ordinary check warns: the payout is NOT reduced, and a
+    named person must record what happens instead — recovered separately with
+    the employee's written consent under s34, or written off — before the final
+    payment goes. The resolution is that record (D-234).
+    """
+    from leave.negative_balances import at_termination
+
+    found = []
+    for payslip in run.payslips.filter(is_termination_payslip=True).select_related(
+        "employee", "engagement"
+    ):
+        for item in at_termination(payslip.engagement):
+            found.append(
+                Finding(
+                    "leave_overdrawn_at_termination",
+                    BLOCKING,
+                    f"{item.leave_type_code} leave for the cycle from "
+                    f"{item.cycle.cycle_start:%d %B %Y} is overdrawn by {-item.balance} "
+                    f"{item.unit}. It has NOT been netted off the final payment: recovering "
+                    f"it is a BCEA s34 deduction needing the employee's written consent. "
+                    f"Record the decision - recovered with consent, or written off - when "
+                    f"resolving this.",
+                    employee=payslip.employee,
+                )
+            )
+    return found
+
+
 #: Every check, in the order an employer would want to read them: the ones about
 #: the run and its data first, then the ones about individual people.
 CHECKS = (
@@ -402,6 +438,7 @@ CHECKS = (
     check_sdl_registration,
     check_attendance_is_complete,
     check_overdrawn_leave,
+    check_overdrawn_leave_at_termination,
 )
 
 

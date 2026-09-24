@@ -114,3 +114,39 @@ def negative_balances(employer, *, as_at: datetime.date | None = None) -> list[N
 
     results.sort(key=lambda n: n.balance)
     return results
+
+
+def at_termination(engagement) -> list[NegativeBalance]:
+    """Every cycle of ONE ended engagement, any leave type and any status,
+    below zero — the figure a termination payout surfaces and never nets off
+    (D-185, D-309).
+
+    ``negative_balances()`` reads OPEN cycles only, and ``terminate()`` closes
+    a leaver's cycles the moment service ends (D-172) — so for exactly the
+    employee D-185 is about, the employer-wide list would say nothing. Same
+    recompute-before-read rule; same nothing-written.
+    """
+    results: list[NegativeBalance] = []
+    with tenant_context(engagement.tenant_id):
+        cycles = LeaveCycle.objects.filter(engagement=engagement).select_related("leave_type")
+        for cycle in cycles:
+            if cycle.is_stale or is_actually_stale(cycle):
+                cycle = recompute_cycle(cycle)
+            if cycle.balance_quantity >= 0:
+                continue
+            results.append(
+                NegativeBalance(
+                    employee_id=cycle.employee_id,
+                    cycle=cycle,
+                    leave_type_code=cycle.leave_type.code,
+                    balance=cycle.balance_quantity,
+                    unit=cycle.unit,
+                    causing_transactions=list(
+                        LeaveTransaction.objects.filter(leave_cycle=cycle).order_by(
+                            "transaction_date", "pk"
+                        )
+                    ),
+                )
+            )
+    results.sort(key=lambda n: n.balance)
+    return results

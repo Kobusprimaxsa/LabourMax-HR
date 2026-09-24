@@ -1621,6 +1621,17 @@ date it 1 March to end-February, which coincides with the tax year but is a diff
 instrument. **Loaded: the R668 000 ceiling only.** Notice 3910's R1 621 and R560 are minimum
 ASSESSMENTS — floors on the premium, which is P8's — and are in a notes string, not a row.
 
+**P7 chunk 8c, part 2 — the termination payslip** (24 September 2026, D-306 to D-310).
+`termination_payout` is sheet 02's table: `payroll/termination.py` PREPARES it from the rows as
+at the last day, a person REVIEWS it, and the leaver's final regular payslip pays it — refusing
+if it is unprepared, unreviewed, or its parts moved since review. `notice_worked` must be
+declared. **Leave paid out is `LEAVE_PAYOUT` on 3605**, an annual payment per SARS G06 p7 — a
+seventeenth component, not in sheet 02 — and every 3605 line is added to the annual equivalent
+once. **D-185 is a BLOCKING issue at termination** (`leave/negative_balances.py::at_termination()`
+reads the closed cycles the employer-wide query cannot see); the payout is never reduced.
+Severance refuses on the payslip until a lump sum directive can be captured (O-50). Read
+`leave_cycle.balance_quantity` only after recomputing a stale cycle — it is a cache.
+
 **The pay period's lifecycle is `payroll/lifecycle.py`** (24 September 2026, D-305):
 open → in_progress → closed, reopened only by `runs.reverse()`. Nothing else writes a period's
 status — an AST scan in `payroll/tests/test_lifecycle.py` fails if anything does. A closed

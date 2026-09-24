@@ -609,7 +609,13 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       ceiling refuses, a line's own ceiling clamps, a negative net refuses the payslip. A
       loan's balance is derived from its finalised lines through a new
       `payslip_line.recurring_component_id` (D-302, D-303). Open: O-49 (part periods)
-- [ ] **Chunk 8c, part 2 — the termination payslip and `termination_payout`**
+- [x] **Chunk 8c, part 2 — the termination payslip and `termination_payout`** (D-306 to
+      D-310). Sheet 02's table; a payout is prepared, reviewed, then paid on the leaver's
+      final regular payslip, and refused if the rows moved after review. Leave paid out is
+      `LEAVE_PAYOUT` on 3605 and taxed as an annual payment with the pro-rata bonus. A
+      negative leave balance blocks approval for a human decision and is never netted off
+      (D-185, D-309). Proven against a hand-computed SD1 leaver, net R12 620,81. Open: O-50
+      (severance directive — severance REFUSES on the payslip), O-51 (notice pay's tax code)
 - [ ] **Chunk 8d — the December bonus run** (`run_type = bonus`)
 - [x] `pay_period` generation and lifecycle (D-305). Generation is P3's (D-82 to D-85); the
       lifecycle is `payroll/lifecycle.py`: open → in progress → closed, reopened only by a

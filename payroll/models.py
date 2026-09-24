@@ -917,3 +917,131 @@ class PayrollValidationIssue(AuditedModel, TenantScopedModel):
 
     def __str__(self):
         return f"[{self.severity}] {self.issue_code} on run {self.payroll_run_id}"
+
+
+class TerminationPayout(AuditedModel, TenantScopedModel):
+    """The itemised final payment for one ended engagement — sheet 02's
+    ``termination_payout``, column for column (P7 chunk 8c, D-308).
+
+    Sheet 01: "Kept separate from the payslip so the working is visible and
+    reviewable before the run." So it is PREPARED from the rows
+    (``payroll/termination.py::prepare()``), REVIEWED by a person, and only then
+    paid: the assembly refuses a leaver whose payout is not reviewed, and
+    re-prices it and refuses again if the figure has moved since the review — a
+    reviewed figure is what somebody agreed to, and a payslip may not quietly pay
+    another. Finalising the run that paid it makes it ``processed`` and names the
+    run; reversing that run puts it back to ``reviewed``.
+
+    **A figure here is DERIVED and stored, never typed** (invariant 2's
+    reasoning): every amount comes from ``calculators/termination.py``, whose
+    trace is ``calculation_detail``, and ``total_payout_gross`` is held to the
+    sum of its four parts by a CHECK.
+
+    **``outstanding_deductions`` is always nil in this build.** Sheet 02 reads
+    it as "loan balances recovered, within BCEA s34 limits"; recovering a whole
+    loan balance from a final payment is a deduction the employee's written
+    consent must cover in terms (s34(1)(a), "a debt specified in the
+    agreement"), and nothing here can read what a consent file says. The loan's
+    ordinary instalment still comes off the final payslip as a recurring line.
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        REVIEWED = "reviewed", "Reviewed"
+        PROCESSED = "processed", "Processed"
+        CANCELLED = "cancelled", "Cancelled"
+
+    class SeveranceTaxTreatment(models.TextChoices):
+        STANDARD = "standard", "Standard"
+        DIRECTIVE_REQUIRED = "directive_required", "SARS directive required"
+
+    employee = models.ForeignKey(
+        "employees.Employee", on_delete=models.PROTECT, related_name="termination_payouts"
+    )
+    engagement = models.OneToOneField(
+        "employees.EmployeeEngagement",
+        on_delete=models.PROTECT,
+        related_name="termination_payout",
+    )
+    termination_date = models.DateField()
+    termination_reason_code = models.CharField(max_length=40)
+    completed_months_service = models.SmallIntegerField(default=0)
+    completed_years_service = models.SmallIntegerField(default=0)
+    weekly_wage_used = models.DecimalField(
+        max_digits=14, decimal_places=4, default=0, help_text="Basis for notice and severance."
+    )
+    daily_wage_used = models.DecimalField(
+        max_digits=14, decimal_places=4, default=0, help_text="Basis for leave pay-out."
+    )
+    monthly_wage_used = models.DecimalField(
+        max_digits=14, decimal_places=4, default=0, help_text="Basis for the pro-rata bonus."
+    )
+    notice_weeks_required = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    notice_worked = models.BooleanField(default=True)
+    notice_pay_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    accrued_leave_days = models.DecimalField(
+        max_digits=8, decimal_places=3, default=0, help_text="Statutory annual leave not taken."
+    )
+    leave_payout_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    severance_applicable = models.BooleanField(default=False)
+    severance_weeks = models.DecimalField(max_digits=6, decimal_places=2, default=0)
+    severance_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    bonus_applicable = models.BooleanField(default=False)
+    bonus_months_worked = models.SmallIntegerField(default=0)
+    bonus_pro_rata_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    outstanding_deductions = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    total_payout_gross = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    severance_tax_treatment = models.CharField(
+        max_length=30,
+        choices=SeveranceTaxTreatment.choices,
+        default=SeveranceTaxTreatment.STANDARD,
+    )
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.DRAFT, db_index=True
+    )
+    payroll_run = models.ForeignKey(
+        PayrollRun,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="termination_payouts",
+        help_text="The run that paid it.",
+    )
+    calculation_detail = models.JSONField(
+        default=dict, help_text="Full working for the certificate of service pack."
+    )
+
+    class Meta:
+        db_table = "termination_payout"
+        ordering = ["-termination_date", "pk"]
+        indexes = [models.Index(fields=["tenant", "status"])]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(status__in=["draft", "reviewed", "processed", "cancelled"]),
+                name="termination_payout_status_is_known",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(severance_tax_treatment__in=["standard", "directive_required"]),
+                name="termination_payout_severance_tax_treatment_is_known",
+            ),
+            # The total is its parts, proven rather than trusted.
+            models.CheckConstraint(
+                condition=models.Q(
+                    total_payout_gross=models.F("notice_pay_amount")
+                    + models.F("leave_payout_amount")
+                    + models.F("severance_amount")
+                    + models.F("bonus_pro_rata_amount")
+                ),
+                name="termination_payout_total_is_its_parts",
+            ),
+            # Processed means paid, and a payment names the run that made it.
+            # payroll_run is nullable, so each branch says what NULL means.
+            models.CheckConstraint(
+                condition=models.Q(status="processed", payroll_run__isnull=False)
+                | (~models.Q(status="processed") & models.Q(payroll_run__isnull=True)),
+                name="termination_payout_processed_names_its_run",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Termination payout for {self.employee_id} on {self.termination_date}"

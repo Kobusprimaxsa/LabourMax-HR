@@ -14,17 +14,13 @@ the s35 rate: a four-week band is four weekly wages, a one-working-day band is
 one daily wage. The band carries its own unit (D-68) and this module reads it
 rather than assuming weeks.
 
-**SD1 clause 23(1)(d) does not conflict with that, and the note that said it
-might was wrong about what the clause says.** The determination's own words:
-"an employee or employer may terminate the contract without notice by paying
-... in lieu of such notice **not less than** in the case of — (i) one working
-day's notice, the daily wage the employee is receiving at the time of such
-termination; (ii) four weeks' notice, **double the weekly wage** the employee is
-receiving at the time of such termination." So SD1's figures are a FLOOR ("not
-less than"), they attach to the same two bands the determination actually has
-(one working day, four weeks), and for the four-week band the floor is two
-weekly wages where s38 gives four. s38 is the higher figure in every case and
-paying it satisfies both. There is no two-week band and never was — see D-224.
+**SD1 clause 23(1)(d) is a FLOOR, and s38 clears it** (D-275, correcting
+D-224). Two independent copies of the determination read 23(1)(d)(ii) as TWO
+weeks' notice, double the weekly wage — not four weeks, which is what this
+docstring said until D-275. Nothing computed turns on it: SD1's figures are
+"not less than" amounts and the s38(1) payment, priced off the band's own
+period, is never below them. What remains open is on O-06: 23(1)(b) gives four
+weeks' notice from four weeks' service while 23(1)(d)(ii) prices two.
 
 **s39(2) — accommodation.** "If an employee elects to remain in accommodation
 ... after the employer has terminated the employee's contract of employment in
@@ -69,6 +65,17 @@ explicitly this-engagement-only, and nothing aggregates across a re-hire, so a
 returning employee's severance and notice band are both understated. This module
 takes the years as an input and says so here rather than silently accepting a
 figure computed the wrong way.
+
+**Leave paid out on termination is an ANNUAL PAYMENT, source code 3605**
+(D-306). SARS PAYE-AE-06-G06 rev 13, p7, lists "Leave pay (on
+resignation/encashment of leave credits)" under 3605, so both leave lines are
+``LEAVE_PAYOUT`` rather than the ordinary ``LEAVE_PAY`` (3601) a period of leave
+taken is paid on — and the assembly taxes them the way it taxes a bonus.
+
+**Leave already taken in the incomplete cycle comes off s40(c)'s floor** (D-307).
+The ledger's balance for the cycle is already net of it; the 17-day floor is a
+gross entitlement, so it is compared net of the same days. Neither figure is
+ever paid below zero: a cycle overdrawn is surfaced, not a negative payment.
 
 **A negative leave balance is NEVER netted off** (D-185). Recovering one is a
 BCEA s34 deduction and needs the employee's written consent, so it is surfaced
@@ -181,9 +188,13 @@ class TerminationInput:
     #: holds it in (D-164). Exactly one of the two, or both zero.
     leave_due_days: Decimal = ZERO
     leave_due_hours: Decimal = ZERO
-    #: The ledger's own accrual for the INCOMPLETE cycle, same units.
+    #: The ledger's own BALANCE for the INCOMPLETE cycle — accrued, less taken,
+    #: plus any adjustment — in the same unit. May be negative (overdrawn).
     incomplete_cycle_days: Decimal = ZERO
     incomplete_cycle_hours: Decimal = ZERO
+    #: Days of leave taken against the incomplete cycle, so s40(c)(i)'s gross
+    #: floor is compared net of them (D-307).
+    leave_taken_in_incomplete_cycle_days: Decimal = ZERO
     #: s40(c)(i)'s denominator input: days on which the employee "worked or was
     #: entitled to be paid" during the incomplete cycle.
     days_worked_in_incomplete_cycle: Decimal = ZERO
@@ -338,7 +349,7 @@ def _pro_rata_quantity(data: TerminationInput) -> tuple[Decimal, Decimal, list[s
             f"cannot be compared without a conversion this system does not do (D-164), so "
             f"the ledger's own accrual is paid and the statutory floor is not checked."
         )
-        return ZERO, data.incomplete_cycle_hours, warnings
+        return ZERO, max(data.incomplete_cycle_hours, ZERO), warnings
 
     if data.pro_rata_rule is None:
         raise TerminationRefusedError(
@@ -354,13 +365,17 @@ def _pro_rata_quantity(data: TerminationInput) -> tuple[Decimal, Decimal, list[s
 
     statutory_floor = (
         data.days_worked_in_incomplete_cycle / data.pro_rata_rule.days_worked_per_leave_day
+        - data.leave_taken_in_incomplete_cycle_days
     )
+    if statutory_floor <= ZERO and data.incomplete_cycle_days <= ZERO:
+        return ZERO, ZERO, warnings
     if statutory_floor > data.incomplete_cycle_days:
         warnings.append(
             f"s40(c)(i)'s floor of {Money.of(statutory_floor).exact} day(s) — one for every "
             f"{data.pro_rata_rule.days_worked_per_leave_day} of "
-            f"{data.days_worked_in_incomplete_cycle} worked — exceeds the "
-            f"{data.incomplete_cycle_days} day(s) the ledger accrued, so the floor is paid. "
+            f"{data.days_worked_in_incomplete_cycle} worked, less "
+            f"{data.leave_taken_in_incomplete_cycle_days} taken — exceeds the "
+            f"{data.incomplete_cycle_days} day(s) the ledger holds, so the floor is paid. "
             f"A rule set that accrues less generously than s40(c)(i) underpays every leaver."
         )
         return statutory_floor, ZERO, warnings
@@ -449,7 +464,7 @@ def termination_payout(data: TerminationInput) -> TerminationResult:
     if leave_due.exact:
         lines.append(
             PayslipLine(
-                component_code="LEAVE_PAY",
+                component_code="LEAVE_PAYOUT",
                 description="Annual leave due and not taken (s40(b))",
                 units=data.leave_due_days or data.leave_due_hours,
                 rate=rates.per_day() if data.leave_due_days else rates.per_hour(),
@@ -465,7 +480,7 @@ def termination_payout(data: TerminationInput) -> TerminationResult:
     if pro_rata.exact:
         lines.append(
             PayslipLine(
-                component_code="LEAVE_PAY",
+                component_code="LEAVE_PAYOUT",
                 description="Pro-rata leave for the incomplete cycle (s40(c))",
                 units=pro_rata_days or pro_rata_hours,
                 rate=rates.per_day() if pro_rata_days else rates.per_hour(),
@@ -556,6 +571,7 @@ def termination_payout(data: TerminationInput) -> TerminationResult:
             incomplete_cycle_days=data.incomplete_cycle_days,
             incomplete_cycle_hours=data.incomplete_cycle_hours,
             days_worked_in_incomplete_cycle=data.days_worked_in_incomplete_cycle,
+            leave_taken_in_incomplete_cycle_days=data.leave_taken_in_incomplete_cycle_days,
             months_of_service=data.months_of_service,
             completed_years_of_service=data.completed_years_of_service,
             dismissed_for_operational_requirements=data.dismissed_for_operational_requirements,

@@ -113,11 +113,12 @@ def own_component(tenant, **overrides):
 def test_seeding_creates_every_component_the_workbook_names(seeded):
     expected = {spec.code for spec in SYSTEM_COMPONENTS}
     assert {c.code for c in seeded} == expected
-    assert len(expected) == 16, "Sheet 02 names sixteen system components."
+    assert len(expected) == 17, "Sheet 02's sixteen, and LEAVE_PAYOUT (D-306)."
 
 
 def test_the_codes_are_exactly_the_ones_in_sheet_02(seeded):
-    """Typed out rather than derived, so a rename has to be a deliberate edit here."""
+    """Typed out rather than derived, so a rename has to be a deliberate edit here.
+    Sheet 02's sixteen plus one named addition."""
     assert {spec.code for spec in SYSTEM_COMPONENTS} == {
         "BASIC",
         "OT_1_5",
@@ -126,6 +127,9 @@ def test_the_codes_are_exactly_the_ones_in_sheet_02(seeded):
         "NIGHT_ALLOW",
         "STANDBY",
         "LEAVE_PAY",
+        # D-306: NOT in sheet 02. SARS G06 p7 puts leave paid out on termination
+        # under 3605, and LEAVE_PAY is 3601.
+        "LEAVE_PAYOUT",
         "BONUS_PRO_RATA",
         "SEVERANCE",
         "NOTICE_PAY",

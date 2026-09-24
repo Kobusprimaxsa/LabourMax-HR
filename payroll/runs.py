@@ -236,7 +236,6 @@ def _write(run: PayrollRun, draft) -> Payslip:
         engagement=draft.engagement,
         payslip_number=payslip_number(run, draft.employee),
         bank_account=draft.bank_account,
-        is_termination_payslip=False,
         **draft.header,
     )
     for order, line in enumerate(draft.lines, 1):
@@ -362,6 +361,8 @@ def finalise(run: PayrollRun, *, finalised_by) -> FinalisationReport:
 
         transition(run, Status.FINALISED, finalised_at=when, finalised_by_user=finalised_by)
 
+        _settle_what_was_paid(run, payslips, period)
+
         # The LAST live run over the period closes it (D-305). A bonus run still
         # being checked keeps it in progress.
         period_closed = lifecycle.close_if_settled(period, when=when)
@@ -376,6 +377,49 @@ def finalise(run: PayrollRun, *, finalised_by) -> FinalisationReport:
         ytd_rows_rebuilt=rebuilt,
         period_closed=period_closed,
     )
+
+
+def _settle_what_was_paid(run: PayrollRun, payslips, period) -> None:
+    """A termination payout paid by this run is PROCESSED and names it; the
+    bonus a payslip paid is recorded against its cycle (D-308, D-310)."""
+    from payroll import bonus as bonuses
+    from payroll.models import AnnualBonusCycle, TerminationPayout
+
+    for payslip in payslips:
+        bonus_paid = sum(
+            (line.amount for line in payslip.lines.filter(component_code="BONUS_PRO_RATA")),
+            Decimal("0"),
+        )
+        if payslip.is_termination_payslip:
+            payout = TerminationPayout.objects.get(engagement=payslip.engagement)
+            payout.status = TerminationPayout.Status.PROCESSED
+            payout.payroll_run = run
+            payout.save(update_fields=["status", "payroll_run", "updated_at"])
+        if bonus_paid:
+            bonuses.mark_paid(
+                payslip.employee,
+                as_at=payslip.engagement.termination_date or period.period_end,
+                amount=bonus_paid,
+                run=run,
+                status=(
+                    AnnualBonusCycle.Status.PRO_RATA_PAID
+                    if payslip.is_termination_payslip
+                    else AnnualBonusCycle.Status.PAID
+                ),
+            )
+
+
+def _unsettle(run: PayrollRun) -> None:
+    """What a reversed run paid is owed again: its payouts go back to reviewed
+    and its bonus rows accrue again."""
+    from payroll import bonus as bonuses
+    from payroll.models import TerminationPayout
+
+    for payout in TerminationPayout.objects.filter(payroll_run=run):
+        payout.status = TerminationPayout.Status.REVIEWED
+        payout.payroll_run = None
+        payout.save(update_fields=["status", "payroll_run", "updated_at"])
+    bonuses.unmark_paid(run)
 
 
 def snapshot_of(employee, *, on_date=None) -> dict:
@@ -513,6 +557,7 @@ def reverse(run: PayrollRun, *, reversed_by, reason: str) -> PayrollRun:
         mirrored = list(reversal.payslips.select_related("employee"))
 
         transition(run, Status.REVERSED)
+        _unsettle(run)
         transition(reversal, Status.CALCULATING)
         transition(reversal, Status.CALCULATED)
         transition(reversal, Status.APPROVED, approved_at=when, approved_by_user=reversed_by)

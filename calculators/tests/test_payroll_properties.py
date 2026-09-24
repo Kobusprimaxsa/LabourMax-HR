@@ -943,6 +943,9 @@ def replay_termination(trace: CalculationTrace, store: RowStore):
             leave_due_days=Decimal(inputs["leave_due_days"]),
             leave_due_hours=Decimal(inputs["leave_due_hours"]),
             incomplete_cycle_days=Decimal(inputs["incomplete_cycle_days"]),
+            leave_taken_in_incomplete_cycle_days=Decimal(
+                inputs["leave_taken_in_incomplete_cycle_days"]
+            ),
             incomplete_cycle_hours=Decimal(inputs["incomplete_cycle_hours"]),
             days_worked_in_incomplete_cycle=Decimal(inputs["days_worked_in_incomplete_cycle"]),
             pro_rata_rule=one("leave_rule_set"),

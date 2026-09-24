@@ -180,3 +180,45 @@ def accrue(employer, *, as_at: datetime.date) -> list[AnnualBonusCycle]:
             )
             written.append(row)
     return written
+
+
+def mark_paid(employee, *, as_at: datetime.date, amount, run, status) -> AnnualBonusCycle | None:
+    """Record that a finalised run paid this employee's bonus for the cycle
+    containing ``as_at`` — the December payment (``paid``) or a leaver's share
+    (``pro_rata_paid``). The row is rebuilt from the rows first, so the paid
+    record carries the accrual it was paid against, then frozen by its status:
+    ``accrue()`` never rebuilds a paid row. None where no bonus applies."""
+    data = bonus_input(employee, as_at=as_at)
+    if data is None:
+        return None
+    result = annual_bonus(data)
+    with transaction.atomic(), tenant_context_of(employee):
+        row, _ = AnnualBonusCycle.objects.update_or_create(
+            tenant=employee.tenant,
+            employee=employee,
+            cycle_start=data.cycle_start,
+            defaults={
+                "cycle_end": data.cycle_end,
+                "bonus_weeks": data.rule.weeks,
+                "full_months_worked": result.full_months,
+                "accrued_amount_exact": result.amount.exact,
+                "accrued_amount": result.amount.rounded,
+                "accrued_as_at": data.as_at,
+                "paid_amount": amount,
+                "paid_in_payroll_run": run,
+                "status": status,
+            },
+        )
+    return row
+
+
+def unmark_paid(run) -> int:
+    """A reversed run paid nothing: its bonus rows accrue again, to be rebuilt."""
+    with transaction.atomic(), tenant_context_of(run):
+        rows = list(AnnualBonusCycle.objects.filter(paid_in_payroll_run=run))
+        for row in rows:
+            row.status = AnnualBonusCycle.Status.ACCRUING
+            row.paid_amount = 0
+            row.paid_in_payroll_run = None
+            row.save(update_fields=["status", "paid_amount", "paid_in_payroll_run", "updated_at"])
+    return len(rows)

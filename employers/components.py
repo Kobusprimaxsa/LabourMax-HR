@@ -1,11 +1,12 @@
 """The system payroll components — the catalogue every payslip is assembled from.
 
-Sixteen components, named in sheet 02 of the Database Specification. They are
+Seventeen components: the sixteen sheet 02 of the Database Specification names, and
+``LEAVE_PAYOUT``, which SARS's code guide requires beside them (D-306). They are
 **shared**: one row each, no tenant, readable by every employer on the platform and
 writable by none of them. An employer that needs a transport allowance or a loan
 repayment adds its own rows alongside.
 
-Three rules hold for all sixteen, and each exists because of a specific way this
+Three rules hold for all of them, and each exists because of a specific way this
 table could go wrong.
 
 **No component carries a rate.**
@@ -194,6 +195,23 @@ SYSTEM_COMPONENTS: tuple[SystemComponent, ...] = (
             "BCEA s21. affects_leave_pay_average is FALSE and must stay false: this "
             "is the output of the leave pay calculation, and feeding it back in would "
             "make a second period of leave compound off the first."
+        ),
+    ),
+    SystemComponent(
+        code="LEAVE_PAYOUT",
+        name="Leave paid out on termination",
+        component_type=EARNING,
+        calculation_method=STATUTORY,
+        display_order=75,
+        source_code="3605",
+        reason=(
+            "BCEA s40(b) and (c): annual leave due and not taken, paid when employment "
+            "ends. NOT in sheet 02's sixteen (D-306). SARS PAYE-AE-06-G06 rev 13, p7, "
+            "lists 'Leave pay (on resignation/encashment of leave credits)' under 3605, "
+            "an annual payment, where LEAVE_PAY is 3601 - so one component cannot carry "
+            "both, and the IRP5 line and the PAYE treatment (added to the annual "
+            "equivalent once, like a bonus) both follow the code. affects_leave_pay_average "
+            "is FALSE: it is paid once, at the end, and there is no leave after it."
         ),
     ),
     SystemComponent(

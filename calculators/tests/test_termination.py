@@ -72,7 +72,7 @@ def test_an_hours_denominated_leave_balance_is_paid_at_the_hourly_rate():
     result = termination_payout(an_input(leave_due_hours=Decimal("45.000")))
 
     assert result.leave_due_pay.exact == Decimal("3000.000015")
-    assert amount_of(result, "LEAVE_PAY") == Decimal("3000.000015")
+    assert amount_of(result, "LEAVE_PAYOUT") == Decimal("3000.000015")
 
 
 def test_the_pro_rata_qualifying_period_must_be_supplied():
@@ -242,7 +242,49 @@ def test_the_whole_payout_adds_up_to_its_own_lines():
     )
     assert [line.component_code for line in result.lines] == [
         "NOTICE_PAY",
-        "LEAVE_PAY",
-        "LEAVE_PAY",
+        "LEAVE_PAYOUT",
+        "LEAVE_PAYOUT",
         "SEVERANCE",
     ]
+
+
+# ------------------------------------------- s40(c) net of leave taken (D-307)
+
+
+def test_leave_taken_in_the_incomplete_cycle_comes_off_the_statutory_floor():
+    """170 days worked is 10 days under s40(c)(i). 4 already taken → 6 owed,
+    which beats the ledger's 5 (the ledger's balance is itself net of the 4)."""
+    result = termination_payout(
+        an_input(
+            months_of_service=Decimal("8"),
+            incomplete_cycle_days=Decimal("5"),
+            days_worked_in_incomplete_cycle=Decimal("170"),
+            leave_taken_in_incomplete_cycle_days=Decimal("4"),
+        )
+    )
+    (line,) = [line for line in result.lines if line.component_code == "LEAVE_PAYOUT"]
+    assert line.units == Decimal("6")
+    assert "less 4 taken" in " ".join(result.trace.warnings)
+
+
+def test_an_overdrawn_incomplete_cycle_pays_no_pro_rata_leave_rather_than_a_negative():
+    """The ledger holds −3 and the floor is 170 ÷ 17 − 12 taken = −2. Neither
+    is paid below zero — the overdraw is D-185's to surface, never a negative
+    line."""
+    result = termination_payout(
+        an_input(
+            months_of_service=Decimal("8"),
+            incomplete_cycle_days=Decimal("-3"),
+            days_worked_in_incomplete_cycle=Decimal("170"),
+            leave_taken_in_incomplete_cycle_days=Decimal("12"),
+        )
+    )
+    assert amount_of(result, "LEAVE_PAYOUT") == Decimal("0")
+    assert result.pro_rata_leave_pay.exact == Decimal("0")
+
+
+def test_an_overdrawn_hours_cycle_pays_nothing_rather_than_a_negative():
+    result = termination_payout(
+        an_input(months_of_service=Decimal("8"), incomplete_cycle_hours=Decimal("-7.5"))
+    )
+    assert result.pro_rata_leave_pay.exact == Decimal("0")

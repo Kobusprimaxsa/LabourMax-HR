@@ -45,6 +45,7 @@ MODELS = {
     "payroll_calculation_trace": payroll_models.PayrollCalculationTrace,
     "payroll_validation_issue": payroll_models.PayrollValidationIssue,
     "annual_bonus_cycle": payroll_models.AnnualBonusCycle,
+    "termination_payout": payroll_models.TerminationPayout,
 }
 
 #: Sheet 02 columns deliberately absent, and why. Anything not listed must exist.

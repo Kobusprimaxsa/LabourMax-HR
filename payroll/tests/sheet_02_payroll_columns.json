@@ -154,6 +154,36 @@
       "paid_amount",
       "paid_in_payroll_run_id",
       "status"
+    ],
+    "termination_payout": [
+      "id",
+      "tenant_id",
+      "employee_id",
+      "engagement_id",
+      "termination_date",
+      "termination_reason_code",
+      "completed_months_service",
+      "completed_years_service",
+      "weekly_wage_used",
+      "daily_wage_used",
+      "monthly_wage_used",
+      "notice_weeks_required",
+      "notice_worked",
+      "notice_pay_amount",
+      "accrued_leave_days",
+      "leave_payout_amount",
+      "severance_applicable",
+      "severance_weeks",
+      "severance_amount",
+      "bonus_applicable",
+      "bonus_months_worked",
+      "bonus_pro_rata_amount",
+      "outstanding_deductions",
+      "total_payout_gross",
+      "severance_tax_treatment",
+      "status",
+      "payroll_run_id",
+      "calculation_detail"
     ]
   }
 }
