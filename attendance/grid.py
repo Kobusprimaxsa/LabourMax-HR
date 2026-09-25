@@ -35,7 +35,7 @@ from calculators.attendance import (
 )
 from core.managers import tenant_context_of
 from employees.models import Employee
-from statutory import resolve
+from leave import holidays as employer_holidays
 
 
 @dataclass(frozen=True)
@@ -106,7 +106,9 @@ def _prefill_for(
         return None
 
     is_holiday = (
-        work_date in holidays if holidays is not None else resolve.is_public_holiday(work_date)
+        work_date in holidays
+        if holidays is not None
+        else employer_holidays.is_pay_holiday(employee.employer, work_date)
     )
     if is_holiday:
         # Presumed not worked until the employer says otherwise (BCEA s18(1)):
@@ -196,9 +198,9 @@ def month_grid(employees: list[Employee], month: datetime.date, *, pay_group=Non
     """
     start, end = _month_bounds(month)
     dates = list(scheduling.iter_dates(start, end))
-    holidays = set(
-        resolve.public_holidays_between(start, end).values_list("holiday_date", flat=True)
-    )
+    # Per EMPLOYER (D-319): an exchanged holiday is an ordinary day and its
+    # substitute a holiday, for that employer only.
+    holidays_by_employer: dict[int, set[datetime.date]] = {}
 
     rows: list[EmployeeGridRow] = []
     all_exceptions: list[AttendanceException] = []
@@ -206,6 +208,11 @@ def month_grid(employees: list[Employee], month: datetime.date, *, pay_group=Non
     for employee in employees:
         with tenant_context_of(employee):
             book = scheduling.ScheduleBook(employee)
+            if employee.employer_id not in holidays_by_employer:
+                holidays_by_employer[employee.employer_id] = set(
+                    employer_holidays.pay_holidays(employee.employer, start, end)
+                )
+            holidays = holidays_by_employer[employee.employer_id]
             existing = {
                 day.work_date: day
                 for day in AttendanceDay.objects.filter(

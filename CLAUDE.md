@@ -1991,7 +1991,12 @@ this table before the statutory calendar, in either direction; a NULL `public_ho
 employer declare a day the calendar knows nothing about. Proven both directions, same date, two
 employers, one test. **COMPLIANCE NOTE, in the model's own docstring and flagged for O-06**: a
 row with `is_observed=FALSE` RECORDS an agreement under BCEA s18(3) — it does not MAKE one, and
-nothing here checks that a genuine agreement stands behind it.
+nothing here checks that a genuine agreement stands behind it. **CORRECTED 25 Sep 2026 (D-319): the authority is BCEA
+s18(1) and Public Holidays Act s2(2) — s18(3) is the pay rule.** The row now carries a
+`treatment` — `exchanged` (the day becomes ordinary and a `substitute` day becomes the holiday)
+or `worked_by_agreement` (the day stays a holiday, s18(2)(b) double) — and
+`leave/holidays.py` is the ONE per-employer calendar every pay and leave path reads. Kobus's
+answer: no evidence of the agreement is captured, and no sector differs.
 
 **Task 5 asked for P6's own definition of done to be PROVEN, not asserted, and it found
 something real.** `leave/tests/test_reconciliation_property.py` uses Hypothesis to generate

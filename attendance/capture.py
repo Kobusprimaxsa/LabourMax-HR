@@ -24,6 +24,7 @@ from attendance.models import AttendanceDay
 from calculators.attendance import AttendanceDayInput, RuleFigures, bucket_day
 from core.managers import tenant_context_of
 from employees.models import Employee
+from leave import holidays as employer_holidays
 from statutory import resolve
 
 
@@ -85,7 +86,9 @@ def rules_in_force(employee: Employee, on_date: datetime.date) -> RuleFigures:
     return _rule_figures(row)
 
 
-def _public_holiday_warning(work_date: datetime.date, day_type: str, worked: bool) -> str | None:
+def _public_holiday_warning(
+    work_date: datetime.date, day_type: str, worked: bool, *, employer
+) -> str | None:
     """A day captured as something other than a public holiday, on a date the
     calendar says is one (D-280).
 
@@ -110,11 +113,13 @@ def _public_holiday_warning(work_date: datetime.date, day_type: str, worked: boo
         return None
     if day_type == AttendanceDay.DayType.PUBLIC_HOLIDAY:
         return None
-    holiday = resolve.public_holiday_on(work_date)
-    if holiday is None:
+    # This EMPLOYER's calendar (D-319): an exchanged holiday is an ordinary
+    # day, and the day it was exchanged for is a holiday.
+    name = employer_holidays.pay_holiday_name(employer, work_date)
+    if name is None:
         return None
     return (
-        f"{work_date:%d %B %Y} is a public holiday ({holiday.name}) and this day was "
+        f"{work_date:%d %B %Y} is a public holiday ({name}) and this day was "
         f"captured as '{day_type}'. BCEA s18(2)(b) prices a worked public holiday and "
         f"nothing here applies it to a day captured as anything else. A date can be "
         f"both — s2(1) adds a Monday without taking the Sunday away, so 9 August 2026 "
@@ -221,6 +226,7 @@ def capture(
                 + result.standby_hours_worked
             )
             > 0,
+            employer=employee.employer,
         )
         if holiday_warning is not None:
             warnings.append(holiday_warning)

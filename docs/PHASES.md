@@ -490,7 +490,10 @@ that statement rather than merely take it on faith.
       in one test. COMPLIANCE NOTE recorded in the model's own docstring and flagged for
       O-06: a row with `is_observed=FALSE` RECORDS an agreement under BCEA s18(3); it does
       not MAKE one, and nothing in this codebase checks that a genuine agreement stands
-      behind a row before honouring it
+      behind a row before honouring it. **Corrected 25 Sep 2026 (D-319):** the authority is BCEA s18(1) and
+      Public Holidays Act s2(2), not s18(3); the row now says, in `treatment`, whether the day was
+      EXCHANGED or WORKED BY AGREEMENT, and one per-employer calendar (`leave/holidays.py`) is read
+      by pay and leave alike
 - [x] The negative balance report (chunk 4, task 1, D-184) — `leave/negative_balances.py`.
       Same shape as the forfeiture warning: read-only, no job, no screen, writes nothing.
       Every OPEN cycle for an employer's employees, ANY leave type, currently below zero,

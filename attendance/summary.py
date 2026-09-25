@@ -40,7 +40,6 @@ from attendance.models import AttendanceDay, TimesheetSummary
 from core.managers import tenant_context_of
 from employees.models import Employee
 from payroll.models import PayPeriod
-from statutory import resolve
 
 ZERO = Decimal("0")
 
@@ -102,11 +101,17 @@ def _count_public_holidays_not_worked(
     worked_dates = {day.work_date for day in days if _hours_actually_worked(day) > 0}
 
     count = 0
-    for holiday in resolve.public_holidays_between(pay_period.period_start, pay_period.period_end):
-        if holiday.holiday_date in worked_dates:
+    # This EMPLOYER's holidays (D-319): a substitute day counts, and a day
+    # exchanged away does not.
+    from leave.holidays import pay_holidays
+
+    for holiday_date in pay_holidays(
+        employee.employer, pay_period.period_start, pay_period.period_end
+    ):
+        if holiday_date in worked_dates:
             continue
-        schedule = scheduling.current_schedule(employee, holiday.holiday_date)
-        schedule_day = scheduling.schedule_day_for(schedule, holiday.holiday_date)
+        schedule = scheduling.current_schedule(employee, holiday_date)
+        schedule_day = scheduling.schedule_day_for(schedule, holiday_date)
         if schedule_day is not None and schedule_day.is_working_day:
             count += 1
     return Decimal(count)

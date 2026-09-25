@@ -23,10 +23,10 @@ UNLESS this employer's own ``PublicHolidayObservance`` says otherwise**
 public holiday inside the span — neither deducts, neither is paid, and
 both still get their own ``leave_application_day`` row so the audit can
 show why. Which dates count as a holiday for THIS employer is decided by
-``_is_observed_holiday()`` — an explicit observance row wins over the
-statutory calendar in either direction; see that function and
-``PublicHolidayObservance``'s own docstring for the compliance note this
-carries.
+``leave/holidays.py::leave_holidays()`` (D-319) — the statutory calendar
+less holidays EXCHANGED away under PHA s2(2), plus the substitute days and
+the employer's own days off. A holiday WORKED BY AGREEMENT under BCEA s18(1)
+stays a holiday; nothing about it is charged as leave.
 
 FLAGGED: a ``balance_source='parent'`` type (``ANNUAL_UNAUTHORISED``) is not
 resolved to its PARENT's cycle here — ``ensure_cycles``/``balance_as_at``
@@ -58,7 +58,6 @@ from leave.models import (
     LeaveCycle,
     LeaveEvidenceType,
     LeaveType,
-    PublicHolidayObservance,
 )
 from statutory import resolve
 
@@ -124,23 +123,17 @@ def _is_sick_leave_paid(
 
 
 def _is_observed_holiday(employer, a_date: datetime.date) -> bool:
-    """Whether ``a_date`` is treated as a holiday for THIS employer — task
-    4's observance override, checked before the statutory calendar.
+    """Whether ``a_date`` is a day off for THIS employer, for leave (D-319).
 
-    An explicit ``PublicHolidayObservance`` row wins outright, in EITHER
-    direction: ``is_observed=False`` on a genuine statutory holiday means
-    this employer's employees worked it as ordinary (see the model's own
-    compliance note — this records an agreement, it does not make one), and
-    an employer-specific row with no ``public_holiday`` at all can declare a
-    day off the statutory calendar knows nothing about. No row falls back to
-    the plain calendar exactly as chunk 2 read it.
+    One calendar for leave and pay alike, ``leave/holidays.py``: an EXCHANGED
+    holiday (PHA s2(2)) is a working day and IS charged; its SUBSTITUTE is a
+    holiday; a holiday WORKED BY AGREEMENT (BCEA s18(1)) stays a holiday; and
+    an employer's own day off the calendar knows nothing about is not charged
+    either. No row falls back to the plain calendar.
     """
-    observance = PublicHolidayObservance.objects.filter(
-        employer=employer, observance_date=a_date
-    ).first()
-    if observance is not None:
-        return observance.is_observed
-    return resolve.is_public_holiday(a_date)
+    from leave.holidays import is_leave_holiday
+
+    return is_leave_holiday(employer, a_date)
 
 
 def _build_days(

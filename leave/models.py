@@ -1218,33 +1218,48 @@ class LeaveApplicationDay(AuditedModel, TenantScopedModel):
 
 
 class PublicHolidayObservance(AuditedModel, TenantScopedModel):
-    """An employer's own record of how one date was actually treated — P6
-    chunk 3, task 4.
+    """How one employer treats one date - and WHICH of the Acts' two very
+    different things it did (D-319).
 
-    **This changes chunk 2's answer, on purpose.**
-    ``leave/applications.py``'s day computation used to read the statutory
-    calendar (``statutory.resolve.is_public_holiday()``) directly and
-    unconditionally. It now checks HERE FIRST: an observance row with
-    ``is_observed=FALSE`` means this employer's employees worked that date
-    as an ordinary day, so it IS a working day and it IS deducted from
-    leave, even though the statutory calendar still calls it a public
-    holiday. No row at all falls back to the calendar exactly as before.
+    **``treatment`` says it, because ``is_observed`` alone could not.** "Not
+    observed" meant two things with opposite pay:
 
-    ``public_holiday`` is NULLABLE for a genuinely employer-specific day —
-    a company day off that is not on the statutory calendar at all, sheet
-    02's own reason for the column.
+    * ``exchanged`` - Public Holidays Act 36 of 1994 s2(2): "any public holiday
+      shall be exchangeable for any other day which is fixed by agreement or
+      agreed to between an employer and employee". The gazetted day becomes an
+      ORDINARY day, worked at ordinary pay and charged as leave; ANOTHER day
+      becomes the public holiday. The pair is ``substitute``.
+    * ``worked_by_agreement`` - BCEA s18(1): "An employer may not require an
+      employee to work on a public holiday except in accordance with an
+      agreement." The day REMAINS a public holiday, and worked, s18(2)(b) pays
+      at least double. Nothing is exchanged.
+    * ``substitute`` - the day a holiday was exchanged FOR: a public holiday for
+      this employer, for pay and for leave. ``public_holiday`` is NULL on it.
+    * ``observed`` - the default: the holiday as gazetted, or, with no
+      ``public_holiday``, an employer's own day off the calendar knows nothing
+      about (for leave only - it is not a public holiday for pay).
 
-    **COMPLIANCE NOTE, flagged for the labour law review (O-06): a row
-    with ``is_observed=FALSE`` RECORDS an agreement — it does not MAKE
-    one.** BCEA s18 does not let an employer unilaterally require work on a
-    public holiday; s18(3) conditions it on agreement (and pays a premium
-    when worked). This table is the employer's statement of what was
-    agreed, captured for payroll and leave to read consistently — it is not
-    itself the legal instrument, and nothing in this codebase checks that a
-    genuine agreement exists behind a row before honouring it. A future
-    chunk that captures consent formally should point at whatever record
-    proves it, not treat this table's existence as proof.
+    ``leave/holidays.py`` turns these rows into the one per-employer calendar
+    that capture, bucketing, the unworked-holiday count, payroll and leave all
+    read, so an exchanged day prices as ordinary and its substitute as a
+    holiday, everywhere at once.
+
+    **Settled by Kobus, 25 September 2026 (D-319), an owner confirmation on
+    D-117's precedent:** a contract clause requiring public holiday work is the
+    s18(1) agreement; an exchange needs an individual written agreement with
+    each employee; pay follows the Act, the same in SD7, SD1 and the BCCCI; and
+    the software does NOT require evidence of the agreement to be captured. A
+    row records what was agreed; nothing here asks to see the agreement.
+
+    ``is_observed`` is sheet 02's column and is kept, now DERIVED: false exactly
+    when the day was exchanged away, held to ``treatment`` by a CHECK.
     """
+
+    class Treatment(models.TextChoices):
+        OBSERVED = "observed", "Observed"
+        EXCHANGED = "exchanged", "Exchanged for another day (PHA s2(2))"
+        WORKED_BY_AGREEMENT = "worked_by_agreement", "Worked by agreement (BCEA s18(1))"
+        SUBSTITUTE = "substitute", "Substitute for an exchanged holiday"
 
     employer = models.ForeignKey(
         "employers.Employer", on_delete=models.PROTECT, related_name="public_holiday_observances"
@@ -1259,9 +1274,21 @@ class PublicHolidayObservance(AuditedModel, TenantScopedModel):
     )
     observance_date = models.DateField(db_index=True)
     name = models.CharField(max_length=120)
+    treatment = models.CharField(
+        max_length=30, choices=Treatment.choices, default=Treatment.OBSERVED
+    )
+    #: The day an EXCHANGED holiday was exchanged for. Optional - the software
+    #: does not police the agreement - and warned when missing (D-319).
+    substitute = models.OneToOneField(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="exchanged_holiday",
+    )
     is_observed = models.BooleanField(
         default=True,
-        help_text="FALSE = this employer's employees worked this day as ordinary.",
+        help_text="Sheet 02's column. Derived: FALSE exactly when the day was exchanged.",
     )
     is_paid = models.BooleanField(default=True)
 
@@ -1273,7 +1300,56 @@ class PublicHolidayObservance(AuditedModel, TenantScopedModel):
                 fields=["employer", "observance_date"],
                 name="uniq_public_holiday_observance_per_employer_date",
             ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    treatment__in=["observed", "exchanged", "worked_by_agreement", "substitute"]
+                ),
+                name="observance_treatment_is_known",
+            ),
+            # is_observed is derived; the CHECK is what keeps sheet 02's column
+            # from saying something the treatment does not.
+            models.CheckConstraint(
+                condition=models.Q(treatment="exchanged", is_observed=False)
+                | (~models.Q(treatment="exchanged") & models.Q(is_observed=True)),
+                name="observance_is_observed_follows_treatment",
+            ),
+            # Only a gazetted holiday can be exchanged away or worked by
+            # agreement; a substitute is by definition not on the calendar.
+            # public_holiday is nullable, so each branch says what NULL means.
+            models.CheckConstraint(
+                condition=~models.Q(treatment__in=["exchanged", "worked_by_agreement"])
+                | models.Q(public_holiday__isnull=False),
+                name="observance_exchange_or_work_names_the_holiday",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(treatment="substitute") | models.Q(public_holiday__isnull=True),
+                name="observance_substitute_is_off_the_calendar",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(substitute__isnull=True) | models.Q(treatment="exchanged"),
+                name="observance_only_an_exchange_has_a_substitute",
+            ),
         ]
 
+    def save(self, *args, **kwargs):
+        self.is_observed = self.treatment != self.Treatment.EXCHANGED
+        if kwargs.get("update_fields") is not None and "treatment" in kwargs["update_fields"]:
+            kwargs["update_fields"] = {*kwargs["update_fields"], "is_observed"}
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        super().clean()
+        if self.substitute_id is not None:
+            sub = self.substitute
+            if sub.treatment != self.Treatment.SUBSTITUTE or sub.employer_id != self.employer_id:
+                raise ValidationError(
+                    {
+                        "substitute": (
+                            "An exchanged holiday's substitute is this employer's own "
+                            "SUBSTITUTE day, not another kind of row."
+                        )
+                    }
+                )
+
     def __str__(self):
-        return f"{self.employer_id} {self.observance_date} observed={self.is_observed}"
+        return f"{self.employer_id} {self.observance_date} {self.treatment}"

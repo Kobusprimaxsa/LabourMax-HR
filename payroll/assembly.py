@@ -88,6 +88,7 @@ from employees.models import (
 )
 from employers.models import EmployerStatutoryRegistration, PayGroup, PayrollComponent
 from leave.cycles import _sector_area_of
+from leave.holidays import is_pay_holiday
 from leave.models import LeaveApplication, LeaveApplicationDay
 from payroll.models import PayrollRun, PayslipLine, TerminationPayout
 from payroll.periods import _cadence, working_days_between
@@ -292,7 +293,7 @@ def _day_pay(employee, row: AttendanceDay) -> DayPay:
     )
 
 
-def _refuse_an_unread_sunday_holiday(days: list[DayPay]) -> None:
+def _refuse_an_unread_sunday_holiday(employee, days: list[DayPay]) -> None:
     """D-291: hours worked on a date that is both a Sunday and a public holiday
     are priced by s16 or by s18, and which is O-40's question."""
     for pay in days:
@@ -303,7 +304,7 @@ def _refuse_an_unread_sunday_holiday(days: list[DayPay]) -> None:
             + pay.hours.public_holiday_hours
         )
         date = pay.day.work_date
-        if worked and date.weekday() == 6 and resolve.is_public_holiday(date):
+        if worked and date.weekday() == 6 and is_pay_holiday(employee.employer, date):
             raise CannotPrice(
                 "sunday_public_holiday",
                 f"{worked} hour(s) were worked on {date:%A %d %B %Y}, which is both a Sunday "
@@ -552,7 +553,7 @@ def _build(run: PayrollRun, employee: Employee) -> Draft:
                 employee=employee, work_date__gte=start, work_date__lte=end
             ).order_by("work_date")
         ]
-        _refuse_an_unread_sunday_holiday(days)
+        _refuse_an_unread_sunday_holiday(employee, days)
 
         traces: list[CalculationTrace] = []
         lines: list[DraftLine] = []

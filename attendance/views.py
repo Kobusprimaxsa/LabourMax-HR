@@ -39,7 +39,7 @@ from calculators.attendance import Severity
 from core.web import employer_view, tenant_object
 from employees.models import Employee, EmployeeRemuneration
 from employers.models import Employer, PayGroup
-from statutory import resolve
+from leave import holidays as employer_holidays
 from statutory.resolve import StatutoryValueMissingError
 
 
@@ -144,7 +144,9 @@ def _save(employee, work_date, typed: str, *, replace_approved: bool):
     not poison the request's transaction. Returns (day, error)."""
     try:
         entry = cellcodes.parse(
-            typed, work_date=work_date, is_public_holiday=resolve.is_public_holiday(work_date)
+            typed,
+            work_date=work_date,
+            is_public_holiday=employer_holidays.is_pay_holiday(employee.employer, work_date),
         )
     except cellcodes.CellCodeError as refused:
         return None, str(refused)
@@ -236,11 +238,7 @@ def grid(request, employer_uid, group_uid, month):
     scope = Scope(employer_uid, group_uid, month)
     built = month_grid(scope.employees, scope.start, pay_group=scope.group)
     dates = list(scheduling.iter_dates(scope.start, scope.end))
-    holidays = set(
-        resolve.public_holidays_between(scope.start, scope.end).values_list(
-            "holiday_date", flat=True
-        )
-    )
+    holidays = set(employer_holidays.pay_holidays(scope.employer, scope.start, scope.end))
     rows = [
         {
             "employee": row.employee,
@@ -379,7 +377,9 @@ def _bulk_one(employee, working, code: str) -> int:
                 bulk_fill(
                     employee,
                     [work_date],
-                    day_type=cellcodes._inferred(work_date, resolve.is_public_holiday(work_date)),
+                    day_type=cellcodes._inferred(
+                        work_date, employer_holidays.is_pay_holiday(employee.employer, work_date)
+                    ),
                     time_in=schedule_day.start_time,
                     time_out=schedule_day.end_time,
                     unpaid_break_minutes=schedule_day.unpaid_break_minutes,
@@ -389,7 +389,9 @@ def _bulk_one(employee, working, code: str) -> int:
     by_type: dict[tuple, list[datetime.date]] = {}
     for work_date, _ in working:
         entry = cellcodes.parse(
-            code, work_date=work_date, is_public_holiday=resolve.is_public_holiday(work_date)
+            code,
+            work_date=work_date,
+            is_public_holiday=employer_holidays.is_pay_holiday(employee.employer, work_date),
         )
         if entry.use_schedule or entry.hours is not None:
             raise cellcodes.CellCodeError(

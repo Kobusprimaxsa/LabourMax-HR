@@ -429,6 +429,23 @@ def check_overdrawn_leave_at_termination(run) -> list[Finding]:
     return found
 
 
+def check_unpaired_holiday_exchanges(run) -> list[Finding]:
+    """D-319, Finding 3: a public holiday EXCHANGED in this period with no
+    substitute day recorded. A WARNING, never a block: the software does not
+    police the agreement (Kobus, 25 September 2026), and the row may be a
+    lawful choice not yet finished, or a day really worked by agreement and
+    mis-recorded. The wording says which is which."""
+    from leave.holidays import unpaired_exchange_warnings
+
+    period = run.pay_period
+    return [
+        Finding("holiday_exchange_unpaired", WARNING, message)
+        for message in unpaired_exchange_warnings(
+            period.pay_group.employer, period.period_start, period.period_end
+        )
+    ]
+
+
 #: Every check, in the order an employer would want to read them: the ones about
 #: the run and its data first, then the ones about individual people.
 CHECKS = (
@@ -441,6 +458,7 @@ CHECKS = (
     check_attendance_is_complete,
     check_overdrawn_leave,
     check_overdrawn_leave_at_termination,
+    check_unpaired_holiday_exchanges,
 )
 
 
