@@ -673,6 +673,13 @@ page, which put U+FFFD through every rand sign and en dash in
   at the old commit and diff `file: count` lists. Orphaned bytecode is how lost tests hide:
   20 from a parallel session survived only as a `.pyc` (D-191). pytest names them
   `name.cpython-314-pytest-X.Y.Z.pyc`, so strip from `.cpython-` or every test reads as orphaned.
+- **Before any new work, state the CI status of HEAD by run number. If it is red, fixing it is
+  the only work. Never push without a full local suite run on the exact commit being pushed.**
+  Four commits went onto a red main on 24 September 2026 (runs #90 to #93) because CI status
+  was reported per commit and nothing made "HEAD is red" stop the next piece of work — and the
+  fix pushed for the first failure hid a second. Run the suite app by app if memory is tight
+  (`pytest <app>` one at a time, dev server stopped); every app in `testpaths` counts. Report
+  what the run SAYS, never "should be green".
 
 ## Current state
 
