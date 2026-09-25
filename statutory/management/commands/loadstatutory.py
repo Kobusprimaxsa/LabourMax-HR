@@ -75,6 +75,15 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument(
+            "--restructure",
+            action="store_true",
+            help=(
+                "With --supersede: replace a rule set's NOTICE BANDS with the file's, "
+                "keeping the old rows, and refuse unless every reachable answer is "
+                "unchanged (D-315)."
+            ),
+        )
+        parser.add_argument(
             "--loaded-by",
             help="Email address of the person doing the load. Recorded on the version.",
         )
@@ -107,6 +116,7 @@ class Command(BaseCommand):
                         supersede=options["supersede"],
                         reason=options["reason"],
                         supersede_verified=options["supersede_verified"],
+                        restructure=options["restructure"],
                     )
                 ]
         except ReferenceDataLoadError as exc:

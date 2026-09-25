@@ -246,7 +246,11 @@ def test_the_window_refuses_when_nobody_says_which_employee_this_is(loaded):
 def test_after_six_months_the_two_week_rule_is_unambiguous(loaded):
     """The one-week rule is expressly limited to "between 4 weeks ... and six
     months" and probation is capped at four months, so only the two-week rule
-    can reach an employee of longer service."""
+    can reach an employee of longer service.
+
+    CHANGED 25 Sep 2026 (D-315): the state is now STATED. Since the three-row
+    restructure the answer past four weeks is read off the probation lane, so
+    an unstated call is asked for it; the two weeks it reaches is unchanged."""
     sector, made = loaded
 
     band = resolve.notice_band(
@@ -254,6 +258,7 @@ def test_after_six_months_the_two_week_rule_is_unambiguous(loaded):
         datetime.date(2027, 1, 5),
         employment_start_date=datetime.date(2026, 4, 1),
         sector_area=made["AREA_B"],
+        on_probation=False,
     )
 
     assert band.notice_value == Decimal("2.00")
@@ -859,6 +864,10 @@ def test_the_two_agreements_notice_bands_do_not_collide(with_termination):
 
     assert before.pk != after.pk
     assert before.notice_bands.count() == 4, "three service ranges, the middle one in two lanes"
-    assert after.notice_bands.count() == 4
+    # D-315: the 2026 agreement's bands are three rows since the restructure -
+    # one working day, then the two probation lanes - and none is retired on a
+    # database that loaded r5 directly.
+    live = after.notice_bands.filter(superseded_by_version__isnull=True)
+    assert live.count() == 3
     assert "Notice 1726 of 2023" in before.notice_bands.first().source_reference
     assert "GN R.7296" in after.notice_bands.first().source_reference

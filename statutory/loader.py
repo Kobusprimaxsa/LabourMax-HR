@@ -325,6 +325,8 @@ class LoadReport:
     closed_periods: list[str] = field(default_factory=list)
     already_loaded: bool = False
     superseded: str = ""
+    #: D-315: rows a --restructure retired, per table - kept, never deleted.
+    retired: dict[str, int] = field(default_factory=dict)
 
     @property
     def total_created(self) -> int:
@@ -342,6 +344,8 @@ class LoadReport:
                 out.append(f"  {table:<26} {created:>4} loaded, {unchanged:>4} already present")
         for line in self.closed_periods:
             out.append(f"  closed  {line}")
+        for table, count in sorted(self.retired.items()):
+            out.append(f"  {table:<28} {count:>3} retired, kept so earlier traces still open them")
         if self.superseded:
             for table, count in self.updated.items():
                 out.append(f"  {table:<26} {count:>4} citation(s) re-encoded")
@@ -592,6 +596,7 @@ def load_reference_data(
     supersede: str = "",
     reason: str = "",
     supersede_verified: bool = False,
+    restructure: bool = False,
 ) -> LoadReport:
     """Load one reference data document. Refuses the whole file on any problem.
 
@@ -650,6 +655,20 @@ def load_reference_data(
         report.already_loaded = True
         return report
 
+    if restructure and superseded is None:
+        raise ReferenceDataLoadError("--restructure is a kind of --supersede, and needs one.")
+    if superseded is not None and restructure:
+        return _restructure(
+            document,
+            label=label,
+            applies_from=applies_from,
+            checksum=checksum,
+            loaded_by=loaded_by,
+            superseded=superseded,
+            reason=reason,
+            report=report,
+        )
+
     if superseded is not None:
         # Checked BEFORE anything is written: a refusal writes nothing at all.
         updates, new_rows = _supersede_rows(document, old_label=supersede, report=report)
@@ -696,6 +715,172 @@ def load_reference_data(
     version.applies_until = scope_of(document)
     version.save(update_fields=["applies_until", "updated_at"])
     version.refresh_from_db()
+    return report
+
+
+#: How far past the start of employment the restructure proof looks. Two years
+#: covers every boundary any loaded instrument states (the longest is one year)
+#: with a year to spare; a band that differed only beyond it is a band stated
+#: beyond anything loaded, and a band that open-ended differs there differs
+#: everywhere after the last boundary, which is inside the range.
+RESTRUCTURE_HORIZON_DAYS = 730
+
+#: The instrument's own probation ceiling (BCCCI clause 3), read to decide which
+#: probation states are REACHABLE.
+PROBATION_CAP_PARAMETER = "PROBATION_MAX_MONTHS"
+
+
+def _notice_outcomes(rule_set) -> dict[tuple, tuple]:
+    """Every answer ``resolve.notice_band()`` gives under one rule set, for every
+    service length to the horizon and both probation states that can occur.
+
+    On probation is reachable only while service is within the instrument's own
+    probation ceiling: ``employees/probation.py::check_probation()`` refuses a
+    longer probation at engagement, so "on probation at seven months" is a state
+    no employee can be in and no answer about it can reach a payslip. Where no
+    ceiling is loaded the whole range is compared, which is the stricter test.
+    """
+    from dateutil.relativedelta import relativedelta
+
+    from statutory import resolve
+
+    on_date = rule_set.effective_from
+    cap = resolve.parameter_or_none(
+        PROBATION_CAP_PARAMETER,
+        on_date,
+        sector=rule_set.sector,
+        sector_area=rule_set.sector_area,
+    )
+    outcomes = {}
+    for days in range(RESTRUCTURE_HORIZON_DAYS + 1):
+        start = on_date - datetime.timedelta(days=days)
+        # None is a caller that does not say; it is compared too (D-315).
+        reachable = [False, None]
+        if cap is None or on_date <= start + relativedelta(months=int(cap.value_numeric)):
+            reachable.append(True)
+        for on_probation in reachable:
+            try:
+                band = resolve.notice_band(
+                    rule_set.sector,
+                    on_date,
+                    employment_start_date=start,
+                    sector_area=rule_set.sector_area,
+                    on_probation=on_probation,
+                )
+                outcome = (str(band.notice_value.normalize()), band.notice_unit)
+            except resolve.StatutoryValueMissingError as refused:
+                outcome = (
+                    ASKS_FOR_PROBATION
+                    if "depends on whether they are still on probation" in str(refused)
+                    else ("refused", str(refused)[:60])
+                )
+            outcomes[(days, on_probation)] = outcome
+    return outcomes
+
+
+#: The answer "tell me whether they are on probation", as distinct from a refusal.
+ASKS_FOR_PROBATION = ("asks", "whether on probation")
+
+
+def restructure_permits(on_probation, was, now) -> bool:
+    """Whether one answer may move under ``--restructure`` (D-315): not at all,
+    with one exception. A caller that does NOT say whether the employee is on
+    probation may go from a figure to being ASKED to say - the restructure made
+    the answer depend on probation where it did not before, and asking is the
+    resolver's contract for exactly that (D-277). It may never go to a
+    different figure, and a caller that DOES say may see nothing move."""
+    if was == now:
+        return True
+    return on_probation is None and was[0] not in ("refused", "asks") and now == ASKS_FOR_PROBATION
+
+
+def _restructure(
+    document, *, label, applies_from, checksum, loaded_by, superseded, reason, report
+) -> LoadReport:
+    """An OUTCOME-PROVEN restructure of notice bands (D-315): the rows change,
+    and not one answer does.
+
+    ``--supersede`` re-encodes prose on the rows already loaded and refuses the
+    moment a figure or a range moves, because a moved figure is a new gazette.
+    A band structure can say the same thing in fewer rows — a boundary at which
+    no figure changes (BCCCI clause 21.1(b)'s six months) — and that had nowhere
+    to land. This is where it lands, and only on these terms:
+
+    * the file carries ``termination_notice_band`` rows and nothing else;
+    * every band now live on each rule set the file touches is MARKED superseded
+      by the new version and kept — never deleted — so a trace that recorded its
+      key still opens it;
+    * the file's rows are loaded in their place;
+    * every reachable answer ``resolve.notice_band()`` gives — each service day
+      to two years, on and off probation — is compared before and after, INSIDE
+      the load's transaction, and ANY difference refuses the whole load;
+    * and ``check_notice_bands()`` must find no gap or overlap afterwards.
+    """
+    from statutory.checks import check_notice_bands
+
+    other = set(document["tables"]) - {"termination_notice_band"}
+    if other:
+        raise SupersedeRefusedError(
+            f"--restructure refused: it restructures termination_notice_band and nothing "
+            f"else, and the file also carries {', '.join(sorted(other))}."
+        )
+    spec = TABLES["termination_notice_band"]
+    rows = document["tables"].get("termination_notice_band") or []
+    parents = []
+    for index, raw in enumerate(rows, start=1):
+        resolved = _resolve_references(spec, raw, where=f"termination_notice_band[{index}]")
+        if resolved["termination_rule_set"] not in parents:
+            parents.append(resolved["termination_rule_set"])
+    if not parents:
+        raise SupersedeRefusedError("--restructure refused: the file carries no notice bands.")
+
+    before = {parent.pk: _notice_outcomes(parent) for parent in parents}
+
+    version = ReferenceDataVersion.objects.create(
+        version_label=label,
+        applies_from=applies_from,
+        description=document.get("description", ""),
+        checksum=checksum,
+        loaded_by_user=loaded_by,
+        supersedes=superseded,
+        supersede_reason=reason.strip(),
+    )
+    for parent in parents:
+        retired = parent.notice_bands.filter(superseded_by_version__isnull=True)
+        report.retired["termination_notice_band"] = report.retired.get(
+            "termination_notice_band", 0
+        ) + retired.update(superseded_by_version=version)
+    for index, raw in enumerate(rows, start=1):
+        where = f"termination_notice_band[{index}]"
+        _load_row(spec, raw, where=where, closes_from=None, report=report)
+
+    changed = []
+    for parent in parents:
+        after = _notice_outcomes(parent)
+        for key, was in before[parent.pk].items():
+            if not restructure_permits(key[1], was, after.get(key)):
+                days, on_probation = key
+                state = {True: "on", False: "off", None: "unstated"}[on_probation]
+                changed.append(
+                    f"  - {days} day(s) of service, {state} probation: "
+                    f"{was} became {after.get(key)}"
+                )
+    if changed:
+        raise SupersedeRefusedError(
+            f"--restructure {superseded.version_label} refused: {len(changed)} answer(s) "
+            f"changed, so this is not a restructure but a new reading, and it gets an "
+            f"ordinary load of its own. The first:\n" + "\n".join(changed[:10])
+        )
+    gaps = [issue for issue in check_notice_bands() if issue.blocking]
+    if gaps:
+        raise SupersedeRefusedError(
+            "--restructure refused: the bands no longer tile.\n"
+            + "\n".join(f"  - {issue}" for issue in gaps)
+        )
+
+    version.applies_until = scope_of(document)
+    version.save(update_fields=["applies_until", "updated_at"])
+    report.superseded = superseded.version_label
     return report
 
 
@@ -846,6 +1031,7 @@ def load_reference_file(
     supersede: str = "",
     reason: str = "",
     supersede_verified: bool = False,
+    restructure: bool = False,
 ) -> LoadReport:
     """Read a JSON fixture from disk and load it."""
     text = Path(path).read_text(encoding="utf-8")
@@ -859,6 +1045,7 @@ def load_reference_file(
         supersede=supersede,
         reason=reason,
         supersede_verified=supersede_verified,
+        restructure=restructure,
     )
 
 

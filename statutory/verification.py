@@ -571,7 +571,12 @@ def lines() -> list[Line]:
             if f.concrete and f.name not in SCAFFOLDING and f.name not in LABEL_ONLY
         ]
         dated = spec.is_effective_dated
-        for row in spec.model.objects.all():
+        rows = spec.model.objects.all()
+        if hasattr(spec.model, "superseded_by_version"):
+            # D-315: a band an outcome-proven restructure replaced is history,
+            # kept so a trace still opens it, and not a figure to tick again.
+            rows = rows.filter(superseded_by_version__isnull=True)
+        for row in rows:
             document, clause = split_citation(row.source_reference)
             version = versions.get((table_name, row.pk), "(not in any fixture)")
             description = describe(row)
@@ -715,6 +720,27 @@ def group_by_key(key: str) -> Group | None:
         if group.key == key:
             return group
     return None
+
+
+def retired_row_is_recorded(group_key: str, checks) -> bool:
+    """Is a workbook group on a RETIRED row (D-315) already in the database?
+
+    A --restructure keeps the rows it retires, so a trace still opens them, and
+    drops them from the corpus, so nobody is asked to tick them again - which
+    takes their groups with them. The ticks a person entered on those groups are
+    still recorded; this is how the export tells a recorded tick on a retired
+    row from one nobody imported. ``grp:<table>:<pk>:<n>`` names the row.
+    """
+    parts = group_key.split(":")
+    if len(parts) != 4 or parts[0] != "grp":
+        return False
+    table, pk = parts[1], parts[2]
+    spec = TABLES.get(table)
+    if spec is None or not hasattr(spec.model, "superseded_by_version"):
+        return False
+    if not spec.model.objects.filter(pk=pk, superseded_by_version__isnull=False).exists():
+        return False
+    return any(key.startswith(f"{table}:{pk}:") for key in checks)
 
 
 def parse_key(key: str) -> tuple[str, int, str]:

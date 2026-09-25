@@ -426,7 +426,7 @@ def check_notice_bands() -> list[Issue]:
     issues = []
     for rule_set in TerminationRuleSet.objects.select_related("sector").all():
         scope = rule_set.sector.code if rule_set.sector else "BCEA default"
-        all_bands = list(rule_set.notice_bands.all())
+        all_bands = list(rule_set.notice_bands.filter(superseded_by_version__isnull=True))
         if not all_bands:
             issues.append(Issue(True, f"termination_rule_set {scope}", "has no notice bands"))
             continue

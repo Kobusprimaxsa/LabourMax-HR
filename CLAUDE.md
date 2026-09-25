@@ -315,6 +315,13 @@ the gazette or the SARS table wins and the workbook gets corrected.
 against the bands below it, every tax threshold against its rebates. `verifystatutory`
 refuses to record verification while anything blocking is outstanding.
 
+**Same answers, fewer notice bands? `--restructure`** (D-315). `loadstatutory <file> --supersede
+<old> --restructure` replaces a rule set's notice bands — marking the old rows
+`superseded_by_version`, never deleting them — and refuses unless every REACHABLE answer of
+`resolve.notice_band()` is unchanged (each service day to two years; on probation only within the
+loaded probation cap). Notice bands only; anything that changes an answer is a new reading and gets
+an ordinary load.
+
 **Re-encoded a fixture? It needs a new version label, not a hand-deleted row** (D-199, O-21
 closed). Regenerating a fixture changes its checksum and `checkstatutory` then refuses it by name.
 Give the file a new label (`REF-2026.03.01-RULES-r2`) and run `loadstatutory <file> --supersede

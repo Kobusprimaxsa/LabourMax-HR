@@ -803,7 +803,7 @@ def notice_band(
     ``employees.probation.is_on_probation()``.
     """
     rule_set = termination_rules(sector, on_date, sector_area)
-    bands = list(rule_set.notice_bands.all())
+    bands = list(rule_set.notice_bands.filter(superseded_by_version__isnull=True))
     if not bands:
         scope = sector.code if sector else "the BCEA default"
         raise StatutoryValueMissingError(

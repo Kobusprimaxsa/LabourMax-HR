@@ -1841,6 +1841,16 @@ class TerminationNoticeBand(AuditedModel, AuditMixin, CitedStatutoryModel):
     contested_reason = models.TextField(
         blank=True, help_text="Both limbs, quoted, so the refusal names the contradiction."
     )
+    #: D-315. Set when an outcome-proven restructure replaced this band. The row
+    #: is KEPT - a trace that recorded its key must still open it - but nothing
+    #: resolves against it, reconciles it or asks for it to be ticked again.
+    superseded_by_version = models.ForeignKey(
+        "ReferenceDataVersion",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="superseded_notice_bands",
+    )
 
     class Meta:
         db_table = "termination_notice_band"

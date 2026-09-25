@@ -376,7 +376,14 @@ class Command(BaseCommand):
                 deferred += 1 if str(cell or "").strip() else 0
                 continue
             group = verification.group_by_key(key)
-            if group is None or not any(figure.key in checks for figure in group.figures):
+            if group is None:
+                # D-315: a group on a band a --restructure retired has left the
+                # corpus, but its row is kept and so are its ticks. Recorded
+                # only if a check on that very row is in the database.
+                if not verification.retired_row_is_recorded(key, checks):
+                    stranded.append(key)
+                continue
+            if not any(figure.key in checks for figure in group.figures):
                 stranded.append(key)
 
         if stranded:

@@ -118,12 +118,15 @@ def test_exactly_six_months_is_still_the_middle_window(area_b):
     assert band_on(area_b, datetime.date(2026, 10, 1), on_probation=False).notice_value == TWO_WEEKS
 
 
-def test_a_day_past_six_months_is_the_open_ended_band(area_b):
-    """Unconditional again: nobody can still be on probation here, so the
-    clause stops distinguishing and so does the data."""
-    band = band_on(area_b, datetime.date(2026, 10, 2))
+def test_a_day_past_six_months_is_still_the_off_probation_lane(area_b):
+    """CHANGED 25 Sep 2026 (D-315, replacing the test that the band here was
+    unconditional). Since the three-row restructure the off-probation lane runs
+    from four weeks with no end, so a day past six months reads it: still two
+    weeks, now from the same row as a day past four weeks."""
+    band = band_on(area_b, datetime.date(2026, 10, 2), on_probation=False)
     assert band.notice_value == TWO_WEEKS
-    assert band.probation_condition == "any"
+    assert band.probation_condition == "off_probation"
+    assert band.service_to_value is None
 
 
 # ------------------------------------------------- symmetry, and what it means

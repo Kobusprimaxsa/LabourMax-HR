@@ -214,7 +214,13 @@ def test_the_two_uncontested_notice_bands_are_the_same_on_both_sides(
 ):
     """One working day during the first four weeks, two weeks from six months
     on — a day, not a fifth of a week, because contract cleaning runs six-day
-    weeks (D-68)."""
+    weeks (D-68).
+
+    CHANGED 25 Sep 2026 (D-315): off probation is now STATED. The 2026 bands
+    are three rows and both lanes run past six months, so an unstated call is
+    asked for the probation state (tested in test_notice_restructure.py). The
+    predecessor's four bands answer an unstated call as before; stating it asks
+    the same question of both sides."""
     sector, area = area_b
 
     for on_date in (LAST_DAY, FIRST_DAY):
@@ -223,6 +229,7 @@ def test_the_two_uncontested_notice_bands_are_the_same_on_both_sides(
             on_date,
             employment_start_date=on_date - datetime.timedelta(days=service_days),
             sector_area=area,
+            on_probation=False,
         )
         assert band.notice_value == expected_value, on_date
         assert band.notice_unit == expected_unit, on_date
