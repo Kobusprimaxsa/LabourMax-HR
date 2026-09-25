@@ -1719,7 +1719,10 @@ NO `annual_bonus_cycle` rows** — a row of nil would read as a bonus that came 
 and the rule set (D-153); the BCCCI elections (D-242) are read only for an AREA-scoped rule
 set. The leaver's share is a `BONUS_PRO_RATA` line on `termination_payout` — R2 702,98 for an
 SD1 cleaner at R1 497,15 a week leaving on 20 June, by hand. **Whether a long-serving leaver is
-owed the whole of 3(3)(a) is O-44**; the cycle reading is built because it is the workbook's.
+owed the whole of 3(3)(a) was O-44** — CLOSED 25 Sep 2026 (D-320): pro rata on the completed full calendar
+months of the current cycle, however long the service, in SD1 AND the BCCCI. SD1 requires it ("or on
+termination of employment"); the BCCCI has no termination limb, so paying a KZN leaver is Kobus's deliberate,
+more generous election, written onto the Area B rows so nobody "corrects" it back.
 
 **P7 chunk 7 — the payroll run and the validation gate** (19 September 2026, D-232 to
 D-235). 1 559 tests green. `payroll/runs.py` is the lifecycle and `payroll/validation.py` is

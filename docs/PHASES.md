@@ -627,7 +627,7 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
       BCCCI 4.5 only; no gazetted bonus, no run. PAYE on the bonus is the annual payment on
       top of the FINALISED regular payslip's ordinary pay, added once, and refuses if that
       ordinary tax has moved. Proven: R1 107,00 + R2 339,82 = the one-calculation R3 446,82.
-      O-44 stays open — leavers are paid the pro-rata share on their termination payslip
+      O-44 CLOSED (D-320) — leavers are paid pro rata on their termination payslip, in both instruments
 - [x] `pay_period` generation and lifecycle (D-305). Generation is P3's (D-82 to D-85); the
       lifecycle is `payroll/lifecycle.py`: open → in progress → closed, reopened only by a
       reversal. A closed period refuses a new run; a period with a live run refuses to close;
@@ -668,7 +668,7 @@ nothing below marked "assembly" can begin until Kobus runs `verifystatutory`.**
 - [x] `annual_bonus_cycle` accruing monthly (D-286): one formula for SD1 3(3)(a) and (b)
       and BCCCI 4.5, a rebuildable cache under FORCE RLS, NO ROWS for a sector without a
       bonus, and the leaver's share on the termination payout as `BONUS_PRO_RATA` — R2 702,98
-      for the hand-computed June leaver. The cycle reading is O-44. The December payment
+      for the hand-computed June leaver. The cycle reading is settled (D-320, O-44 closed). The December payment
       itself is chunk 8's
 - [x] `payslip`, `payslip_line` with SARS source codes and employee snapshot — CHUNK 6
       (D-228 to D-231). The TABLES, with every guard on them: invariant 4 by trigger,

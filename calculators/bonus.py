@@ -35,10 +35,20 @@ prevailing rate as "each month actually worked in that calendar year". So a
 December payment prices the months of that calendar year, and a leaver in June
 is paid for the full months of this year before they left. That reading is the
 workbook's too (sheet 02, ``termination_payout.bonus_months_worked``: "Full
-calendar months in the current bonus cycle") and it is FLAGGED rather than
-settled (O-44): read literally, SD1's (b) pro-rates only "an employee who has
-not been in employment for a period of 12 months", which would pay a long-
-serving June leaver the whole of (a).
+calendar months in the current bonus cycle").
+
+**A leaver is paid PRO RATA, however long their service** - SETTLED 25 September
+2026 by Kobus (D-320, closing O-44; an owner confirmation on D-117's precedent):
+completed full calendar months of the CURRENT cycle, in both instruments. Read
+literally, SD1's (b) pro-rates only "an employee who has not been in employment
+for a period of 12 months", which would pay a long-serving June leaver the whole
+of (a); the ruling is that it does not. The two instruments reach the answer
+differently: SD1 clause 3(3) pays "during the month of December OR ON
+TERMINATION OF EMPLOYMENT", so paying a leaver is what it REQUIRES; BCCCI clause
+4.5 pays "to all cleaners in employment on the 1st December" with NO termination
+limb, so paying a KwaZulu-Natal leaver is MORE generous than the agreement asks -
+lawful, and Kobus's deliberate election, which is why
+``annual_bonus_pro_rata_on_termination`` is TRUE on the Area B rows.
 
 **A full calendar month is the whole of one**, the first to the last day. A
 month joined after the 1st earns nothing unless the caller says the employer

@@ -32,9 +32,9 @@ is not), less what the regular payslip already deducted. **SDL** has no
 ceiling, so the bonus's levy is the levy on the bonus.
 
 **Leavers are not in it.** A leaver's share is paid on their termination payslip
-(D-308), and O-44 — whether a long-serving leaver is owed the WHOLE SD1 bonus
-rather than the current cycle's pro rata — stays open: this build pays the
-pro-rata reading there, and so the bonus run leaves them out.
+(D-308) - PRO RATA on completed full calendar months of the current cycle,
+however long their service (D-320, O-44 closed) - so the December run leaves
+them out: that bonus has already been paid.
 """
 
 from __future__ import annotations
@@ -125,7 +125,7 @@ def build(run: PayrollRun, employee):
             raise CannotPrice(
                 "bonus_paid_on_termination",
                 "This employee has left; their share is paid on the termination payslip "
-                "(D-308). Whether a long-serving leaver is owed the whole bonus is O-44.",
+                "(D-308). A leaver is paid pro rata, however long their service (D-320).",
             )
         paid = AnnualBonusCycle.objects.filter(
             employee=employee,

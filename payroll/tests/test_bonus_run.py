@@ -240,11 +240,10 @@ def test_the_bonus_refuses_if_the_ordinary_tax_has_moved_since_the_regular_run(s
     assert "where the regular payslip deducted 1107.00" in issue.message
 
 
-def test_a_leaver_is_left_out_of_the_bonus_run_and_o44_stays_open(shipped):
+def test_a_leaver_is_left_out_of_the_bonus_run_having_been_paid_pro_rata(shipped):
     """A cleaner who left on 30 November was paid their share on the
-    termination payslip (D-308). Whether a long-serving leaver is owed the WHOLE
-    bonus is O-44 and stays open: this build pays the pro-rata reading there,
-    so here they are not owed one."""
+    termination payslip (D-308) - pro rata, however long their service (D-320,
+    O-44 closed) - so the December run does not pay them again."""
     tax_year, person = shipped
     employer, group = a_cleaning_employer()
     stayer, _ = a_cleaner_from_march(employer, group)

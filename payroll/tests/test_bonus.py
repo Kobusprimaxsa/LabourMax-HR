@@ -53,6 +53,10 @@ def a_rule_set(sector=None, area=None, *, weeks, month, pro_rata=True):
 
 @pytest.fixture
 def reference(db):
+    return load_bonus_reference()
+
+
+def load_bonus_reference():
     StatutoryParameter.objects.create(
         parameter_code=MINIMUM_AGE_PARAMETER,
         value_numeric=Decimal("15.000000"),

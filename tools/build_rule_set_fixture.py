@@ -104,6 +104,19 @@ HAS_STATUTORY_BONUS = (
 )
 
 
+#: D-320. Written onto both BCCCI rows so nobody 'corrects' it back.
+ELECTION = (
+    "WHY A KWAZULU-NATAL LEAVER IS PAID: clause 4.5 pays the bonus 'to all cleaners "
+    "in employment on the 1st December' and has NO termination limb - unlike SD1 "
+    "clause 3(3), which pays 'during the month of December or on termination of "
+    "employment'. annual_bonus_pro_rata_on_termination is TRUE on this row anyway, by"
+    " Kobus's deliberate election on 25 September 2026 (D-320): a leaver is paid pro "
+    "rata on the COMPLETED FULL CALENDAR MONTHS of the current cycle. That is MORE "
+    "generous than the agreement requires, and lawful, because the agreement sets a "
+    "minimum. Do not 'correct' this to the literal clause: that would quietly stop "
+    "paying leavers."
+)
+
 DERIVED_LONG_SERVICE_DAYS = (
     "DERIVED the same way the 15 and the 18 above are, and by the same arithmetic "
     "the BCEA itself uses: 28 CONSECUTIVE days is four weeks, which is 20 working "
@@ -251,12 +264,18 @@ def termination_rules(
     bonus_month=None,
     bonus_pro_rata=False,
     extra_notes="",
+    bonus_note=None,
 ):
     """Severance and pro-rata bonus only. Notice moved to
     ``termination_notice_band`` (D-68) — see ``build_notice_band_fixture.py``.
     """
     notes = [EFFECTIVE_NOTE]
-    notes.append(NO_STATUTORY_BONUS if bonus_month is None else HAS_STATUTORY_BONUS)
+    # A BCCCI row describes clause 4.5 in its OWN terms (D-320): SD1's sentence on
+    # a BCCCI row was how SD1's 4,333 and termination limb came to be read there.
+    if bonus_month is None:
+        notes.append(NO_STATUTORY_BONUS)
+    else:
+        notes.append(bonus_note or HAS_STATUTORY_BONUS)
     if extra_notes:
         notes.append(extra_notes)
     row = {
@@ -523,7 +542,7 @@ BCCCI = (
 BCCCI_FROM = "2026-04-01"
 
 DOCUMENT_BCCCI = {
-    "version_label": "REF-2026.04.01-BCCCI-RULES-r3",
+    "version_label": "REF-2026.04.01-BCCCI-RULES-r4",
     "applies_from": BCCCI_FROM,
     "description": (
         "BCCCI (KwaZulu-Natal) Main Collective Agreement rule sets for contract "
@@ -623,37 +642,30 @@ DOCUMENT_BCCCI = {
                 bonus_weeks="4.330",
                 bonus_month=12,
                 bonus_pro_rata=True,
+                bonus_note=(
+                    "BCCCI clause 4.5: an annual incentive bonus of 4,33 (four point three "
+                    "three) times the employee's weekly wage, paid to all cleaners in "
+                    "employment on 1 December, in December, no later than the 20th. THE "
+                    "MULTIPLIER IS 4.33, NOT 4.333: SD1's annual_bonus_weeks is 4.333, and the "
+                    "two are different figures in different instruments that look almost "
+                    "identical. Clause 4.5(b) pro-rates it on full calendar months of service "
+                    "divided by 12, so a single full month earns a share and the minimum "
+                    "service is zero - and PRO RATA IS IN FORCE NOW: clause 4.6 is a "
+                    "re-lettered restatement of 4.5 whose preamble says its inclusion 'will "
+                    "come into effect in the increase year of 2028'; no figure differs, so "
+                    "nothing here changes in 2028 but the clause to cite (D-248). 4.5(g) makes "
+                    "4.5(c)(ii), 4.5(d) and 4.5(f) MINIMUMS the employer may improve on, so all "
+                    "three are employer elections in employers/onboarding.py with the gazetted "
+                    "position as the default (D-242), never fixed rules here. " + ELECTION
+                ),
                 extra_notes=(
-                    "THE BONUS MULTIPLIER IS 4.33, NOT 4.333. Clause 4.5(a) gives an amount "
-                    "equivalent to 4.33 (four point three three) times the employee's "
-                    "weekly wage. SD1's own annual_bonus_weeks is 4.333 and the two are "
-                    "different figures in different instruments that look almost identical. "
-                    "Clause 4.5(b) pro-rates on full calendar months of service divided by "
-                    "12, and PRO RATA IS IN FORCE NOW: clause 4.6 is a re-lettered "
-                    "restatement of 4.5 whose own (h) cross-references 4.5's corrected "
-                    "letters, so the heading saying its inclusion will come into effect in "
-                    "the increase year of 2028 governs that restatement, not the "
-                    "entitlement. The 2026 and 2027 bonuses are pro-rated. Paid to all "
-                    "cleaners in employment on 1 December, in December, no later than the "
-                    "20th. Clause 4.5(f): casual employees do not qualify. Clause 36.2: "
-                    "severance of at least one week's remuneration per completed year of "
-                    "continuous service, calculated per clause 4 - the BCEA s41 position. "
-                    "Clause 30: retirement at the state pension qualification age. Clause "
-                    "29: absence of more than three days without satisfactory explanation "
-                    "is desertion. NOT MODELLED HERE: clause 4.5(d)'s prevailing-rate "
-                    "split, 4.5(e)'s absence penalties. CLAUSE 4.6 IS A RESTATEMENT OF 4.5 "
-                    "THAT COMMENCES LATER: its own preamble says in terms that 'The "
-                    "inclusion of the pro-rata clause below (Clause 4.6) will come "
-                    "into effect in the increase year of 2028'. No figure differs - "
-                    "4.6 also gives 4.33 and the same months-over-twelve pro rata - so "
-                    "nothing here changes in 2028, but the clause to cite does, and "
-                    "4.6 carries its own incompatible sub-lettering (D-248). PRO RATA "
-                    "IS IN FORCE NOW REGARDLESS: clause 4.5(b) states it unqualified "
-                    "and clause 4.5 is in force from 1 April 2026, so the 2026 and "
-                    "2027 bonuses are pro-rated. 4.5(g) makes 4.5(c)(ii), "
-                    "4.5(d) and 4.5(f) MINIMUMS the employer may improve on, so all "
-                    "three are employer elections in employers/onboarding.py with the "
-                    "gazetted position as the default (D-242), never fixed rules here."
+                    "Clause 4.5(f): casual employees do not qualify. Clause 36.2: severance "
+                    "of at least one week's remuneration per completed year of continuous "
+                    "service, calculated per clause 4 - the BCEA s41 position. Clause 30: "
+                    "retirement at the state pension qualification age. Clause 29: absence "
+                    "of more than three days without satisfactory explanation is desertion. "
+                    "NOT MODELLED HERE: clause 4.5(d)'s prevailing-rate split beyond the "
+                    "election, 4.5(e)'s absence penalties."
                 ),
             )
         ],

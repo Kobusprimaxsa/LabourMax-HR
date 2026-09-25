@@ -451,6 +451,19 @@ RULES_FIXTURE = {
 # employee had worked during the notice period", whatever that period is.
 # ---------------------------------------------------------------------------
 
+#: D-320. Written onto both BCCCI rows so nobody 'corrects' it back.
+ELECTION = (
+    "WHY A KWAZULU-NATAL LEAVER IS PAID: clause 4.5 pays the bonus 'to all cleaners "
+    "in employment on the 1st December' and has NO termination limb - unlike SD1 "
+    "clause 3(3), which pays 'during the month of December or on termination of "
+    "employment'. annual_bonus_pro_rata_on_termination is TRUE on this row anyway, by"
+    " Kobus's deliberate election on 25 September 2026 (D-320): a leaver is paid pro "
+    "rata on the COMPLETED FULL CALENDAR MONTHS of the current cycle. That is MORE "
+    "generous than the agreement requires, and lawful, because the agreement sets a "
+    "minimum. Do not 'correct' this to the literal clause: that would quietly stop "
+    "paying leavers."
+)
+
 TERMINATION_OUTPUT = (
     pathlib.Path(__file__).resolve().parents[1]
     / "reference"
@@ -464,7 +477,7 @@ INHERITED = (
 )
 
 TERMINATION_FIXTURE = {
-    "version_label": "REF-2023.04.01-BCCCI-TERMINATION-r2",
+    "version_label": "REF-2023.04.01-BCCCI-TERMINATION-r3",
     "applies_from": "2023-04-01",
     "description": (
         "Termination and notice for contract cleaning Area B under the PREDECESSOR BCCCI "
@@ -502,7 +515,7 @@ TERMINATION_FIXTURE = {
                     "qualification age - which is why the successor's clause 4.6.1.2 cites "
                     '"section (29)" for retirement and is wrong only because the renumbering '
                     "moved it to 30 (D-260). Clause 28: absence of more than three days "
-                    "without satisfactory explanation is desertion."
+                    "without satisfactory explanation is desertion. " + ELECTION
                 ),
                 "severance_weeks_per_completed_year": "1.00",
                 "severance_requires_operational_reason": True,
