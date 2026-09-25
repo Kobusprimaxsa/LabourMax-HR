@@ -1537,6 +1537,20 @@ class EmployeeLeaveEntitlement(AuditedModel, TenantScopedModel):
         help_text="NULL means the statutory forfeiture rule applies.",
     )
 
+    #: D-318. A CONTRACTUAL grant - leave beyond the statute, e.g. family
+    #: responsibility for somebody BCEA s27(1) does not cover - is paid or unpaid
+    #: as the employer chose, and names who granted it and why. NULL is_paid
+    #: means the leave type decides, which is every row that is not such a grant.
+    is_paid = models.BooleanField(null=True, blank=True)
+    granted_by_user = models.ForeignKey(
+        "core.AppUser",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="+",
+    )
+    grant_reason = models.TextField(blank=True)
+
     effective_from = models.DateField(db_index=True)
     effective_to = models.DateField(
         null=True, blank=True, help_text="Exclusive. NULL means current."
@@ -1550,6 +1564,12 @@ class EmployeeLeaveEntitlement(AuditedModel, TenantScopedModel):
             models.UniqueConstraint(
                 fields=["employee", "leave_type", "effective_from"],
                 name="uniq_entitlement_start_per_employee_type",
+            ),
+            # D-318. A grant names its grantor and reason together, or neither.
+            models.CheckConstraint(
+                condition=models.Q(granted_by_user__isnull=True, grant_reason="")
+                | (models.Q(granted_by_user__isnull=False) & ~models.Q(grant_reason="")),
+                name="entitlement_grant_is_named_and_reasoned",
             ),
             models.CheckConstraint(
                 condition=models.Q(replaces_statutory=False)
@@ -1626,6 +1646,25 @@ class EmployeeLeaveEntitlement(AuditedModel, TenantScopedModel):
                     "additional_days_per_cycle": (
                         "A replacing entitlement states the whole figure, so there is "
                         "nothing to add it to. One or the other, never both."
+                    )
+                }
+            )
+
+        # D-318. Days beyond the statute on the STATUTORY family responsibility
+        # type would be added into the statutory cycle, and withdrawing them
+        # later would look like withdrawing a right. They are a contractual grant.
+        if (
+            self.leave_type_id
+            and self.leave_type.is_system
+            and self.leave_type.code == "FAMILY_RESPONSIBILITY"
+            and (self.additional_days_per_cycle or self.replaces_statutory)
+        ):
+            raise ValidationError(
+                {
+                    "additional_days_per_cycle": (
+                        "Family responsibility days beyond BCEA s27 are CONTRACTUAL: grant "
+                        "them on the contractual type (leave/contractual.py::grant), so "
+                        "they never share a balance with the statutory days."
                     )
                 }
             )

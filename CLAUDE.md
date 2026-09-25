@@ -545,7 +545,10 @@ Things that are easy to get wrong, and have been got wrong before:
   to hours at capture is the D-106 conversion one step earlier, and D-164 forbids it.
 - **Family responsibility eligibility is two limbs, in all three instruments**: longer than
   four months AND at least four days a week — BCEA s27(1), SD1 cl 22(1), SD7 cl 21(1)
-  (D-189, D-194). SD7 departs on the quantum only.
+  (D-189, D-194). SD7 departs on the quantum only. **Confirmed for SD7 by Kobus (D-317), an owner
+  confirmation.** It is a FLOOR: an employer may grant more as CONTRACTUAL leave
+  (`leave/contractual.py`, D-318) — its own type and balance, a named authoriser and a
+  reason — and the statutory refusal stays the default.
 - **Domestic workers depart from the BCEA in three places** (SD7): five days' family
   responsibility leave rather than three, fifteen hours' overtime a week rather than ten, and
   four weeks' notice from six months' service rather than two.

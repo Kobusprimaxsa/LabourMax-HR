@@ -459,10 +459,45 @@ def _accrue_family_responsibility(
     )
 
 
+def _accrue_contractual_grant(
+    employee, leave_type: LeaveType, *, as_at: datetime.date
+) -> LeaveTransaction | None:
+    """D-318: a contractual grant's days, once per cycle, upfront.
+
+    Read from the GRANT in force (``employee_leave_entitlement``), never from
+    ``cycle.entitlement_quantity``: a grant made mid-cycle post-dates the moment
+    the cycle was generated, and its days belong to it from the day it was made.
+    NO eligibility check - the grant is the employer's decision to give what the
+    statute does not require, and that decision is the whole point.
+    """
+    from leave.contractual import CONTRACTUAL_BASIS, grant_in_force
+
+    in_force = grant_in_force(employee, as_at)
+    if in_force is None:
+        return None
+    ensure_cycles(employee, leave_type, horizon=as_at)
+    cycle = current_cycle(employee, leave_type, as_at)
+    if cycle is None or _any_accrual_posted(cycle):
+        return None
+    return post_transaction(
+        employee=employee,
+        leave_cycle=cycle,
+        leave_type=leave_type,
+        transaction_type=LeaveTransaction.TransactionType.ACCRUAL,
+        quantity=in_force.additional_days_per_cycle,
+        unit=cycle.unit,
+        transaction_date=max(cycle.cycle_start, in_force.effective_from),
+        calculation_basis=CONTRACTUAL_BASIS,
+        reason=in_force.grant_reason,
+        created_by=in_force.granted_by_user,
+    )
+
+
 _DISPATCH = {
     LeaveType.Code.ANNUAL: _accrue_annual,
     LeaveType.Code.SICK: _accrue_sick,
     LeaveType.Code.FAMILY_RESPONSIBILITY: _accrue_family_responsibility,
+    LeaveType.Code.FAMILY_RESPONSIBILITY_CONTRACTUAL: _accrue_contractual_grant,
 }
 
 

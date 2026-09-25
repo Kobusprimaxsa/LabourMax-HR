@@ -152,6 +152,25 @@ SYSTEM_LEAVE_TYPES: tuple[SystemLeaveType, ...] = (
         ),
     ),
     SystemLeaveType(
+        code=Code.FAMILY_RESPONSIBILITY_CONTRACTUAL,
+        name="Family responsibility leave — contractual",
+        is_statutory=False,
+        display_order=31,
+        cycle_months=12,
+        requires_evidence=True,
+        colour_hex="#9C4DCC",
+        reason=(
+            "D-318. What an employer grants BEYOND BCEA s27 - to somebody s27(1) does "
+            "not cover (under four months, or fewer than four days a week), or days "
+            "over the statutory five - by contract or policy, which the BCEA as a "
+            "floor always permits. Its own type so its balance, ledger and register "
+            "lines are never the statutory ones: withdrawing a policy must not look "
+            "like withdrawing a right. is_statutory=False. The balance comes only "
+            "from a grant on employee_leave_entitlement naming who granted it, why, "
+            "and whether it is paid; with no grant there is nothing to take."
+        ),
+    ),
+    SystemLeaveType(
         # MATERNITY and ADOPTION are SUB-TYPES of this one (D-201). Van Wyk's
         # reading-in makes s25 a single parent-neutral entitlement, and s25B(1)
         # points adoption leave straight at "the parental leave referred to in

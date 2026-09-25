@@ -55,6 +55,12 @@ class LeaveType(AuditedModel, TenantSharedModel):
         ANNUAL_UNAUTHORISED = "ANNUAL_UNAUTHORISED", "Annual leave — unauthorised"
         SICK = "SICK", "Sick leave"
         FAMILY_RESPONSIBILITY = "FAMILY_RESPONSIBILITY", "Family responsibility leave"
+        #: D-318. What an employer grants beyond BCEA s27 by contract - never
+        #: the statutory five days, never booked against them.
+        FAMILY_RESPONSIBILITY_CONTRACTUAL = (
+            "FAMILY_RESPONSIBILITY_CONTRACTUAL",
+            "Family responsibility leave — contractual",
+        )
         MATERNITY = "MATERNITY", "Maternity leave"
         PARENTAL = "PARENTAL", "Parental leave"
         ADOPTION = "ADOPTION", "Adoption leave"
@@ -1008,6 +1014,17 @@ class LeaveApplication(AuditedModel, TenantScopedModel):
         blank=True,
         help_text="Mandatory when self_approved — visible in the leave register, never hidden.",
     )
+    #: D-318. Family responsibility leave for an employee BCEA s27(1) does not
+    #: cover: who decided to grant it anyway, and why. Same shape as D-108's
+    #: below-minimum acknowledgement - a named person and a reason, never a flag.
+    beyond_statute_authorised_by = models.ForeignKey(
+        "core.AppUser",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="+",
+    )
+    beyond_statute_reason = models.TextField(blank=True)
 
     class Meta:
         db_table = "leave_application"
@@ -1038,6 +1055,17 @@ class LeaveApplication(AuditedModel, TenantScopedModel):
             models.CheckConstraint(
                 condition=~models.Q(self_approved=True) | ~models.Q(self_approval_reason=""),
                 name="leave_application_self_approval_states_a_reason",
+            ),
+            # D-318. Both or neither, and each branch says what NULL means.
+            models.CheckConstraint(
+                condition=models.Q(
+                    beyond_statute_authorised_by__isnull=True, beyond_statute_reason=""
+                )
+                | (
+                    models.Q(beyond_statute_authorised_by__isnull=False)
+                    & ~models.Q(beyond_statute_reason="")
+                ),
+                name="leave_application_beyond_statute_is_named_and_reasoned",
             ),
             # D-188. unpaid_hours is NOT NULL, so this CHECK cannot be escaped by
             # a NULL, which PostgreSQL would count as satisfied.

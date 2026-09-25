@@ -443,6 +443,7 @@ def submit_application(
     submitted_by=None,
     parental=None,
     expected_date_of_confinement: datetime.date | None = None,
+    beyond_statute=None,
 ) -> LeaveApplication:
     """Create and submit a leave application. Atomic. Never refuses for want
     of evidence, and never refuses for being overdrawn — see the module
@@ -471,9 +472,49 @@ def submit_application(
 
             eligibility = family_responsibility_eligibility(employee, start_date)
             if not eligibility.is_eligible:
-                raise FamilyResponsibilityIneligibleError(
-                    f"Family responsibility leave from {start_date:%d %B %Y} refused: "
-                    + " ".join(eligibility.reasons)
+                if beyond_statute is None:
+                    # The DEFAULT, and it stays the default (D-318): the employer
+                    # is told the law does not require this leave, and how to
+                    # grant it anyway if they choose to.
+                    raise FamilyResponsibilityIneligibleError(
+                        f"Family responsibility leave from {start_date:%d %B %Y} refused: "
+                        + " ".join(eligibility.reasons)
+                        + " The law does not require this leave. An employer may still "
+                        "grant it by contract or policy: capture a contractual grant and "
+                        "authorise the application, naming who authorised it and why."
+                    )
+                if beyond_statute.authorised_by is None or not beyond_statute.reason.strip():
+                    raise ApplicationRefusedError(
+                        "Granting family responsibility leave the law does not require "
+                        "needs the person authorising it and a reason, both stored on the "
+                        "application (D-318)."
+                    )
+                from leave.contractual import contractual_type
+
+                # Booked as what it is: CONTRACTUAL, against the contractual
+                # grant, never against the statutory five days.
+                leave_type = contractual_type()
+            elif beyond_statute is not None:
+                raise ApplicationRefusedError(
+                    "This employee IS covered by BCEA s27(1), so the statutory days apply "
+                    "and there is nothing to authorise. Days beyond the statutory five are "
+                    "an application on the contractual type against a contractual grant."
+                )
+
+        contractual_grant = None
+        if (
+            leave_type.is_system
+            and leave_type.code == LeaveType.Code.FAMILY_RESPONSIBILITY_CONTRACTUAL
+        ):
+            from leave.contractual import grant_in_force
+
+            contractual_grant = grant_in_force(employee, start_date)
+            if contractual_grant is None:
+                raise ApplicationRefusedError(
+                    f"No contractual family responsibility grant is in force for {employee} "
+                    f"on {start_date:%d %B %Y}. Contractual days come from a grant - who "
+                    f"gave it, why, how many days and whether they are paid - so capture "
+                    f"one first (leave/contractual.py::grant)."
                 )
 
         if leave_type.code == LeaveType.Code.PRENATAL and expected_date_of_confinement is None:
@@ -594,6 +635,14 @@ def submit_application(
             day_dict["deducted_from_balance"] = False
             remaining_unpaid -= day_dict[quantity_field]
 
+        # D-318: a contractual grant is paid or unpaid as the employer chose on
+        # the grant. Unpaid still spends the grant: it is how many days off were
+        # given, whatever they are paid.
+        if contractual_grant is not None and contractual_grant.is_paid is False:
+            for day_dict in day_dicts:
+                if day_dict["is_working_day"]:
+                    day_dict["is_paid"] = False
+
         if not leave_type.is_paid and unauthorised_treatment != "annual_leave":
             for day_dict in day_dicts:
                 if day_dict["is_working_day"] and day_dict["deducted_from_balance"]:
@@ -657,6 +706,10 @@ def submit_application(
             ),
             parental_declared_by_user=submitted_by if parental_declaration else None,
             parental_declared_at=timezone.now() if parental_declaration else None,
+            beyond_statute_authorised_by=(
+                beyond_statute.authorised_by if beyond_statute is not None else None
+            ),
+            beyond_statute_reason=(beyond_statute.reason.strip() if beyond_statute else ""),
         )
         application.full_clean()
         application.save()

@@ -16,6 +16,19 @@ four months does not qualify and the first eligible day is the day after;
 limbs in the same words — SD1 clause 22(1) and SD7 clause 21(1), read from the
 clause text and quoted in D-194; SD7 departs only on the quantum (five days).
 
+**CONFIRMED for SD7, 25 September 2026 (D-317), by Kobus:** Sectoral
+Determination 7 stands in its 2002 form for family responsibility leave; both
+s27(1) limbs apply unchanged; five days; a domestic worker on fewer than four
+days a week is not entitled under the current law. An OWNER confirmation, on
+D-117's precedent - not second-person verification and not an attorney's
+opinion, so O-06's review stays open. It answers D-194's 2002-gazette caveat
+for SD7 clause 21 only.
+
+**A floor, not a ceiling** (D-318). Ineligibility refuses the STATUTORY leave by
+default; an employer who chooses to give it anyway grants it as CONTRACTUAL
+leave - ``leave/contractual.py`` - with a named authoriser and a reason, on its
+own leave type and balance, never booked against the statutory days.
+
 **Service is the CURRENT engagement's** (``current_engagement``), never an
 edited first row (D-103): a re-hire's service starts again, the same anchor
 the leave cycles use (D-163). Days a week is the ``work_schedule`` in force on
